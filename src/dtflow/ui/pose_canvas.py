@@ -107,6 +107,9 @@ class PoseCanvas(ImagePreview):
             pixmap = self._pose
         elif self._view == "Result" and not self._result.isNull():
             pixmap = self._result
+        if pixmap.cacheKey() == self._pixmap.cacheKey():
+            self.viewport().update()  # the same picture: keep the user's zoom and position
+            return
         self._pixmap = pixmap
         self._fit = True
         self._sync()

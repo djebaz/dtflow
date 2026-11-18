@@ -145,3 +145,55 @@ def start_download(
         on_done(models, error)
 
     runner.submit(work(), done)
+
+
+POSE_KEY = "pose-detector-download"
+POSE_TITLE = "Download pose detector"
+
+
+def start_pose_download(parent_page, state_dir: Path, runner, on_done: Callable[[Exception | None], None]) -> None:
+    """Download the pinned pose detector now. Pressing the button is the accept: the licence is shown beside it.
+
+    Same progress, cancel and shared "one model download at a time" guard as the detection models; ``on_done(error)``
+    runs on the GUI thread (``None`` on success, ``DownloadCancelled`` after Cancel)."""
+    from dtflow.services.body_pose import DETECTOR, install_detector
+
+    window = parent_page.window()
+    if runner.closed or is_downloading(parent_page):
+        return
+    window._model_download_running = True
+    cancel = threading.Event()
+    strip = activity_strip(parent_page)
+
+    def show(progress: ProvisionProgress):
+        if strip is not None:
+            done, total, detail, count = _progress_detail(progress, (DETECTOR,))
+            strip.update(POSE_KEY, done, total, detail=detail, count=count)
+
+    relay = LatestRelay(show, parent_page, cancel)
+    runner.shutdown_started.connect(relay.cancel_work)
+    if strip is not None:
+        strip.start(POSE_KEY, POSE_TITLE, stop=cancel.set, stop_text="Cancel download", action_text="Cancel")
+
+    def worker():
+        install_detector(
+            Path(state_dir), lambda stage, done, total: relay(ProvisionProgress("pose", stage, done, total)), cancel
+        )
+
+    async def work():
+        return await asyncio.to_thread(worker)
+
+    def done(_value, failure):
+        relay.close()
+        relay.deleteLater()
+        window._model_download_running = False
+        if strip is not None:
+            if failure is None:
+                strip.complete(POSE_KEY, POSE_TITLE, "Installed; SHA-256 and model contract verified.")
+            elif isinstance(failure, (DownloadCancelled, asyncio.CancelledError)):
+                strip.complete(POSE_KEY, "Download stopped", str(failure) or "Download cancelled.", "stopped")
+            else:
+                strip.complete(POSE_KEY, POSE_TITLE, str(failure) or "The download failed.", "error")
+        on_done(failure)
+
+    runner.submit(work(), done)

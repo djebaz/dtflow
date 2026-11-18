@@ -3,27 +3,70 @@
 Presentation only. ``present`` applies one ``PoseView`` to the real widgets; nothing here extracts, downloads or
 generates, and the Generate action stays disabled until that behaviour exists."""
 
+import asyncio
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from PySide6.QtCore import QFile, QIODevice, QObject
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import QFile, QIODevice, QObject, QTimer
+from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QLabel, QSizePolicy
 
+from dtflow.core.image_inputs import ImageContent, ImageInputSnapshot
+from dtflow.core.pose import CONTROLS, MODELS, PoseControl
+from dtflow.core.tasks import settle
+from dtflow.services import image_preparation as pixels
+from dtflow.services.body_pose import (
+    body_map,
+    detect_people,
+    detector_ready,
+    fit_pose_map,
+    load_prepared_map,
+)
+from dtflow.services.image_inputs import restore_image_inputs
+from dtflow.ui.activity_strip import activity_strip
+from dtflow.ui.file_dialogs import QFileDialog
+from dtflow.ui.model_download import is_downloading, start_pose_download
 from dtflow.ui.pose_canvas import PoseCanvas
 
-NOT_WIRED = "Controlnet generation is not available yet: this mode is a layout preview."
-CONFIGURATION_NOTE = "Configurations and presets cover text-to-image only."
 QUEUE_NOTE = "Controlnet requests cannot be queued."
+CONFIGURATION_NOTE = "Configurations and presets cover text-to-image only."
 CONSENT = "The pose map is sent to DT+ Cloud and may use credits. Generate asks before the first use."
 DETECTOR_NOTE = "YOLO26n-pose · about 11.6 MiB · AGPL-3.0 · runs on this computer"
+NO_BACKEND = "Controlnet needs DT+ Cloud. Choose DT+ Cloud under Provider."
+NO_CHECKPOINT = "Controlnet needs a FLUX.1 Dev checkpoint (f16, q5p or q8p); the selected one is not."
+VERIFIED_CONTROL = "controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt"
+IMAGE_FILTER = "Images (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.bmp)"
+
+
+def control_choices(snapshot) -> tuple["PoseControlChoice", ...]:
+    """Union Pro 1.0 controls the DT+ inventory lists, q5p first; Union Pro 2 stays hidden (unverified in #502)."""
+    if snapshot is None:
+        return ()
+    listed = {entry.identifier for entry in snapshot.entries}
+    names = sorted((name for name in CONTROLS if "_1.0_" in name and name in listed), key=lambda n: ("q5p" not in n, n))
+    return tuple(PoseControlChoice(_control_label(name), name == VERIFIED_CONTROL, name) for name in names)
+
+
+def _control_label(checkpoint: str) -> str:
+    quant = checkpoint.rsplit("_", 1)[-1].removesuffix(".ckpt")
+    return f"Union Pro 1.0 {quant}"
+
+
+@dataclass(frozen=True, slots=True)
+class PoseJob:
+    """Immutable snapshot taken on the GUI thread when the user presses Generate: the map and its evidence."""
+
+    content: ImageContent
+    evidence: tuple[tuple[str, str], ...]
+    control: PoseControl
 
 
 @dataclass(frozen=True, slots=True)
 class PoseControlChoice:
     label: str
     verified: bool
+    checkpoint: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,7 +97,7 @@ class PoseView:
     )
     control_index: int = 0
     strength: float = 0.7
-    blocker: str = NOT_WIRED  # why Generate is disabled; "" would mean ready
+    blocker: str = ""  # why Generate is unavailable; empty means ready
     notice: str = ""
     view: str = "Source"
     extras: dict = field(default_factory=dict)
@@ -64,6 +107,29 @@ class ControlnetEditor(QObject):
     def __init__(self, page, runner):
         super().__init__(page)
         self.page, self.runner = page, runner
+        self.controller = None
+        self._revision = 0
+        self._busy = False
+        self._kind = "photo"
+        self._content = None  # the chosen photo or body map
+        self._filename = ""
+        self._source_pixmap = None
+        self._source_evidence = {}  # extraction evidence that came with a prepared map file
+        self._detection = None
+        self._selected = None
+        self._map = None  # the body map at source size: extracted from the photo, or the chosen map
+        self._map_evidence = {}
+        self._pose_pixmap = None  # the map as it will be submitted (fitted to the current size)
+        self._map_facts = ""
+        self._source_error = ""
+        self._extraction_error = ""
+        self._extracting = False
+        self._downloading = False
+        self._result = None
+        self._controls = ()
+        self._control_index = 0
+        self._strength = 0.7
+        self._notice = ""
         file = QFile(str(Path(__file__).with_name("forms") / "controlnet_editor.ui"))
         if not file.open(QIODevice.OpenModeFlag.ReadOnly):
             raise OSError("Controlnet editor form could not be opened.")
@@ -96,15 +162,40 @@ class ControlnetEditor(QObject):
         self.form.poseSourceFacts.setMinimumWidth(0)
         self.form.poseKindLayout.setContentsMargins(0, 0, 0, 0)
         self.form.poseKindLayout.setSpacing(0)
+        self._view = PoseView()
+        self._wired = False
+        self._debounce = QTimer(self)
+        self._debounce.setSingleShot(True)
+        self._debounce.setInterval(150)
+        self._debounce.timeout.connect(self._refit)
+        self.form.choosePoseButton.clicked.connect(self.choose_source)
+        self.form.removePoseButton.clicked.connect(self.remove_source)
+        self.form.extractPoseButton.clicked.connect(self.extract)
+        self.form.downloadDetectorButton.clicked.connect(self.download_detector)
+        self.form.photoKindButton.clicked.connect(lambda: self._set_kind("photo"))
+        self.form.mapKindButton.clicked.connect(lambda: self._set_kind("map"))
         self.form.posePeopleList.currentRowChanged.connect(self._list_selected)
         self.canvas.personPicked.connect(self.form.posePeopleList.setCurrentRow)
-        self._present_depth = 0
-        self._view = PoseView()
+        self.canvas.sourceDropped.connect(self.load_source)
+        self.form.poseControlCombo.currentIndexChanged.connect(self._control_changed)
+        self.form.poseStrengthSpin.valueChanged.connect(self._strength_changed)
         page.textToImageModeButton.toggled.connect(self.sync_mode)
         page.inpaintModeButton.toggled.connect(self.sync_mode)
         page.controlnetModeButton.toggled.connect(self.sync_mode)
+        runner.shutdown_started.connect(self.shutdown)
         self.present(self._view)
         self.sync_mode()
+
+    def attach(self, controller):
+        """The generation page owns backend selection and dispatch; the editor only asks it."""
+        self.controller = controller
+        page = self.page
+        for signal in (page.modelCombo.currentTextChanged, page.generationBackendCombo.currentTextChanged):
+            signal.connect(self.refresh)
+        for spin in (page.widthSpinBox, page.heightSpinBox):
+            spin.valueChanged.connect(self._size_changed)
+        self._wired = True
+        self.refresh_controls()
 
     @property
     def active(self):
@@ -128,19 +219,41 @@ class ControlnetEditor(QObject):
             elif not self.page.inpaintModeButton.isChecked():
                 widget.setEnabled(True)
                 widget.setToolTip("")
+        if active and self._wired:
+            self.refresh()
+        else:
+            self.sync_buttons()
+
+    def set_busy(self, busy):
+        """Another run cannot start now; the editor itself stays editable (a run keeps its own snapshot)."""
+        self._busy = busy
         self.sync_buttons()
 
     def sync_buttons(self):
-        """Controlnet never submits yet: Generate and Add to queue are held with the reason shown under the canvas."""
+        """In Controlnet mode Generate follows the reason line; Add to queue is always held (no queue support)."""
         if not self.active:
             return
-        self.page.generateButton.setEnabled(False)
-        self.page.generateButton.setToolTip(self._view.blocker or NOT_WIRED)
-        self.page.queueGenerateButton.setEnabled(False)
-        self.page.queueGenerateButton.setToolTip(QUEUE_NOTE)
+        page, controller = self.page, self.controller
+        generate = page.generateButton
+        reason = self._view.blocker
+        no_model = controller is not None and controller._model_missing()
+        dispatching = controller is not None and controller._activity.dispatching
+        if reason:
+            generate.setEnabled(False)
+            generate.setToolTip(reason)
+        elif dispatching:
+            generate.setEnabled(False)
+            generate.setToolTip("A queue is running in this window: Controlnet cannot wait behind it.")
+        else:
+            generate.setEnabled(not self._busy and not no_model)
+            generate.setToolTip("Choose a model first: Generate needs a checkpoint." if no_model else "")
+        page.queueGenerateButton.setEnabled(False)
+        page.queueGenerateButton.setToolTip(QUEUE_NOTE)
 
     def _list_selected(self, row):
         self.canvas.select(row if row >= 0 else None)
+        if row >= 0 and row != self._selected and self._detection is not None and not self._extracting:
+            self._build_map(row)
 
     @staticmethod
     def _state(widget, state):
@@ -192,8 +305,7 @@ class ControlnetEditor(QObject):
         form.posePeopleList.blockSignals(False)
         form.posePeopleList.setEnabled(len(view.people) > 1 and not busy)
         canvas.set_people([(person.label, person.box) for person in view.people], view.selected)
-        if view.pose is not None:
-            canvas.set_pose(view.pose)
+        canvas.set_pose(view.pose if view.pose is not None else QPixmap())
         canvas.set_result(view.result if view.result is not None else QPixmap())
         shown = {"Pose": view.pose, "Result": view.result}.get(view.view, True)
         canvas.set_view(view.view if shown is not None else "Source")
@@ -215,7 +327,9 @@ class ControlnetEditor(QObject):
         else:
             note = "Not verified: only Union Pro 1.0 q5p with FLUX.1 Dev q5p has been confirmed."
         form.poseControlCombo.setToolTip(note)
+        form.poseStrengthSpin.blockSignals(True)
         form.poseStrengthSpin.setValue(view.strength)
+        form.poseStrengthSpin.blockSignals(False)
         form.poseStrengthSpin.setEnabled(chosen is not None)
         self.facts.setText(view.extraction_error or view.map_facts)
         self._state(self.facts, "error" if view.extraction_error else "unknown")
@@ -247,3 +361,377 @@ class ControlnetEditor(QObject):
         form.detectorBadge.setToolTip(summary)
         form.detectorBadge.style().unpolish(form.detectorBadge)
         form.detectorBadge.style().polish(form.detectorBadge)
+
+    # -- behaviour --------------------------------------------------------------------------------------------------
+    def _backend(self):
+        return self.controller._backend()[0] if self.controller is not None else ""
+
+    def blocker(self) -> str:
+        """Why Generate cannot start now; empty when it can. Backend and checkpoint come first, as they are the
+        mode's own requirement."""
+        if self._backend() != "cloud":
+            return NO_BACKEND
+        if self.page.modelCombo.currentText().strip() not in MODELS:
+            return NO_CHECKPOINT
+        if self._extracting:
+            return "Extracting the pose…"
+        if self._downloading:
+            return "Downloading the pose detector…"
+        if self._content is None:
+            return "Choose a photo or a body map first."
+        if self._kind == "photo" and not detector_ready(self.controller._state):
+            return "Install the pose detector, or use a body map."
+        if self._kind == "photo" and self._detection is not None and not self._detection.candidates:
+            return "No person was found. Choose another photo or use a body map."
+        if self._kind == "photo" and self._detection is not None and self._selected is None:
+            return "Pick the person the pose is taken from."
+        if self._map is None:
+            return "No pose to send yet."
+        if self._pose_pixmap is None:
+            return "Preparing the map for this size…"
+        if not self._controls:
+            return "No Union Pro 1.0 control is in your DT+ inventory. Refresh the models."
+        return ""
+
+    def refresh(self, *_):
+        """Rebuild the presentation from the editor's state; the single place the widgets are driven from."""
+        if self.runner.closed or self.controller is None:
+            return
+        detector = "ready" if detector_ready(self.controller._state) else "missing"
+        if self._downloading:
+            detector = "downloading"
+        people = ()
+        if self._detection is not None:
+            people = tuple(PosePerson(f"Person {c.index} · {c.score:.0%}", c.box) for c in self._detection.candidates)
+        view = PoseView(
+            kind=self._kind,
+            source=self._source_pixmap,
+            source_facts=self._filename,
+            source_error=self._source_error,
+            detector=detector,
+            extracting=self._extracting,
+            people=people,
+            selected=self._selected,
+            pose=self._pose_pixmap,
+            result=self._result,
+            map_facts=self._map_facts,
+            extraction_error=self._extraction_error,
+            controls=self._controls,
+            control_index=self._control_index,
+            strength=self._strength,
+            blocker=self.blocker(),
+            notice=CONSENT if self._backend() == "cloud" else "",
+            view=self.canvas._view,
+        )
+        self.present(view)
+
+    def refresh_controls(self, *_):
+        """The Union Pro 1.0 controls the active DT+ inventory lists."""
+        if self.controller is None:
+            return
+        chosen = self._controls[self._control_index].checkpoint if self._controls else None
+        self._controls = control_choices(self.controller._inventory_snapshot)
+        self._control_index = next((i for i, c in enumerate(self._controls) if c.checkpoint == chosen), 0)
+        self.refresh()
+
+    def _control_changed(self, index):
+        if 0 <= index < len(self._controls):
+            self._control_index = index
+            self.refresh()
+
+    def _strength_changed(self, value):
+        self._strength = float(value)
+        self.refresh()
+
+    def _set_kind(self, kind):
+        if kind == self._kind:
+            return
+        self._clear_source()
+        self._kind = kind
+        self.refresh()
+
+    def _clear_source(self):
+        self._revision += 1
+        self._extracting = False
+        self._content, self._filename, self._source_pixmap = None, "", None
+        self._source_evidence, self._detection, self._selected = {}, None, None
+        self._map, self._map_evidence, self._pose_pixmap, self._map_facts = None, {}, None, ""
+        self._source_error = self._extraction_error = ""
+
+    def _pixmap(self, content):
+        image = QImage(
+            pixels.image_content_pixels(content),
+            content.width,
+            content.height,
+            content.width * 3,
+            QImage.Format.Format_RGB888,
+        )
+        return QPixmap.fromImage(image.copy())
+
+    def choose_source(self):
+        if self._extracting or self._downloading:
+            return
+        caption = "Choose photo" if self._kind == "photo" else "Choose body map"
+        path = QFileDialog.getOpenFileName(self.page, caption, "", IMAGE_FILTER)[0]
+        if path:
+            self.load_source(path)
+
+    def load_source(self, path):
+        """Decode the chosen file on a worker; a photo then runs the detector, a body map is used as it is."""
+        if self.runner.closed or self._extracting or self._downloading:
+            return
+        path = Path(path)
+        kind = self._kind
+        self._revision += 1
+        revision = self._revision
+        self._extracting = True
+        self.refresh()
+
+        def worker():
+            if kind == "map":
+                content, evidence = load_prepared_map(path)
+            else:
+                content, evidence = pixels.load_source_file(path), {}
+            return content, evidence
+
+        async def work():
+            return await settle(asyncio.to_thread(worker))
+
+        def done(value, error):
+            if self.runner.closed or revision != self._revision:
+                return
+            self._extracting = False
+            if error is not None:
+                self._source_error = str(error)
+                self.refresh()
+                return
+            content, evidence = value
+            self._clear_source()
+            self._revision = revision + 1
+            self._content, self._source_evidence = content, evidence
+            self._source_pixmap = self._pixmap(content)
+            name = path.name
+            self._filename = f"{name}\n{content.width} × {content.height} · EXIF-oriented · RGB8"
+            if kind == "map":
+                self._map, self._map_evidence = content, dict(evidence)
+                self._schedule_refit()
+            elif detector_ready(self.controller._state):
+                self.refresh()
+                self.extract()
+                return
+            self.refresh()
+
+        self.runner.submit(work(), done)
+
+    def remove_source(self):
+        if self._extracting or self._downloading:
+            return
+        self._clear_source()
+        self.refresh()
+
+    def extract(self):
+        """Find the people in the photo on a worker (local ONNX); one person is taken, several wait for a pick."""
+        if self._content is None or self._kind != "photo" or self.runner.closed or self._extracting:
+            return
+        if not detector_ready(self.controller._state):
+            self.refresh()
+            return
+        content, state = self._content, self.controller._state
+        self._revision += 1
+        revision = self._revision
+        self._extracting = True
+        self._extraction_error = ""
+        self._detection, self._selected, self._map, self._pose_pixmap, self._map_facts = None, None, None, None, ""
+        strip = activity_strip(self.page)
+        strip.start("controlnet-extract", "Extract pose")
+        self.refresh()
+
+        async def work():
+            return await settle(asyncio.to_thread(detect_people, content, state))
+
+        def done(detection, error):
+            strip.finish("controlnet-extract")
+            if self.runner.closed or revision != self._revision:
+                return
+            self._extracting = False
+            if error is not None:
+                self._extraction_error = str(error)
+                self.refresh()
+                return
+            self._detection = detection
+            if not detection.candidates:
+                self._extraction_error = (
+                    "No person was found with enough confidence. Choose another photo or a body map."
+                )
+                self.refresh()
+            elif len(detection.candidates) == 1:
+                self._selected = 0
+                self._build_map(0)
+            else:
+                self.refresh()
+
+        self.runner.submit(work(), done)
+
+    def _build_map(self, row):
+        """The OpenPose map of the picked person, on a worker (drawing only, no model run)."""
+        detection, content = self._detection, self._content
+        if detection is None or content is None or self.runner.closed:
+            return
+        self._revision += 1
+        revision = self._revision
+        self._selected = row
+        self._map, self._pose_pixmap, self._map_facts, self._extraction_error = None, None, "", ""
+        person = detection.candidates[row].index
+        self.refresh()
+
+        async def work():
+            return await settle(asyncio.to_thread(body_map, content, detection, person))
+
+        def done(value, error):
+            if self.runner.closed or revision != self._revision:
+                return
+            if error is not None:
+                self._extraction_error = str(error)
+                self.refresh()
+                return
+            self._map, evidence = value
+            self._map_evidence = dict(evidence)
+            self._schedule_refit()
+
+        self.runner.submit(work(), done)
+
+    def _size_changed(self, *_):
+        if self._map is not None and self.active:
+            self._schedule_refit()
+
+    def _schedule_refit(self):
+        self._pose_pixmap = None
+        self._debounce.start()
+        self.refresh()
+
+    def _refit(self):
+        """Fit the map to the current size on a worker, so the Pose view is exactly what Generate will send."""
+        if self._map is None or self.runner.closed or self.controller is None:
+            return
+        content, evidence = self._map, dict(self._map_evidence)
+        width, height = self.page.widthSpinBox.value(), self.page.heightSpinBox.value()
+        self._revision += 1
+        revision = self._revision
+
+        async def work():
+            return await settle(asyncio.to_thread(fit_pose_map, content, evidence, width, height))
+
+        def done(value, error):
+            if self.runner.closed or revision != self._revision or self._map is not content:
+                return
+            if error is not None:
+                self._extraction_error = str(error)
+                self._pose_pixmap = None
+                self.refresh()
+                return
+            prepared, _ = value
+            pixmap = QPixmap()
+            pixmap.loadFromData(prepared.image.encoded)
+            self._pose_pixmap = pixmap
+            self._map_facts = self._facts(width, height)
+            self.refresh()
+
+        self.runner.submit(work(), done)
+
+    def _facts(self, width, height):
+        evidence = self._map_evidence
+        parts = [f"Map: {width} × {height}, fitted with black padding, no crop"]
+        if evidence.get("origin") == "prepared_map":
+            parts.append("body map used as it is · nothing detected")
+        else:
+            try:
+                parts.append(f"Extracted in {float(evidence.get('seconds', 'nan')):.1f} s")
+            except ValueError:
+                pass
+            missing = evidence.get("missing_joints")
+            if missing is not None:
+                parts.append(f"{missing} joint{'s' if missing != '1' else ''} omitted")
+        return " · ".join(parts)
+
+    def download_detector(self):
+        """Pressing Download is the accept: the AGPL-3.0 licence is shown beside the button."""
+        if (
+            self.controller is None
+            or self._downloading
+            or is_downloading(self.page)
+            or detector_ready(self.controller._state)
+        ):
+            return
+        self._downloading = True
+        self.refresh()
+
+        def done(error):
+            self._downloading = False
+            self.refresh()
+            if error is None and self._content is not None and self._kind == "photo" and self._detection is None:
+                self.extract()
+
+        start_pose_download(self.page, self.controller._state, self.runner, done)
+
+    def job(self):
+        """The pose request input for Generate, or None while the reason line says it cannot start."""
+        if self.blocker() or self._map is None:
+            return None
+        choice = self._controls[self._control_index]
+        control = PoseControl(choice.checkpoint, self._strength)
+        evidence = tuple(sorted((str(k), str(v)) for k, v in self._map_evidence.items()))
+        return PoseJob(self._map, evidence, control)
+
+    def show_result(self, encoded):
+        pixmap = QPixmap()
+        if pixmap.loadFromData(encoded):
+            self._result = pixmap
+            self.refresh()
+            self.canvas.set_view("Result")
+
+    def restore_record(self, document):
+        """Gallery Reuse of a pose image: bring its control, strength and retained map back into this mode. The map is
+        read from the managed inputs, not from the original file, and nothing is submitted."""
+        pose = document.get("pose_control")
+        record = document.get("image_inputs")
+        if self.controller is None or not pose or not record or self.runner.closed:
+            return
+        state = self.controller._state
+        self.page.controlnetModeButton.setChecked(True)
+        self._clear_source()
+        self._revision += 1
+        revision = self._revision
+        self._kind = "map"
+        self._extracting = True
+        self.refresh()
+
+        async def work():
+            def read():
+                prepared = restore_image_inputs(state, ImageInputSnapshot.from_record(record))
+                return prepared.image
+
+            return await settle(asyncio.to_thread(read))
+
+        def done(content, error):
+            if self.runner.closed or revision != self._revision:
+                return
+            self._extracting = False
+            if error is not None:
+                self._source_error = f"The retained map could not be restored: {error}"
+                self.refresh()
+                return
+            self._content, self._map = content, content
+            self._source_pixmap = self._pixmap(content)
+            self._filename = f"Retained map\n{content.width} × {content.height} · restored from the saved image"
+            self._map_evidence = {str(k): str(v) for k, v in pose.get("evidence", ())}
+            self._strength = float(pose["strength"])
+            for index, choice in enumerate(self._controls):
+                if choice.checkpoint == pose.get("checkpoint"):
+                    self._control_index = index
+            self._schedule_refit()
+
+        self.runner.submit(work(), done)
+
+    def shutdown(self):
+        self._revision += 1
+        self._debounce.stop()

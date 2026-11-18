@@ -3,11 +3,9 @@
 import asyncio
 import json
 import sys
-from dataclasses import asdict, replace
+from dataclasses import asdict
 from pathlib import Path
-from uuid import uuid4
 
-from dtflow.core.image_inputs import ImageInputSnapshot
 from dtflow.core.models import TimeoutPolicy, ValidationError
 from dtflow.core.pose import CONTROLS, PoseControl
 
@@ -56,8 +54,7 @@ async def run(args):
     from dtflow.core.request_records import request_from_record
     from dtflow.services.body_pose import DETECTOR, extract_body, install_detector, prepare_pose, save_extraction
     from dtflow.services.config import read_json_file
-    from dtflow.services.image_inputs import restore_image_inputs
-    from dtflow.services.session import bind_prepared, open_session, run_generation, selection_for
+    from dtflow.services.session import generate_pose_once, pose_request, retry_pose_once, selection_for
 
     def progress(event):
         if event.kind in ("preparing", "progress", "terminal"):
@@ -86,9 +83,6 @@ async def run(args):
         request = request_from_record(record["request"])
         if request.pose_control is None:
             raise ValidationError("Retry requires saved pose control settings.")
-        prepared = await asyncio.to_thread(restore_image_inputs, args.state, request.image_inputs)
-        # No implicit replay: this command is a new explicit submission, same immutable input and seed.
-        request = replace(request, request_id=uuid4().hex)
     else:
         control = PoseControl(args.control, args.strength)
         request = resolve_generation(args)
@@ -101,12 +95,14 @@ async def run(args):
             prepare_pose, args.photo or args.image, request.width_px, request.height_px,
             photo=args.photo is not None, state=args.state, person=args.person,
         )
-        request = replace(request, schema_version=3, pose_control=replace(control, evidence=evidence),
-                          image_inputs=ImageInputSnapshot.from_prepared(uuid4().hex, prepared, preserve_outside=False))
-    request = await bind_prepared(args.state, "cloud", request, getattr(args, "asset", ()) or ())
+        request = pose_request(request, control, prepared, evidence)
     selection = selection_for("cloud", None, args.state)
-    async with open_session(selection, args.state, output=args.out, timeouts=policy, pose_inputs=True) as service:
-        outcome = await run_generation(service, request, prepared_inputs=prepared, on_event=progress)
+    options = {"output": args.out, "timeouts": policy, "on_event": progress, "asset_ids": getattr(args, "asset", ()) or ()}
+    if args.pose_action == "retry":
+        # No implicit replay: a new explicit submission, same retained input and seed, new request identity.
+        outcome = await retry_pose_once(selection, args.state, request, **options)
+    else:
+        outcome = await generate_pose_once(selection, args.state, request, prepared, **options)
     print(json.dumps({"attempt_id": outcome.attempt_id, "backend": outcome.backend_id,
                       "outputs": outcome.output_paths, "metadata": outcome.metadata_path,
                       "warnings": outcome.warnings, "pose_adherence": "requires owner observation"}, indent=2))

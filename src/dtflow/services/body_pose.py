@@ -34,6 +34,7 @@ DETECTOR = CatalogueEntry(
     "Ultralytics AGPL-3.0", "https://github.com/ultralytics/ultralytics/blob/main/LICENSE",
     "https://github.com/ultralytics/assets/releases/tag/v8.4.0",
 )
+DETECTOR_BYTES = 12_125_856
 CONFIDENCE = 0.5
 MAX_CANDIDATES = 10
 PALETTE = (
@@ -68,13 +69,21 @@ def model_path(state: Path) -> Path:
     return state / "models" / "person" / f"{DETECTOR.sha256}.onnx"
 
 
-def install_detector(state: Path, progress=None) -> dict:
+def detector_ready(state: Path) -> bool:
+    """GUI-side readiness: the pinned file (named by its SHA-256) is installed and has the pinned size."""
+    try:
+        return model_path(state).stat().st_size == DETECTOR_BYTES
+    except OSError:
+        return False
+
+
+def install_detector(state: Path, progress=None, cancel=None) -> dict:
     """Explicit download only; reuse the common HTTPS/checksum/atomic-install boundary."""
     from dtflow.services.model_provisioning import _install, install_dir
 
     folder = install_dir(state)
     folder.mkdir(parents=True, exist_ok=True)
-    ref = _install(DETECTOR, folder, progress or (lambda *args: None), None)
+    ref = _install(DETECTOR, folder, progress or (lambda *args: None), cancel)
     return {"detector": asdict(DETECTOR), "path": ref.path}
 
 

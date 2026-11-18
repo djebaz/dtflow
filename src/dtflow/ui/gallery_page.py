@@ -3418,7 +3418,8 @@ class GalleryPage(QObject):
         recorded = bool(request.get("model_id"))
         reusable = recorded and not edited and not self._snapshot_at
         self.use_settings_button.setEnabled(reusable and self._reuse_callback is not None)
-        self.regenerate_button.setEnabled(reusable and self._regenerate_callback is not None)
+        posed = request.get("pose_control") is not None
+        self.regenerate_button.setEnabled(reusable and not posed and self._regenerate_callback is not None)
         for button, tip in (
             (self.use_settings_button, self._USE_TIP),
             (self.regenerate_button, self._REGENERATE_TIP),
@@ -3426,6 +3427,8 @@ class GalleryPage(QObject):
             button.setToolTip(
                 "Not available for edited images: the source and mask are not restored here. Use Edit image instead."
                 if edited
+                else "Regenerate is not available for a pose image. Use settings restores the pose into Controlnet mode."
+                if posed and button is self.regenerate_button
                 else tip
                 if recorded
                 else "Not available: this output has no recorded model."
