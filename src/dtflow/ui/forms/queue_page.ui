@@ -1234,6 +1234,26 @@
                       </widget>
                      </item>
                      <item row="9" column="0">
+                      <widget class="QLabel" name="planFixedLorasLabel">
+                       <property name="text">
+                        <string>Fixed LoRAs</string>
+                       </property>
+                       <property name="textRole" stdset="0">
+                        <string>caption</string>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="9" column="1">
+                      <widget class="ValueChips" name="planFixedLorasEdit">
+                       <property name="accessibleName">
+                        <string>Fixed LoRAs</string>
+                       </property>
+                       <property name="toolTip">
+                        <string>LoRAs every item of the new queue uses, with their weights: Edit… opens the LoRA editor; click a LoRA to remove it. LoRA sets replace them per item, and a LoRA weight row changes the weight of its LoRA.</string>
+                       </property>
+                      </widget>
+                     </item>
+                     <item row="10" column="0">
                       <widget class="QLabel" name="planLoraSetsLabel">
                        <property name="text">
                         <string>LoRA sets</string>
@@ -1243,7 +1263,7 @@
                        </property>
                       </widget>
                      </item>
-                     <item row="9" column="1">
+                     <item row="10" column="1">
                       <widget class="ValueChips" name="planLoraSetsEdit">
                        <property name="accessibleName">
                         <string>Plan LoRA sets</string>
@@ -1253,7 +1273,7 @@
                        </property>
                       </widget>
                      </item>
-                     <item row="10" column="0">
+                     <item row="11" column="0">
                       <widget class="QLabel" name="planLorasLabel">
                        <property name="text">
                         <string>LoRA weights</string>
@@ -1263,7 +1283,7 @@
                        </property>
                       </widget>
                      </item>
-                     <item row="10" column="1">
+                     <item row="11" column="1">
                       <widget class="ValueChips" name="planLorasEdit">
                        <property name="toolTip">
                         <string>Weights to try for any LoRA, on the Generate form or not: Edit… shows the current weights; pick LoRAs and weights, then Apply. Each LoRA's weights are crossed or paired with the other rows.</string>
@@ -1273,7 +1293,7 @@
                        </property>
                       </widget>
                      </item>
-                     <item row="11" column="0">
+                     <item row="12" column="0">
                       <widget class="QLabel" name="planStrengthsLabel">
                        <property name="text">
                         <string>Strengths</string>
@@ -1283,7 +1303,7 @@
                        </property>
                       </widget>
                      </item>
-                     <item row="11" column="1">
+                     <item row="12" column="1">
                       <widget class="ValueChips" name="planStrengthsEdit">
                        <property name="accessibleName">
                         <string>Plan strengths</string>
@@ -1293,13 +1313,13 @@
                        </property>
                       </widget>
                      </item>
-<item row="12" column="0">
+<item row="13" column="0">
 <widget class="QLabel" name="planDrawLabel">
  <property name="text"><string>Draw at random</string></property>
  <property name="textRole" stdset="0"><string>caption</string></property>
 </widget>
 </item>
-<item row="12" column="1">
+<item row="13" column="1">
 <widget class="QWidget" name="planDrawBox"><property name="sizePolicy"><sizepolicy hsizetype="Ignored" vsizetype="Preferred"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><layout class="QGridLayout" name="planDrawGrid">
 <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
 <item row="0" column="0"><widget class="QLabel" name="planDrawModelsLabel"><property name="text"><string>Model</string></property></widget></item>
@@ -1367,13 +1387,13 @@
 </widget></item>
 </layout></widget>
 </item>
-<item row="13" column="0">
+<item row="14" column="0">
 <widget class="QLabel" name="planVariationLabel">
  <property name="text"><string>Prompt variation</string></property>
  <property name="textRole" stdset="0"><string>caption</string></property>
 </widget>
 </item>
-<item row="13" column="1">
+<item row="14" column="1">
 <widget class="QWidget" name="planVariationBox"><layout class="QHBoxLayout" name="planVariationLayout">
 <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
 <item><widget class="QComboBox" name="planVariationCombo">
@@ -1390,13 +1410,13 @@
 <item><spacer name="planVariationSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>0</width><height>0</height></size></property></spacer></item>
 </layout></widget>
 </item>
-<item row="14" column="0">
+<item row="15" column="0">
 <widget class="QLabel" name="planWildcardsLabel">
  <property name="text"><string>Wildcard lists</string></property>
  <property name="textRole" stdset="0"><string>caption</string></property>
 </widget>
 </item>
-<item row="14" column="1">
+<item row="15" column="1">
 <widget class="QPlainTextEdit" name="planWildcardsEdit">
  <property name="placeholderText"><string>colors: red; blue; green (one list per line; files in the wildcards folder also work)</string></property>
  <property name="minimumSize"><size><width>0</width><height>42</height></size></property>
@@ -1404,10 +1424,10 @@
  <property name="accessibleName"><string>Inline wildcard lists</string></property>
 </widget>
 </item>
-<item row="15" column="0">
+<item row="16" column="0">
 <widget class="QLabel" name="planMutationLabel"><property name="text"><string>Edit prompts</string></property><property name="textRole" stdset="0"><string>caption</string></property></widget>
 </item>
-<item row="15" column="1"><widget class="QWidget" name="planMutationBox"><property name="sizePolicy"><sizepolicy hsizetype="Ignored" vsizetype="Preferred"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><layout class="QGridLayout" name="planMutationLayout">
+<item row="16" column="1"><widget class="QWidget" name="planMutationBox"><property name="sizePolicy"><sizepolicy hsizetype="Ignored" vsizetype="Preferred"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property><layout class="QGridLayout" name="planMutationLayout">
 <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property><property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
 <item row="0" column="0"><widget class="QComboBox" name="planShuffleCombo">
  <property name="accessibleName"><string>Shuffle prompt</string></property>
@@ -1421,20 +1441,20 @@
 <item row="0" column="3"><widget class="QLabel" name="planAddLabel"><property name="text"><string>Add up to</string></property></widget></item>
 <item row="0" column="4"><widget class="QSpinBox" name="planAddSpin"><property name="maximum"><number>50</number></property><property name="accessibleName"><string>Parts to add</string></property><property name="toolTip"><string>Insert up to this many of the Parts to add into each prompt (as comma-separated parts, or words with Shuffle words).</string></property></widget></item>
 </layout></widget></item>
-<item row="16" column="0">
+<item row="17" column="0">
 <widget class="QLabel" name="planAddPartsLabel"><property name="text"><string>Parts to add</string></property><property name="textRole" stdset="0"><string>caption</string></property></widget>
 </item>
-<item row="16" column="1"><widget class="QLineEdit" name="planAddPartsEdit">
+<item row="17" column="1"><widget class="QLineEdit" name="planAddPartsEdit">
  <property name="placeholderText"><string>bokeh; film grain; golden hour</string></property>
  <property name="accessibleName"><string>Parts to add to prompts</string></property>
 </widget></item>
-<item row="17" column="0">
+<item row="18" column="0">
 <widget class="QLabel" name="planRngSeedLabel">
  <property name="text"><string>Plan seed</string></property>
  <property name="textRole" stdset="0"><string>caption</string></property>
 </widget>
 </item>
-<item row="17" column="1">
+<item row="18" column="1">
 <layout class="QGridLayout" name="planRngSeedLayout">
 <item row="0" column="0"><widget class="QLineEdit" name="planRngSeedEdit">
  <property name="accessibleName"><string>Plan random seed</string></property>

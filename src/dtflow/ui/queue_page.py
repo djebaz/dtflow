@@ -25,6 +25,7 @@ from PySide6.QtWidgets import QApplication, QFormLayout, QListWidgetItem, QMenu,
 from dtflow.core.models import BackendEvent, LoRASelection, ValidationError
 from dtflow.core.request_records import request_from_record
 from dtflow.diagnostics import event as diagnostic_event
+from dtflow.persistence.assets import AssetRegistry
 from dtflow.persistence.store import StateBusyError
 from dtflow.services.connection import Presentation, present_generation_failure
 from dtflow.services.dynamic_prompts import decode_runs
@@ -136,7 +137,14 @@ RANDOM_INPUTS = (
     "planRerollButton",
     *(f"planDraw{suffix}Spin" for suffix in DRAW_SPINS.values()),
 )
-PLAN_INPUTS = (*PLAN_WIDGETS, "planModeCombo", "planIncrementCheck", "queueCountSpinBox", *RANDOM_INPUTS)
+PLAN_INPUTS = (
+    *PLAN_WIDGETS,
+    "planFixedLorasEdit",
+    "planModeCombo",
+    "planIncrementCheck",
+    "queueCountSpinBox",
+    *RANDOM_INPUTS,
+)
 PLAN_TABLE_MAX_ROWS = 1000  # the composer preview table shows its rows in full up to this many; the composer scrolls
 PREVIEW_MS = 250  # the live preview follows edits after this pause, so typing a prompt list stays smooth
 REPEAT = "Repeat"
@@ -248,6 +256,7 @@ class QueuePage:
         editing_source: Callable[[], bool] = lambda: False,
         created_hook: Callable[[], None] = lambda: None,
         choices_source: Callable[[], dict] = dict,
+        models_source: Callable[[], dict] = dict,
         generate_hook: Callable[[], None] = lambda: None,
         reuse_hook: Callable[[dict], None] = lambda request: None,
     ):
@@ -256,6 +265,7 @@ class QueuePage:
         self._state, self._request_source, self._activity = Path(state_dir), request_source, activity
         self._simulation, self._created_hook = simulation_source, created_hook
         self._live_choices, self._generate_hook = choices_source, generate_hook
+        self._live_models = models_source  # every known model, read on each use: not narrowed to Generate's family
         self._choices = self._composer_choices
         self._reuse_hook = reuse_hook
         self._draft = None  # immutable request/backend/receipts snapshot; Generate is only an explicit copy source
@@ -430,6 +440,7 @@ class QueuePage:
         )
         for name in PLAN_WIDGETS:
             getattr(page, name).textChanged.connect(self._plan_changed)
+        page.planFixedLorasEdit.textChanged.connect(self._plan_changed)
         page.planModeCombo.currentTextChanged.connect(self._mode_changed)
         page.planIncrementCheck.toggled.connect(self._plan_changed)
         page.queueCountSpinBox.valueChanged.connect(self._plan_changed)
@@ -1526,6 +1537,10 @@ class QueuePage:
         # Generate changes checkpoint, key or inventory.
         self._draft_choices = self._live_choices()
         self._draft_job = job
+        fixed = self.page.planFixedLorasEdit
+        fixed.blockSignals(True)  # the draft's LoRAs are the row's values; callers refresh the preview
+        fixed.setText("; ".join(lora_set_value(item.identifier, item.weight) for item in request.loras))
+        fixed.blockSignals(False)
         edit = self.page.composerPromptEdit
         edit.blockSignals(True)
         edit.setPlainText(request.prompt)
@@ -1533,10 +1548,13 @@ class QueuePage:
 
     def _composer_choices(self) -> dict:
         if self._draft is None:
-            return self._live_choices()
+            return self._with_all_models(self._live_choices())
         request, name, endpoint, _ = self._draft
         choices = self._draft_choices
-        if self._backend() != (name, endpoint):
+        if self._backend() == (name, endpoint):
+            # The model list follows the inventory, not the Generate family view captured when the draft started.
+            choices = self._with_all_models(choices)
+        else:
             # Inventory and account-bound receipt choices cannot migrate to a different captured backend.
             choices = {
                 **choices,
@@ -1560,6 +1578,18 @@ class QueuePage:
             "size": f"{request.width_px}x{request.height_px}",
         }
 
+    def _with_all_models(self, choices: dict) -> dict:
+        """``choices`` with every inventory model (and its versions) in place of Generate's one-family list."""
+        everything = self._live_models()
+        models = everything.get("models")
+        if not models:
+            return choices
+        return {
+            **choices,
+            "models": list(models),
+            "model_versions": {**choices.get("model_versions", {}), **everything.get("model_versions", {})},
+        }
+
     def use_generate_settings(self) -> None:
         """An explicit one-way copy, never a continuing binding to Generate's mutable form."""
         try:
@@ -1581,7 +1611,8 @@ class QueuePage:
         prompt = self.page.composerPromptEdit.toPlainText()
         if not prompt.strip():
             raise FormError("Enter a base prompt for the new queue.", "composerPromptEdit")
-        return replace(request, prompt=prompt), name, endpoint, assets
+        # The Fixed LoRAs row is the draft's LoRA list: what it shows is what every item starts from.
+        return replace(request, prompt=prompt, loras=self._fixed_loras()), name, endpoint, assets
 
     def copy_to_generate(self) -> None:
         try:
@@ -1694,6 +1725,19 @@ class QueuePage:
         page.planStepsEdit.configure("int", "Steps", minimum=1, maximum=150)
         page.planGuidanceEdit.configure("float", "Guidance", minimum=0, maximum=50, step=0.5, decimals=2)
         page.planStrengthsEdit.configure("float", "Strength", minimum=0, maximum=1, step=0.05, decimals=2)
+        page.planFixedLorasEdit.configure(
+            "search",
+            "Fixed LoRA",
+            weights=self._offered_loras,
+            families=lambda: self._choices().get("lora_families", {}),
+            notice=self._loras_notice,
+            initial=self._fixed_loras,
+            convert=self._lora_weight_chips,
+            label=self._lora_set_label,
+            editor_title="Fixed LoRAs",
+            replace_all=True,
+            editor_hint="Check the LoRAs every item of the new queue uses and set their weights. Apply replaces the list.",
+        )
         page.planLoraSetsEdit.configure(
             "search",
             "LoRA",
@@ -1723,6 +1767,14 @@ class QueuePage:
                 "A checked LoRA without collected weights uses its slider value. Enter or Apply replaces the weights."
             ),
         )
+
+    def _fixed_loras(self) -> tuple[LoRASelection, ...]:
+        """The Fixed LoRAs row as selections, in the order shown."""
+        found: dict[str, float] = {}
+        for chip in self.page.planFixedLorasEdit.values():
+            for identifier, weight in parse_lora_set(chip):
+                found.setdefault(identifier, weight)
+        return tuple(LoRASelection(identifier, weight) for identifier, weight in found.items())
 
     def _generate_loras(self) -> tuple[LoRASelection, ...]:
         """The Generate form's LoRAs, which the LoRA-set editor starts from."""
@@ -2515,6 +2567,27 @@ class QueuePage:
             )
         self.refresh()
 
+    async def _assets_in_use(self, request, asset_ids) -> tuple[str, ...]:
+        """The selected receipts whose LoRA the request still names: one removed in the composer is not bound."""
+        if not asset_ids:
+            return tuple(asset_ids)
+        selected = {item.identifier for item in request.loras}
+        registry = AssetRegistry(self._state)
+        await registry.open()
+        try:
+            kept = []
+            for asset_id in asset_ids:
+                try:
+                    item = await registry.prepared(asset_id)
+                except ValidationError:
+                    kept.append(asset_id)  # unreadable here: the shared binding decides, as before
+                    continue
+                if item.identifier in selected:
+                    kept.append(asset_id)
+        finally:
+            await registry.aclose()
+        return tuple(kept)
+
     async def _create(
         self,
         backend,
@@ -2530,6 +2603,7 @@ class QueuePage:
         receipts = ()
         if plan is None:
             # A simple Repeat preserves the explicit Generate/Queue receipt selection.
+            asset_ids = await self._assets_in_use(request, asset_ids)
             request = await bind_prepared(self._state, backend["name"], request, asset_ids)
         else:
             dimensions = dict(plan.dimensions)
