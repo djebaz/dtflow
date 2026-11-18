@@ -32,6 +32,7 @@ from dtflow.services.dynamic_prompts import decode_runs
 from dtflow.services.preflight import checkpoint_picker_versions
 from dtflow.services.lora_naming import display_label, lora_offer, lora_offer_notice, relabel_text
 from dtflow.services.image_preparation import prepare_edit_inputs
+from dtflow.services.image_inputs import restore_image_inputs
 from dtflow.services.plan_errors import PlanError
 from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan, new_rng_seed, plan_size, resolve_plan
 from dtflow.services.wildcards import bind_wildcards, fingerprint, list_names
@@ -40,6 +41,8 @@ from dtflow.services.queue_session import (
     clear_paused_queues,
     clear_queues,
     create_edit_queue,
+    create_pose_queue,
+    create_saved_pose_queue,
     create_queue,
     create_script_queue,
     dispatch_queue,
@@ -56,6 +59,7 @@ from dtflow.services.queue_session import (
 )
 from dtflow.services.session import bind_prepared, script_asset_choices, selection_for
 from dtflow.ui.activity import Activity, RunState
+from dtflow.ui.controlnet_editor import PoseJob
 from dtflow.ui.performance import profile_slow_gui_callback
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.generation_presenter import FormError
@@ -959,7 +963,11 @@ class QueuePage:
 
     def sync_edit_fields(self) -> None:
         """Strengths apply to Inpaint edits only: shown while Generate is in Inpaint mode and a plan is composed."""
-        editing = (self._draft_job is not None if self._draft is not None else self._editing()) and self._planned()
+        editing = (
+            self._draft_job is not None and not isinstance(self._draft_job, PoseJob)
+            if self._draft is not None
+            else self._editing()
+        ) and self._planned()
         changed = self.page.planStrengthsEdit.isHidden() == editing
         self.page.planStrengthsLabel.setVisible(editing)
         self.page.planStrengthsEdit.setVisible(editing)
@@ -1249,6 +1257,13 @@ class QueuePage:
             source = await read_composer_source(self._state, queue_id)
             view = (await read_queue_views(self._state, queue_id))[0]
             edited = queue_edit_from_source(source) if source is not None else queue_edit_from_records(records)
+            # Edit as new must never silently drop a missing pose map or fall back to plain txt2img.
+            if edited.base.get("pose_control") is not None:
+                restored = request_from_record(edited.base)
+                try:
+                    await asyncio.to_thread(restore_image_inputs, self._state, restored.image_inputs)
+                except (ValidationError, OSError) as exc:
+                    raise ValidationError(f"The queue's retained pose map is unavailable: {exc}") from exc
             if source is None:
                 templates = {
                     dict(record.get("resolution_evidence", ())).get("plan.prompt_template") for record in records
@@ -1528,6 +1543,13 @@ class QueuePage:
     def quick_disclosure(self, *, plan: bool) -> str:
         name, _ = self._composer_backend() if plan else self._backend()
         source = "the new queue's draft and plan" if plan else "Generate's current request"
+        pose = (
+            (isinstance(self._draft_job, PoseJob) or self._draft[0].pose_control is not None)
+            if plan and self._draft is not None
+            else isinstance(self._edit_source(), PoseJob) if not plan else False
+        )
+        if pose:
+            return f"Uses {source}. Provider: {name}. Start sends the pose map to DT+ Cloud and may use credits."
         return f"Uses {source}. Provider: {name}. A cloud run may use credits."
 
     def _set_draft(self, request, name, endpoint, asset_ids, job) -> None:
@@ -1982,7 +2004,10 @@ class QueuePage:
         ]
         if loras:
             parts.append(f"{loras} LoRA{'s' if loras != 1 else ''}")
-        if self._draft_job is not None:
+        pose = self._draft_job.control if isinstance(self._draft_job, PoseJob) else request.pose_control
+        if pose is not None:
+            parts.append(f"Pose · {pose.checkpoint} · strength {pose.strength:g}")
+        elif self._draft_job is not None:
             parts.append(f"Inpaint · strength {request.strength:g}")
         return parts
 
@@ -2638,6 +2663,34 @@ class QueuePage:
                 if names:
                     candidates = await script_asset_choices(self._state, "cloud")
                     receipts = tuple(item for item in candidates if item.identifier in names)
+        if isinstance(job, PoseJob) or request.pose_control is not None:
+            selection = await asyncio.to_thread(
+                selection_for,
+                backend["name"],
+                backend["endpoint"],
+                self._state,
+                **{key: backend[key] for key in ("scenario", "delay", "previews") if key in backend},
+            )
+            options = dict(
+                saved=self._saved(),
+                plan=plan,
+                count=count,
+                up_next=up_next,
+                receipts=receipts,
+                composer_source=composer_source,
+            )
+            if isinstance(job, PoseJob):
+                return await create_pose_queue(
+                    self._state,
+                    backend,
+                    selection,
+                    request,
+                    job.content,
+                    job.evidence,
+                    job.control,
+                    **options,
+                )
+            return await create_saved_pose_queue(self._state, backend, selection, request, **options)
         if job is not None:
             # An Inpaint edit: stage the prepared source and mask once; nothing is sent until Start.
             selection = await asyncio.to_thread(
@@ -2845,7 +2898,12 @@ class QueuePage:
     def _plan_inputs(self, request) -> tuple:
         """Everything the pure planning step needs, read on the GUI thread so a worker can run it."""
         request = self._with_weighted_loras(request, self._lora_weight_groups())
-        return self._plan_form(), request, self._wildcards_dir, self._draft_job is not None
+        return (
+            self._plan_form(),
+            request,
+            self._wildcards_dir,
+            self._draft_job is not None and not isinstance(self._draft_job, PoseJob),
+        )
 
     @staticmethod
     def _compute_plan(form: PlanForm, request, folder: Path, edit: bool) -> tuple[Plan, PlanTable]:
