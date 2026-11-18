@@ -52,7 +52,7 @@ from dtflow.services.connection import (
 from dtflow.services.image_preparation import prepare_edit_inputs
 from dtflow.services.image_quality import assess_file
 from dtflow.services.lora_naming import relabel_text
-from dtflow.services.preflight import checkpoint_exact_version
+from dtflow.services.preflight import checkpoint_exact_version, checkpoint_picker_versions
 from dtflow.services import lora_relink
 from dtflow.services.body_pose import fit_pose_map
 from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset
@@ -950,7 +950,7 @@ class GenerationPage:
             "model": page.modelCombo.currentText().strip(),
             # Exact families (None = unknown) so Queues and Workflows can filter their LoRA pickers like Generate.
             "model_versions": {
-                page.modelCombo.itemText(index): checkpoint_exact_version(
+                page.modelCombo.itemText(index): checkpoint_picker_versions(
                     page.modelCombo.itemText(index), self._inventory_snapshot
                 )
                 for index in range(page.modelCombo.count())
@@ -1765,18 +1765,18 @@ class GenerationPage:
         checkpoint = self.page.modelCombo.currentText().strip()
         include_cloud = self._backend()[0] == "local" and self.page.includeCloudCheck.isChecked()
         model = self._catalogue.checkpoint(checkpoint, include_unavailable=include_cloud)
-        version = checkpoint_exact_version(checkpoint, self._inventory_snapshot)
+        version = checkpoint_picker_versions(checkpoint, self._inventory_snapshot)
         entries = (
             self._catalogue.compatible_loras(
                 checkpoint, domain=self._catalogue_domain(), include_unavailable=include_cloud
             )
-            if version is not None and model is not None and model.base_model is not None
+            if version and model is not None and model.base_model is not None
             else None
         )
         # Filter new choices only. Saved selections remain visible, and shared
         # preflight will reject a confirmed mismatch even if the UI is bypassed.
-        self.lora.set_candidates(entries, checkpoint_version=version, checkpoint=checkpoint)
-        if checkpoint and version is None:
+        self.lora.set_candidates(entries, checkpoint_versions=version, checkpoint=checkpoint)
+        if checkpoint and not version:
             self.lora.show_checkpoint_architecture_unknown()
 
     def _compute_units_estimate(self) -> ComputeUnitEstimate:

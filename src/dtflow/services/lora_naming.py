@@ -673,14 +673,14 @@ def relabel_text(text: str) -> str:
     return _EMBEDDED_LEGACY.sub(lambda match: display_label(match.group(0)), text)
 
 
-def lora_offer(loras: dict, lora_versions: dict, model_versions: Sequence[str | None]) -> dict:
+def lora_offer(loras: dict, lora_versions: dict, model_versions: Sequence[Collection[str]]) -> dict:
     """The LoRAs to offer for the chosen checkpoints: those whose exact family matches one of the checkpoints'.
 
     Nothing is hidden on a guess: with no checkpoint, or only checkpoints whose family is unknown, every LoRA stays
     (``lora_offer_notice`` says why). A checkpoint of unknown family among known ones does not unfilter the others,
     and a LoRA whose family is unknown also stays. Saved selections are kept visible by the editors.
     """
-    wanted = {version for version in model_versions if version is not None}
+    wanted = set().union(*model_versions)
     if not wanted:
         return dict(loras)
     return {
@@ -690,11 +690,11 @@ def lora_offer(loras: dict, lora_versions: dict, model_versions: Sequence[str | 
     }
 
 
-def lora_offer_notice(models: Sequence[str], model_versions: Sequence[str | None]) -> str | None:
+def lora_offer_notice(models: Sequence[str], model_versions: Sequence[Collection[str]]) -> str | None:
     """Why a LoRA list may not follow the checkpoints (``None`` when every checkpoint's family is known)."""
     if not models:
         return "No checkpoint is chosen, so the LoRA list is not filtered by family."
-    unknown = [model for model, version in zip(models, model_versions, strict=True) if version is None]
+    unknown = [model for model, version in zip(models, model_versions, strict=True) if not version]
     if not unknown:
         return None
     names = ", ".join(unknown)

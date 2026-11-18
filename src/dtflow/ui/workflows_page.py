@@ -1319,7 +1319,7 @@ class WorkflowsPage(QObject):
             loras = choices.get("loras") or {}
             node_model = choices.get("node_model")
             node_models = [node_model] if node_model and not str(node_model).startswith(PLACEHOLDER) else []
-            node_versions = [(choices.get("model_versions") or {}).get(model) for model in node_models]
+            node_versions = [(choices.get("model_versions") or {}).get(model, frozenset()) for model in node_models]
             lora_notice = lora_offer_notice(node_models, node_versions)
             if node_models:
                 loras = lora_offer(loras, choices.get("lora_versions") or {}, node_versions)

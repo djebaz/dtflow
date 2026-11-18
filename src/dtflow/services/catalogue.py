@@ -148,6 +148,43 @@ def _bundled_exact_versions() -> dict[str, str]:
     return versions
 
 
+# Catalogue family -> the exact versions its checkpoints can have, for families with no single one. Used only to
+# filter LoRA pickers when a checkpoint has no exact version of its own; preflight never reads it.
+_FAMILY_VERSIONS = {
+    "sdxl": ("sdxl_base_v0.9", "ssd_1b"),
+    "sd_1": ("v1",),
+    "sd_2": ("v2",),
+    "sd3": ("sd3", "sd3_large"),
+    "pixart": ("pixart",),
+    "hidream_i1": ("hidream_i1",),
+    "qwen_image": ("qwen_image", "qwen_image_2.1"),
+    "wan_2_1": ("wan_v2.1_1.3b", "wan_v2.1_14b"),
+    "wan_2_2": ("wan_v2.1_14b", "wan_v2.2_5b"),
+    "flux_2": ("flux2", "flux2_4b", "flux2_9b"),
+    "ltx_2": ("ltx2", "ltx2.3"),
+    "anima": ("cosmos2.5_2b",),
+}
+
+
+@cache
+def _bundled_families() -> dict[str, str]:
+    families: dict[str, str] = {}
+    for name in ("Models_prime.json", "Models_niche.json"):
+        for item in _records(CATALOGUE_DIR / name):
+            family, filename = item.get("base_model"), item.get("file")
+            if isinstance(family, str) and isinstance(filename, str):
+                families.setdefault(filename, family)
+    return families
+
+
+def bundled_family_versions(model_id: str) -> frozenset[str]:
+    """Exact versions a bundled checkpoint's catalogue family allows; empty when the family is unknown."""
+    exact = bundled_exact_version(model_id)
+    if exact is not None:
+        return frozenset((exact,))
+    return frozenset(_FAMILY_VERSIONS.get(_bundled_families().get(model_id, ""), ()))
+
+
 def bundled_exact_version(model_id: str) -> str | None:
     """Exact version for known unambiguous bundled checkpoints; otherwise Unknown."""
     return _bundled_exact_versions().get(model_id)

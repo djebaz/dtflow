@@ -19,7 +19,7 @@ from dtflow.core.models import (
     ResolvedGenerationRequest,
 )
 from dtflow.diagnostics import event as diagnostic_event
-from dtflow.services.catalogue import bundled_exact_version
+from dtflow.services.catalogue import bundled_exact_version, bundled_family_versions
 from dtflow.services.dynamic_prompts import PROMPT_TAGS_KEY, decode_runs, encode_runs
 
 BLOCKING = ("architecture_mismatch", "not_available", "prepared_architecture_unknown")
@@ -42,6 +42,15 @@ def checkpoint_exact_version(model_id: str, snapshot: InventorySnapshot | None =
         if entry is not None and entry.architecture:
             return entry.architecture
     return bundled_exact_version(model_id)
+
+
+def checkpoint_picker_versions(model_id: str, snapshot: InventorySnapshot | None = None) -> frozenset[str]:
+    """Exact versions whose LoRAs a picker offers for this checkpoint; empty when its family is unknown.
+
+    The exact version when known, else what its bundled catalogue family allows. Picker filtering only.
+    """
+    exact = checkpoint_exact_version(model_id, snapshot)
+    return frozenset((exact,)) if exact is not None else bundled_family_versions(model_id)
 
 
 def preflight_loras(

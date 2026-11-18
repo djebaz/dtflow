@@ -1650,7 +1650,7 @@ class QueuePage:
         models = [m for m in self.page.planModelsEdit.values() if m] or [choices.get("model") or ""]
         models = [model for model in models if model]
         versions = choices.get("model_versions", {})
-        return models, [versions.get(model) for model in models]
+        return models, [versions.get(model, frozenset()) for model in models]
 
     def _offered_loras(self) -> dict:
         """LoRA choices for the models this plan uses (Generate's checkpoint when none is chosen), as on Generate."""

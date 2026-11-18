@@ -175,7 +175,7 @@ class LoraAssetPanel:
         self._records: dict[tuple[str, str], dict] = {}
         self._inventory_families: dict[str, str] = {}
         self._inventory_checkpoints: tuple[str, ...] = ()
-        self._checkpoint_version: str | None = None
+        self._checkpoint_versions: frozenset[str] = frozenset()  # exact versions the checkpoint allows; empty = unknown
         self._checkpoint_name = ""
         self._catalogue = catalogue if catalogue is not None else Catalogue(self._state)
         self._bind_after_list: str | None = None  # identifier to bind once the registry list has been refreshed
@@ -266,9 +266,11 @@ class LoraAssetPanel:
         ]
         return tuple(dict.fromkeys(versions))
 
-    def set_candidates(self, entries, *, checkpoint_version: str | None = None, checkpoint: str = "") -> None:
+    def set_candidates(
+        self, entries, *, checkpoint_versions: frozenset[str] = frozenset(), checkpoint: str = ""
+    ) -> None:
         """Offer only known-compatible LoRAs; keep selected mismatches visible for correction."""
-        self._checkpoint_version = checkpoint_version
+        self._checkpoint_versions = checkpoint_versions
         self._checkpoint_name = checkpoint
         if entries is None:
             self._candidates = list(getattr(self, "_inventory_candidates", ()))
@@ -300,7 +302,7 @@ class LoraAssetPanel:
 
     def _candidate_compatible(self, name: str) -> bool:
         candidate = self._candidate_family(name)
-        return self._checkpoint_version is None or candidate is None or candidate == self._checkpoint_version
+        return not self._checkpoint_versions or candidate is None or candidate in self._checkpoint_versions
 
     # -- selection -------------------------------------------------------------------------------------------------
     def receipts(self) -> dict[str, str]:
@@ -472,7 +474,7 @@ class LoraAssetPanel:
         labels = labels if labels is not None else self.family_labels()
         text = _display_label(item.identifier)
         if not self._candidate_compatible(item.identifier):
-            text += f" · incompatible with {self._checkpoint_version}"
+            text += f" · incompatible with {', '.join(sorted(self._checkpoint_versions))}"
         row.label.setFullText(text)
         detail = f"{item.identifier}\nWeight: {item.weight:g}\nArchitecture: {labels.get(item.identifier, 'Unknown')}"
         if item.identifier in self._receipts:
@@ -578,7 +580,7 @@ class LoraAssetPanel:
             families=self.family_labels(),
             marks=marks,
             notice=lora_offer_notice(
-                [self._checkpoint_name] if self._checkpoint_name else [], [self._checkpoint_version]
+                [self._checkpoint_name] if self._checkpoint_name else [], [self._checkpoint_versions]
             ),
             callback=apply_selection,
         )
