@@ -56,6 +56,7 @@ jobs:
           python-version: "3.11"
 
       - name: Scan changed files in pull request
+        id: scan_pr
         if: github.event_name == 'pull_request'
         run: |
           python ./tools/check_absolute_path_leaks.py \
@@ -63,9 +64,10 @@ jobs:
             --checks absolute_only \
             --base-ref "${{ github.event.pull_request.base.sha }}" \
             --head-ref "${{ github.event.pull_request.head.sha }}" \
-            | tee leak-results.txt
+            2>&1 | tee leak-results.txt
 
       - name: Scan changed files pushed to main
+        id: scan_push
         if: github.event_name == 'push'
         run: |
           python ./tools/check_absolute_path_leaks.py \
@@ -73,9 +75,10 @@ jobs:
             --checks absolute_only \
             --base-ref "${{ github.event.before }}" \
             --head-ref "${{ github.sha }}" \
-            | tee leak-results.txt
+            2>&1 | tee leak-results.txt
 
       - name: Scan selected scope manually
+        id: scan_manual
         if: github.event_name == 'workflow_dispatch'
         run: |
           set -euo pipefail
@@ -87,17 +90,24 @@ jobs:
             --mode "${{ inputs.scan_scope }}" \
             --checks "${{ inputs.check_mode }}" \
             ${EXTRA_ARGS} \
-            | tee leak-results.txt
+            2>&1 | tee leak-results.txt
 
       - name: Output leak scan to Summary
         if: always()
+        env:
+          SCAN_FAILED: ${{ steps.scan_pr.outcome == 'failure' || steps.scan_push.outcome == 'failure' || steps.scan_manual.outcome == 'failure' }}
+          SCAN_SUCCEEDED: ${{ steps.scan_pr.outcome == 'success' || steps.scan_push.outcome == 'success' || steps.scan_manual.outcome == 'success' }}
         run: |
           echo "### 🔍 Path Leak Scan Results" >> $GITHUB_STEP_SUMMARY
           if [ -f leak-results.txt ]; then
-            if grep -q "Leak pattern(s) detected:" leak-results.txt; then
-              echo "Status: ❌ Leaks detected" >> $GITHUB_STEP_SUMMARY
+            if grep -Fxq "Leak pattern(s) detected:" leak-results.txt; then
+              echo "Status: ❌ Potential leak patterns detected; review findings" >> $GITHUB_STEP_SUMMARY
+            elif [ "${SCAN_FAILED}" = "true" ]; then
+              echo "Status: ❌ Scan failed; no clean-scan conclusion" >> $GITHUB_STEP_SUMMARY
+            elif [ "${SCAN_SUCCEEDED}" = "true" ]; then
+              echo "Status: ✅ No leak patterns detected" >> $GITHUB_STEP_SUMMARY
             else
-              echo "Status: ✅ No leaks detected" >> $GITHUB_STEP_SUMMARY
+              echo "Status: ⚠️ Scan did not complete" >> $GITHUB_STEP_SUMMARY
             fi
             echo "<details><summary>Expand to view full scan logs</summary>" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
