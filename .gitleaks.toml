@@ -1,0 +1,13 @@
+title = "DTFlow secret scanning"
+
+[extend]
+useDefault = true
+
+[[rules]]
+id = "private-key"
+
+[[rules.allowlists]]
+description = "Intentionally public offline TLS fixture keys; see tests/fixtures/tls/README.md"
+# Match only these four files, including the workflow's absolute temporary scan path.
+# Other secret rules still apply to these files; private keys elsewhere remain findings.
+paths = ['''(^|/)tests/fixtures/tls/(server|untrusted|wrongname|dnsonly)\.key$''']
