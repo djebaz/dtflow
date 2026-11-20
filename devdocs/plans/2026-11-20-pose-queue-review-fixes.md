@@ -11,7 +11,7 @@
 - [x] Correct queue-behind arguments and single queue-ID return handling.
 - [x] Support live and recorded poses with template-owned bounded body-map bytes and exact control settings, not execution identities.
 - [x] Synchronize documentation and issue scope/criteria; source-review and run permitted static checks.
-- [ ] Commit and push to the existing branch, then mark ready for review.
+- [x] Commit and push implementation to the existing branch; prepare the ready-for-review handoff on PR #513.
 
 ## Decisions and Design Changes
 
@@ -30,5 +30,6 @@
 - Passed the documented locked environment readiness check (Python 3.13.13, SQLite 3.53.1; Qt initialized offscreen, no UI render).
 - Passed focused `uv run --frozen ruff check`, `ruff format --check`, AST parsing and imports for `services/queue_templates.py`, `ui/queue_templates.py` and `ui/queue_page.py`, plus `git diff --check`. The initial format check identified two formatting changes, corrected with Ruff before the final check.
 - Independent Standards and Spec source-review passes found no additional actionable defect. Parsing verifies bounded encoded bytes, SHA-256 and declared RGB metadata; full pixel decoding remains in the shared fitting path before queue staging/submission, not a claim of pixel/runtime validation at template load.
+- Implementation commit `2a2442871a678b3f4d1cbe80a4437e5c7412aa8a` was pushed to the existing `feat/505-pose-queues` branch. Issue #505's scope/first-comment AC-9 and AC-10 and PR #513's copied criteria/limitations were updated; the new behavior criteria remain unchecked pending execution evidence. PR readiness/current-head CI are reported on GitHub, not inferred from the source checks.
 - Tests and smoke tests are not run by the agent; final runtime validation remains with the owner and eligible automatic GitHub CI.
 - No inference, training, upload, billable action, render or packaging is planned.
