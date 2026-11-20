@@ -38,18 +38,25 @@ class QueueTemplates(QObject):
     def capture(self):
         q = self.queue
         request, backend, _, _ = q._composer_request(preview=True)
+        pose = None
         if isinstance(q._draft_job, PoseJob):
-            raise ValidationError(
-                "Save the pose queue first; a live Controlnet map has not been staged for a reusable template."
-            )
-        if q._draft_job is not None:
+            pose = service.TemplatePose(q._draft_job.content, replace(q._draft_job.control, evidence=()))
+        elif request.pose_control is not None:
+            retained = q._draft_template_pose
+            if retained is None:
+                raise ValidationError("Reload the pose queue with Edit as new before saving its map as a template.")
+            pose = service.TemplatePose(*retained)
+        elif q._draft_job is not None:
             raise ValidationError("Templates support text-to-image only; image sources and masks are not portable.")
+        if pose is not None:
+            request = replace(request, schema_version=2, pose_control=None, image_inputs=None)
         recipe = service.Recipe(
             request,
             q._plan_form(),
             self.page.queueCountSpinBox.value(),
             backend,
             q._authoring_reconstructed,
+            pose,
         )
         return service.recipe_from_record(service.recipe_record(recipe))
 
@@ -273,6 +280,11 @@ class QueueTemplates(QObject):
             self._error(exc)
             return
         active = self.queue._backend()
+        if recipe.pose is not None and active[0] != "cloud":
+            self._error(
+                ValidationError("This pose template requires DT+ Cloud. Select it before loading the template.")
+            )
+            return
         mismatch = recipe.backend != active[0]
         captured = self._draft_key()
 
@@ -315,7 +327,7 @@ class QueueTemplates(QObject):
                 recipe.count,
                 "Reconstructed authoring input; review before reuse." if recipe.reconstructed else "",
             )
-            self.queue._edit_loaded((edited, {"name": active[0], "endpoint": active[1]}, ()), None)
+            self.queue._edit_loaded((edited, {"name": active[0], "endpoint": active[1]}, (), recipe.pose), None)
             self.page.queueCountSpinBox.setValue(recipe.count)  # retain the dormant Repeat count in Pair/Cross recipes
         finally:
             del blockers

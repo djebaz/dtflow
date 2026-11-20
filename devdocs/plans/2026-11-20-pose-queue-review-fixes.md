@@ -1,0 +1,34 @@
+# Plan: PR #513 review fixes
+
+## Scope
+
+- In: repair the newly enabled pose Generate/Retry queue-behind path and implement owner-approved local pose templates on the existing PR branch.
+- Out: tests, fixtures, renders, provider calls, packaging, merge, and changes to local pose staging or acceptance levels.
+
+## Action items
+
+- [x] Pin PR #513 head, inspect the clean branch and review findings, and return the PR to draft during revision.
+- [x] Correct queue-behind arguments and single queue-ID return handling.
+- [x] Support live and recorded poses with template-owned bounded body-map bytes and exact control settings, not execution identities.
+- [x] Synchronize documentation and issue scope/criteria; source-review and run permitted static checks.
+- [ ] Commit and push to the existing branch, then mark ready for review.
+
+## Decisions and Design Changes
+
+- 2026-11-20: Owner approved expanding PR #513 to local pose templates. Supersedes the initial rejection-only repair; retain no attempt identities, input paths, receipts, extraction evidence or consent in recipes.
+- 2026-11-20: Keep the schema-1 SQLite store and its existing 256 KiB recipe/4 MiB library/128-name limits. Recipe v2 embeds a SHA-256-verified RGB body map (at most 128 KiB encoded PNG before Base64) and exact pose controls; older text-only recipe v1 stays supported. Oversize/invalid recipes refuse without mutation. No separate asset store or cleanup is needed: map and recipe update/delete atomically together.
+- 2026-11-20: Template Save/Load never stages inputs, contacts a provider, extracts a pose or downloads a model. Recorded poses use the already verified retained fitted body map; queue creation fits/stages a fresh input set through the existing pose path. Template loading preserves seeds and never changes Generate or the connection.
+- 2026-11-20: Preserve local durable map staging; AC-3 clarification remains pending explicit owner approval.
+
+## Open questions
+
+- No implementation blockers. AC-3 owner approval remains an acceptance gate, not granted by these repairs.
+
+## Validation
+
+- [x] Static checks and source review completed.
+- Passed the documented locked environment readiness check (Python 3.13.13, SQLite 3.53.1; Qt initialized offscreen, no UI render).
+- Passed focused `uv run --frozen ruff check`, `ruff format --check`, AST parsing and imports for `services/queue_templates.py`, `ui/queue_templates.py` and `ui/queue_page.py`, plus `git diff --check`. The initial format check identified two formatting changes, corrected with Ruff before the final check.
+- Independent Standards and Spec source-review passes found no additional actionable defect. Parsing verifies bounded encoded bytes, SHA-256 and declared RGB metadata; full pixel decoding remains in the shared fitting path before queue staging/submission, not a claim of pixel/runtime validation at template load.
+- Tests and smoke tests are not run by the agent; final runtime validation remains with the owner and eligible automatic GitHub CI.
+- No inference, training, upload, billable action, render or packaging is planned.

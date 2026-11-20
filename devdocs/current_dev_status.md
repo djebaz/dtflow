@@ -1,6 +1,6 @@
 # Current development status
 
-Updated 2026-11-18 for 6.4.1 preparation and in-review PR #510; the merged-main baseline remains `81d68eb7` through PR #498. [6.4.0](https://github.com/djebaz/dtflow/releases/tag/v6.4.0) is published. See [6.4.1 notes](releases/v6.4.1.md) and its [release audit](plans/2026-11-16-release-6.4.1.md) for the next release scope and build gates.
+Updated 2026-11-20 for PR #513 review repairs, 6.4.1 preparation and in-review PR #510; the merged-main baseline remains `81d68eb7` through PR #498. [6.4.0](https://github.com/djebaz/dtflow/releases/tag/v6.4.0) is published. See [6.4.1 notes](releases/v6.4.1.md) and its [release audit](plans/2026-11-16-release-6.4.1.md) for the next release scope and build gates.
 
 ## Delivered since 6.4.0
 
@@ -13,12 +13,13 @@ Updated 2026-11-18 for 6.4.1 preparation and in-review PR #510; the merged-main 
 
 ## Unreleased: Controlnet mode (#503, PR #504)
 
-- Generate Controlnet mode: pose guidance from a photograph (local YOLO26n-pose ONNX) or a body map with Union Pro 1.0 on DT+ Cloud; control force, apply from / to, person pick, Gallery Use settings restore. Verified only for `flux_1_dev_q5p` with Union Pro 1.0 q5p at 0.7; other FLUX.1 checkpoints are "not verified". Queueing a pose is implemented in draft PR #513 (#505), pending owner smoke and review.
+- Generate Controlnet mode: pose guidance from a photograph (local YOLO26n-pose ONNX) or a body map with Union Pro 1.0 on DT+ Cloud; control force, apply from / to, person pick, Gallery Use settings restore. Verified only for `flux_1_dev_q5p` with Union Pro 1.0 q5p at 0.7; other FLUX.1 checkpoints are "not verified". Queueing a pose is implemented in PR #513 (#505), pending owner smoke and review.
 
-## Unreleased: Controlnet pose queues (#505, draft PR #513)
+## Unreleased: Controlnet pose queues (#505, PR #513)
 
 - Images N, Repeat and Queue plans can retain one locally staged pose map and its DT+ Union control across individual single-image items. The queue dispatcher restores and verifies it before submission; Relaunch/Retry/Edit as new keep the pose evidence. No provider inference or owner acceptance was run by the agent.
-- **Pending validation:** owner Windows/DT+ smoke, saved-map failure/retry paths, and full CI. An unstaged live Controlnet source cannot yet be saved as a reusable queue template; existing queue/plan records preserve the staged pose.
+- Review repairs correct Generate/Retry queue-behind argument and queue-ID handling. The owner-approved template extension saves bounded body-map bytes and exact controls from live or recorded poses, independent of source execution files; text-only v1 recipes remain supported. Template Save/Load stays local and never grants upload consent.
+- **Pending validation:** owner Windows/DT+ smoke, saved-map failure/retry paths, and full CI. AC-3 still needs owner approval for local durable map staging during queue creation. See the [review-fix plan](plans/2026-11-20-pose-queue-review-fixes.md) for static evidence and limits.
 
 ## Unreleased: queue composer corrections (#507, PR #510)
 
@@ -50,6 +51,6 @@ Updated 2026-11-18 for 6.4.1 preparation and in-review PR #510; the merged-main 
 
 - Advanced scheduling/fairness, broader verified image/cloud/media operations, script sample coverage and mixer acceptance remain separately scoped.
 - Logs #106 memory/byte budgets and #107 fault/native/storage/policy/DPI acceptance remain open; export admission is not full budget compliance. Platform #77, gallery #88 and startup/package #169/#170 retain existing ownership.
-- Execution schema remains 9; LoRA asset registry remains 6. Back up complete state and outputs; unsupported registries are refused rather than reset. Queue templates remain version 1. Restore a pre-upgrade backup for downgrade.
+- Execution schema remains 9; LoRA asset registry remains 6. Back up complete state and outputs; unsupported registries are refused rather than reset. Queue template database schema remains 1, with text-only recipe v1 and pose recipe v2. Restore a pre-upgrade backup for downgrade.
 - No simultaneous Windows/WSL SQLite writers, silent provider/account switch, implicit upload consent or uncertain-work replay. Manual Retry can submit a new billable request; existing bounded automatic retry semantics remain unchanged.
 - Older-CPU source observations do not establish compatibility of a new packaged executable. Follow [releasing](guides/releasing.md) and [building](guides/building.md) for artifact acceptance.

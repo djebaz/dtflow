@@ -57,6 +57,7 @@ from dtflow.services.queue_session import (
     retry_queue_item,
     RELAUNCH_STATES,
 )
+from dtflow.services.queue_templates import TemplatePose
 from dtflow.services.session import bind_prepared, script_asset_choices, selection_for
 from dtflow.ui.activity import Activity, RunState
 from dtflow.ui.controlnet_editor import PoseJob
@@ -275,6 +276,7 @@ class QueuePage:
         self._draft = None  # immutable request/backend/receipts snapshot; Generate is only an explicit copy source
         self._draft_choices: dict = {}  # initial inventory suggestions, not a live view of later Generate edits
         self._draft_job = None
+        self._draft_template_pose = None  # verified body-map bytes/control for Save template after Edit as new
         self._authoring_reconstructed = False
         self._composing = False
         self.plan_hook: Callable[[], None] = lambda: None  # the Queue popover's trigger follows plan edits
@@ -1257,13 +1259,17 @@ class QueuePage:
             source = await read_composer_source(self._state, queue_id)
             view = (await read_queue_views(self._state, queue_id))[0]
             edited = queue_edit_from_source(source) if source is not None else queue_edit_from_records(records)
+            template_pose = None
             # Edit as new must never silently drop a missing pose map or fall back to plain txt2img.
             if edited.base.get("pose_control") is not None:
                 restored = request_from_record(edited.base)
                 try:
-                    await asyncio.to_thread(restore_image_inputs, self._state, restored.image_inputs)
+                    prepared = await asyncio.to_thread(restore_image_inputs, self._state, restored.image_inputs)
                 except (ValidationError, OSError) as exc:
                     raise ValidationError(f"The queue's retained pose map is unavailable: {exc}") from exc
+                # Keep already verified body-map bytes for optional Save template, not an attempt reference.
+                # Template size limits are checked only on Save, so a large pose can still be edited/relaunched.
+                template_pose = (prepared.image, replace(restored.pose_control, evidence=()))
             if source is None:
                 templates = {
                     dict(record.get("resolution_evidence", ())).get("plan.prompt_template") for record in records
@@ -1282,7 +1288,7 @@ class QueuePage:
             )
             if not isinstance(asset_ids, (list, tuple)) or any(type(value) is not str for value in asset_ids):
                 raise ValidationError("Stored queue asset selections are unreadable.")
-            return edited, view["backend"], tuple(asset_ids)
+            return edited, view["backend"], tuple(asset_ids), template_pose
 
         self._runner.submit(work(), self._edit_loaded)
 
@@ -1291,7 +1297,8 @@ class QueuePage:
             shown = Presentation("error", "Not loaded", str(failure))
             self._message(shown if isinstance(failure, ValidationError) else present_generation_failure(failure))
             return
-        result, backend, asset_ids = result
+        template_pose = result[3] if len(result) == 4 else None
+        result, backend, asset_ids = result[:3]
         if not self.templates.applying:
             self.templates.detach()
         self._authoring_reconstructed = bool(result.note)
@@ -1302,8 +1309,12 @@ class QueuePage:
             backend["name"],
             backend.get("endpoint"),
             asset_ids,
-            None,
+            PoseJob(template_pose.content, (("origin", "queue_template"),), template_pose.control)
+            if isinstance(template_pose, TemplatePose)
+            else None,
         )
+        if isinstance(template_pose, tuple):
+            self._draft_template_pose = template_pose
         self.open_composer()
         page.planModeCombo.setCurrentText(form.mode)
         page.planPromptsEdit.setPlainText(form.prompts)
@@ -1560,6 +1571,7 @@ class QueuePage:
         # Generate changes checkpoint, key or inventory.
         self._draft_choices = self._live_choices()
         self._draft_job = job
+        self._draft_template_pose = None
         fixed = self.page.planFixedLorasEdit
         fixed.blockSignals(True)  # the draft's LoRAs are the row's values; callers refresh the preview
         fixed.setText("; ".join(lora_set_value(item.identifier, item.weight) for item in request.loras))
@@ -2577,7 +2589,7 @@ class QueuePage:
         backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
 
         async def work():
-            queue_id, _ = await self._create(backend, request, asset_ids, 1, None, None, job, up_next=True)
+            queue_id = await self._create(backend, request, asset_ids, 1, job=job, up_next=True)
             return queue_id, (await read_queue_views(self._state, queue_id))[0]["status"]
 
         self._runner.submit(work(), self._behind)
@@ -2793,9 +2805,7 @@ class QueuePage:
             self.page.startQueueButton.setToolTip(
                 "Creates the queue and starts it from this window. Real, possibly billable generation."
             )
-            self.page.addQueueButton.setToolTip(
-                "Saves it up next: it starts by itself when the running queue ends."
-            )
+            self.page.addQueueButton.setToolTip("Saves it up next: it starts by itself when the running queue ends.")
             self.page.createQueueButton.setToolTip(
                 "Saves the queue paused, also while another queue runs. Contacts no provider and uploads nothing."
             )
