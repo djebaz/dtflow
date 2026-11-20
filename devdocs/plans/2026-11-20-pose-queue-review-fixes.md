@@ -24,6 +24,15 @@
 
 - No wording questions remain. AC-3 behavioral verification remains an acceptance gate; owner approval of the revised wording does not supply execution evidence.
 
+## Owner smoke follow-up: plan pose capture
+
+- Owner report: [PR comment 7051433713](https://github.com/djebaz/dtflow/pull/513#issuecomment-7051433713), 2026-11-20, reported while PR head was `7d93d475`. The report does not identify the tested executable/source revision, so that head is context, not proven executable identity.
+- Owner confirms Images N and Repeat → Add to queue preserve pose settings; Prepare Queue / New queue plan instead records strength 0.70, Balanced and range 0..1 after Generate was set to 0.85, Control and non-default range. Exact checkpoint/quantization propagation and provider-effective values were not established by the smoke report. AC-1 remains unchecked; no other runtime AC is inferred passed.
+- Source trace: Images N/quick Repeat takes the current Generate request and `queue_edit_job`; New queue plan takes `_composer_request` and `_draft_job`, captured earlier by the independent composer. `create_pose_queue` copies that job's control into every request, request serialization preserves it, and the wire uses its exact checkpoint/strength/mode/range with a consistency check. This identifies stale captured input as the source-supported explanation, not provider defaulting; the failing runtime capture timing itself is not yet reproduced.
+- [x] Owner selected “Refresh pose explicitly, keep plan variations”: only the explicit Controlnet popup's Plan start/add action reuses Use Generate settings in pose-only mode. It refreshes the map/exact controls while keeping the Queue draft's base, seeds, LoRAs and plan variations (capture Generate's base only for a missing draft); merely opening the popup, Repeat and global/composer Plan remain unchanged. The popup discloses the transfer. Invalid current pose, changed connection or incompatible image draft refuses without falling back to the old draft. Existing reconstruction disclosures and saved template content remain intact.
+- [x] Repair the capture/presentation path and source-review persistence/wire propagation. The composer summary and queued Parameters tooltip show the exact checkpoint identifier, strength, force and range; no new logging sink, protocol mapping or diagnostic contract was needed.
+- [x] Run only permitted static checks: locked readiness (Python 3.13.13 / SQLite 3.53.1), focused Ruff lint/format and AST/import checks for `queue_page.py`, `queue_popover.py`, `queue_model.py` and `main_window.py`, and `git diff --check` passed. Independent Standards/Spec source reviews found no actionable issue. Final publication/head and current CI evidence are recorded on PR #513; no agent tests/renders/provider calls or paid owner-test reruns were performed. Runtime retest of non-default controls remains pending.
+
 ## Validation
 
 - [x] Static checks and source review completed.

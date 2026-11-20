@@ -544,7 +544,10 @@ class MainWindow:
         for button in (self.queue_popover.start_button, self.queue_popover.add_button):
             button.clicked.connect(self.remember)  # a run start, like Generate image
         self.generation_page.queueGenerateButton.clicked.connect(
-            lambda: self.queue_popover.open_at(self.generation_page.queueGenerateButton)
+            lambda: self.queue_popover.open_at(
+                self.generation_page.queueGenerateButton,
+                capture_generate_plan=self.generation.controlnet.active,
+            )
         )
         self.generation.queue_behind = self.queue.queue_behind
         self.generation.queue_images = self._queue_images

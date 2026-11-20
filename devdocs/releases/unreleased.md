@@ -21,6 +21,7 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 
 ## Fixed
 
+- Controlnet → New queue plan explicitly refreshes the current pose map/controls through Use Generate settings' pose-only mode, preserving the Queue draft's base settings and plan variations instead of reusing a stale composer pose. The composer summary and queued Parameters tooltip expose exact pose checkpoint/quantization, strength, force and range (PR #513; static-only repair of owner-reported AC-1 failure, runtime retest pending).
 - Generate/Retry can hand a pose to the queue-behind creation path without an argument-count or queue-ID unpacking error. Pose templates own their maps instead of retaining staged execution identities (PR #513; source-reviewed, owner smoke pending).
 - Queued pose items preserve their control and retained map across dispatch, Relaunch, Retry and Edit as new. Missing staged inputs fail explicitly instead of falling back to unguided text-to-image generation (PR #513; acceptance pending).
 - **Edit as new queue…** no longer silently carries unwanted fixed LoRAs from older plans; reconstructed drafts and manually removed fixed LoRAs discard obsolete DT+ receipt bindings without changing the source queue (PR #510).

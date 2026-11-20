@@ -1625,18 +1625,40 @@ class QueuePage:
             "model_versions": {**choices.get("model_versions", {}), **everything.get("model_versions", {})},
         }
 
-    def use_generate_settings(self) -> None:
+    def use_generate_settings(self, *, pose_only: bool = False) -> bool:
         """An explicit one-way copy, never a continuing binding to Generate's mutable form."""
         try:
-            request, name, endpoint, assets = self._request_source(preview=True)
-            self._set_draft(request, name, endpoint, assets, self._edit_source())
-            self._authoring_reconstructed = False
-        except FormError as exc:
+            job = self._edit_source()
+            keep_base = pose_only and self._draft is not None
+            if pose_only and not isinstance(job, PoseJob):
+                raise FormError("Choose a valid Controlnet pose before creating this plan.", None)
+            if keep_base:
+                request, name, endpoint, assets = self._composer_request(preview=True)
+                if (name, endpoint) != self._backend():
+                    raise FormError(
+                        "The queue draft uses another connection. Use Generate settings explicitly before planning.",
+                        None,
+                    )
+                if request.operation != "txt2img" or (
+                    self._draft_job is not None and not isinstance(self._draft_job, PoseJob)
+                ):
+                    raise FormError("Use Generate settings to replace the Inpaint draft before a pose plan.", None)
+                # Reuse the existing copy seam without reading/rerolling Generate's seed or changing plan rows.
+                # A recorded pose's execution references must not survive the explicit fresh-map capture.
+                request = replace(request, schema_version=2, pose_control=None, image_inputs=None)
+            else:
+                request, name, endpoint, assets = self._request_source(preview=True)
+            self._set_draft(request, name, endpoint, assets, job)
+            if not keep_base:
+                self._authoring_reconstructed = False
+        except ValidationError as exc:
             self._message(Presentation("error", "Draft not replaced", str(exc)))
-            return
+            return False
         self.sync_edit_fields()
         self._plan_changed()
         self.preview()
+        self.templates.changed()
+        return True
 
     def _composer_request(self, *, preview=False):
         if self._draft is None:
@@ -2019,7 +2041,10 @@ class QueuePage:
             parts.append(f"{loras} LoRA{'s' if loras != 1 else ''}")
         pose = self._draft_job.control if isinstance(self._draft_job, PoseJob) else request.pose_control
         if pose is not None:
-            parts.append(f"Pose · {pose.checkpoint} · strength {pose.strength:g}")
+            parts.append(
+                f"Pose · {pose.checkpoint} · strength {pose.strength:g} · {pose.control_mode} "
+                f"· {pose.guidance_start:g}–{pose.guidance_end:g}"
+            )
         elif self._draft_job is not None:
             parts.append(f"Inpaint · strength {request.strength:g}")
         return parts
