@@ -19,7 +19,7 @@ Updated 2026-11-20 for PR #513 review repairs, 6.4.1 preparation and in-review P
 
 - Images N, Repeat and Queue plans can retain one locally staged pose map and its DT+ Union control across individual single-image items. The queue dispatcher restores and verifies it before submission; Relaunch/Retry/Edit as new keep the pose evidence. No provider inference or owner acceptance was run by the agent.
 - Review repairs correct Generate/Retry queue-behind argument and queue-ID handling. The owner-approved template extension saves bounded body-map bytes and exact controls from live or recorded poses, independent of source execution files; text-only v1 recipes remain supported. Template Save/Load stays local and never grants upload consent.
-- **Pending validation:** owner Windows/DT+ smoke, saved-map failure/retry paths, and full CI. AC-3 still needs owner approval for local durable map staging during queue creation. See the [review-fix plan](plans/2026-11-20-pose-queue-review-fixes.md) for static evidence and limits.
+- **Pending validation:** owner Windows/DT+ smoke, saved-map failure/retry paths, and full CI. The owner requested updating AC-3 to permit inventory refresh and local durable map staging after scope checks, while preserving Start/Add-to-queue upload consent; its Must level and unchecked behavioral acceptance remain unchanged. See the [review-fix plan](plans/2026-11-20-pose-queue-review-fixes.md) for static evidence and limits.
 
 ## Unreleased: queue composer corrections (#507, PR #510)
 

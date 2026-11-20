@@ -18,11 +18,11 @@
 - 2026-11-20: Owner approved expanding PR #513 to local pose templates. Supersedes the initial rejection-only repair; retain no attempt identities, input paths, receipts, extraction evidence or consent in recipes.
 - 2026-11-20: Keep the schema-1 SQLite store and its existing 256 KiB recipe/4 MiB library/128-name limits. Recipe v2 embeds a SHA-256-verified RGB body map (at most 128 KiB encoded PNG before Base64) and exact pose controls; older text-only recipe v1 stays supported. Oversize/invalid recipes refuse without mutation. No separate asset store or cleanup is needed: map and recipe update/delete atomically together.
 - 2026-11-20: Template Save/Load never stages inputs, contacts a provider, extracts a pose or downloads a model. Recorded poses use the already verified retained fitted body map; queue creation fits/stages a fresh input set through the existing pose path. Template loading preserves seeds and never changes Generate or the connection.
-- 2026-11-20: Preserve local durable map staging; AC-3 clarification remains pending explicit owner approval.
+- 2026-11-20: Owner requested aligning AC-3 with the implemented boundary: permit inventory refresh and local durable hash-verified map fitting/staging after scope checks, with no upload/generation during creation. Start/Start now or explicit Add to queue scheduling grants later upload/generation consent. Issue #505's first-comment criterion and PR #513's copy retain the same 🟦 Must level. This wording approval is not runtime acceptance or a waiver; the PR checkbox remains unchecked.
 
 ## Open questions
 
-- No implementation blockers. AC-3 owner approval remains an acceptance gate, not granted by these repairs.
+- No wording questions remain. AC-3 behavioral verification remains an acceptance gate; owner approval of the revised wording does not supply execution evidence.
 
 ## Validation
 
