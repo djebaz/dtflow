@@ -32,6 +32,7 @@ from dtflow.services.dynamic_prompts import decode_runs
 from dtflow.services.preflight import checkpoint_picker_versions
 from dtflow.services.lora_naming import display_label, lora_offer, lora_offer_notice, relabel_text
 from dtflow.services.image_preparation import prepare_edit_inputs
+from dtflow.services.image_inputs import restore_image_inputs
 from dtflow.services.plan_errors import PlanError
 from dtflow.services.planning import Plan, PlanTable, describe_plan, expand_plan, new_rng_seed, plan_size, resolve_plan
 from dtflow.services.wildcards import bind_wildcards, fingerprint, list_names
@@ -40,6 +41,8 @@ from dtflow.services.queue_session import (
     clear_paused_queues,
     clear_queues,
     create_edit_queue,
+    create_pose_queue,
+    create_saved_pose_queue,
     create_queue,
     create_script_queue,
     dispatch_queue,
@@ -54,8 +57,10 @@ from dtflow.services.queue_session import (
     retry_queue_item,
     RELAUNCH_STATES,
 )
+from dtflow.services.queue_templates import TemplatePose
 from dtflow.services.session import bind_prepared, script_asset_choices, selection_for
 from dtflow.ui.activity import Activity, RunState
+from dtflow.ui.controlnet_editor import PoseJob
 from dtflow.ui.performance import profile_slow_gui_callback
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.generation_presenter import FormError
@@ -271,6 +276,7 @@ class QueuePage:
         self._draft = None  # immutable request/backend/receipts snapshot; Generate is only an explicit copy source
         self._draft_choices: dict = {}  # initial inventory suggestions, not a live view of later Generate edits
         self._draft_job = None
+        self._draft_template_pose = None  # verified body-map bytes/control for Save template after Edit as new
         self._authoring_reconstructed = False
         self._composing = False
         self.plan_hook: Callable[[], None] = lambda: None  # the Queue popover's trigger follows plan edits
@@ -959,7 +965,11 @@ class QueuePage:
 
     def sync_edit_fields(self) -> None:
         """Strengths apply to Inpaint edits only: shown while Generate is in Inpaint mode and a plan is composed."""
-        editing = (self._draft_job is not None if self._draft is not None else self._editing()) and self._planned()
+        editing = (
+            self._draft_job is not None and not isinstance(self._draft_job, PoseJob)
+            if self._draft is not None
+            else self._editing()
+        ) and self._planned()
         changed = self.page.planStrengthsEdit.isHidden() == editing
         self.page.planStrengthsLabel.setVisible(editing)
         self.page.planStrengthsEdit.setVisible(editing)
@@ -1249,6 +1259,17 @@ class QueuePage:
             source = await read_composer_source(self._state, queue_id)
             view = (await read_queue_views(self._state, queue_id))[0]
             edited = queue_edit_from_source(source) if source is not None else queue_edit_from_records(records)
+            template_pose = None
+            # Edit as new must never silently drop a missing pose map or fall back to plain txt2img.
+            if edited.base.get("pose_control") is not None:
+                restored = request_from_record(edited.base)
+                try:
+                    prepared = await asyncio.to_thread(restore_image_inputs, self._state, restored.image_inputs)
+                except (ValidationError, OSError) as exc:
+                    raise ValidationError(f"The queue's retained pose map is unavailable: {exc}") from exc
+                # Keep already verified body-map bytes for optional Save template, not an attempt reference.
+                # Template size limits are checked only on Save, so a large pose can still be edited/relaunched.
+                template_pose = (prepared.image, replace(restored.pose_control, evidence=()))
             if source is None:
                 templates = {
                     dict(record.get("resolution_evidence", ())).get("plan.prompt_template") for record in records
@@ -1267,7 +1288,7 @@ class QueuePage:
             )
             if not isinstance(asset_ids, (list, tuple)) or any(type(value) is not str for value in asset_ids):
                 raise ValidationError("Stored queue asset selections are unreadable.")
-            return edited, view["backend"], tuple(asset_ids)
+            return edited, view["backend"], tuple(asset_ids), template_pose
 
         self._runner.submit(work(), self._edit_loaded)
 
@@ -1276,7 +1297,8 @@ class QueuePage:
             shown = Presentation("error", "Not loaded", str(failure))
             self._message(shown if isinstance(failure, ValidationError) else present_generation_failure(failure))
             return
-        result, backend, asset_ids = result
+        template_pose = result[3] if len(result) == 4 else None
+        result, backend, asset_ids = result[:3]
         if not self.templates.applying:
             self.templates.detach()
         self._authoring_reconstructed = bool(result.note)
@@ -1287,8 +1309,12 @@ class QueuePage:
             backend["name"],
             backend.get("endpoint"),
             asset_ids,
-            None,
+            PoseJob(template_pose.content, (("origin", "queue_template"),), template_pose.control)
+            if isinstance(template_pose, TemplatePose)
+            else None,
         )
+        if isinstance(template_pose, tuple):
+            self._draft_template_pose = template_pose
         self.open_composer()
         page.planModeCombo.setCurrentText(form.mode)
         page.planPromptsEdit.setPlainText(form.prompts)
@@ -1528,6 +1554,14 @@ class QueuePage:
     def quick_disclosure(self, *, plan: bool) -> str:
         name, _ = self._composer_backend() if plan else self._backend()
         source = "the new queue's draft and plan" if plan else "Generate's current request"
+        if plan:
+            pose = self._draft is not None and (
+                isinstance(self._draft_job, PoseJob) or self._draft[0].pose_control is not None
+            )
+        else:
+            pose = isinstance(self._edit_source(), PoseJob)
+        if pose:
+            return f"Uses {source}. Provider: {name}. Start sends the pose map to DT+ Cloud and may use credits."
         return f"Uses {source}. Provider: {name}. A cloud run may use credits."
 
     def _set_draft(self, request, name, endpoint, asset_ids, job) -> None:
@@ -1537,6 +1571,7 @@ class QueuePage:
         # Generate changes checkpoint, key or inventory.
         self._draft_choices = self._live_choices()
         self._draft_job = job
+        self._draft_template_pose = None
         fixed = self.page.planFixedLorasEdit
         fixed.blockSignals(True)  # the draft's LoRAs are the row's values; callers refresh the preview
         fixed.setText("; ".join(lora_set_value(item.identifier, item.weight) for item in request.loras))
@@ -1590,18 +1625,40 @@ class QueuePage:
             "model_versions": {**choices.get("model_versions", {}), **everything.get("model_versions", {})},
         }
 
-    def use_generate_settings(self) -> None:
+    def use_generate_settings(self, *, pose_only: bool = False) -> bool:
         """An explicit one-way copy, never a continuing binding to Generate's mutable form."""
         try:
-            request, name, endpoint, assets = self._request_source(preview=True)
-            self._set_draft(request, name, endpoint, assets, self._edit_source())
-            self._authoring_reconstructed = False
-        except FormError as exc:
+            job = self._edit_source()
+            keep_base = pose_only and self._draft is not None
+            if pose_only and not isinstance(job, PoseJob):
+                raise FormError("Choose a valid Controlnet pose before creating this plan.", None)
+            if keep_base:
+                request, name, endpoint, assets = self._composer_request(preview=True)
+                if (name, endpoint) != self._backend():
+                    raise FormError(
+                        "The queue draft uses another connection. Use Generate settings explicitly before planning.",
+                        None,
+                    )
+                if request.operation != "txt2img" or (
+                    self._draft_job is not None and not isinstance(self._draft_job, PoseJob)
+                ):
+                    raise FormError("Use Generate settings to replace the Inpaint draft before a pose plan.", None)
+                # Reuse the existing copy seam without reading/rerolling Generate's seed or changing plan rows.
+                # A recorded pose's execution references must not survive the explicit fresh-map capture.
+                request = replace(request, schema_version=2, pose_control=None, image_inputs=None)
+            else:
+                request, name, endpoint, assets = self._request_source(preview=True)
+            self._set_draft(request, name, endpoint, assets, job)
+            if not keep_base:
+                self._authoring_reconstructed = False
+        except ValidationError as exc:
             self._message(Presentation("error", "Draft not replaced", str(exc)))
-            return
+            return False
         self.sync_edit_fields()
         self._plan_changed()
         self.preview()
+        self.templates.changed()
+        return True
 
     def _composer_request(self, *, preview=False):
         if self._draft is None:
@@ -1982,7 +2039,13 @@ class QueuePage:
         ]
         if loras:
             parts.append(f"{loras} LoRA{'s' if loras != 1 else ''}")
-        if self._draft_job is not None:
+        pose = self._draft_job.control if isinstance(self._draft_job, PoseJob) else request.pose_control
+        if pose is not None:
+            parts.append(
+                f"Pose · {pose.checkpoint} · strength {pose.strength:g} · {pose.control_mode} "
+                f"· {pose.guidance_start:g}–{pose.guidance_end:g}"
+            )
+        elif self._draft_job is not None:
             parts.append(f"Inpaint · strength {request.strength:g}")
         return parts
 
@@ -2551,7 +2614,7 @@ class QueuePage:
         backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
 
         async def work():
-            queue_id, _ = await self._create(backend, request, asset_ids, 1, None, None, job, up_next=True)
+            queue_id = await self._create(backend, request, asset_ids, 1, job=job, up_next=True)
             return queue_id, (await read_queue_views(self._state, queue_id))[0]["status"]
 
         self._runner.submit(work(), self._behind)
@@ -2638,6 +2701,34 @@ class QueuePage:
                 if names:
                     candidates = await script_asset_choices(self._state, "cloud")
                     receipts = tuple(item for item in candidates if item.identifier in names)
+        if isinstance(job, PoseJob) or request.pose_control is not None:
+            selection = await asyncio.to_thread(
+                selection_for,
+                backend["name"],
+                backend["endpoint"],
+                self._state,
+                **{key: backend[key] for key in ("scenario", "delay", "previews") if key in backend},
+            )
+            options = dict(
+                saved=self._saved(),
+                plan=plan,
+                count=count,
+                up_next=up_next,
+                receipts=receipts,
+                composer_source=composer_source,
+            )
+            if isinstance(job, PoseJob):
+                return await create_pose_queue(
+                    self._state,
+                    backend,
+                    selection,
+                    request,
+                    job.content,
+                    job.evidence,
+                    job.control,
+                    **options,
+                )
+            return await create_saved_pose_queue(self._state, backend, selection, request, **options)
         if job is not None:
             # An Inpaint edit: stage the prepared source and mask once; nothing is sent until Start.
             selection = await asyncio.to_thread(
@@ -2720,7 +2811,29 @@ class QueuePage:
         self._show(self.page.planCountLabel, level, sentence(readout_text(text)))
         if level != "ok":
             self.page.planTableView.hide()  # reject stale previews immediately on invalid inputs
-        self.page.startQueueButton.setText(f"Start now ({text})" if level == "ok" else "Start now")
+        pose = self._draft is not None and (
+            isinstance(self._draft_job, PoseJob) or self._draft[0].pose_control is not None
+        )
+        label = "Start pose now" if pose else "Start now"
+        self.page.startQueueButton.setText(f"{label} ({text})" if level == "ok" else label)
+        if pose:
+            self.page.startQueueButton.setToolTip(
+                "Start sends the staged pose map to DT+ Cloud and may consume credits."
+            )
+            self.page.addQueueButton.setToolTip(
+                "Save up next; when it starts, the pose map is sent to DT+ Cloud and may consume credits."
+            )
+            self.page.createQueueButton.setToolTip(
+                "Check DT+ inventory and save the map locally. Nothing is uploaded or generated until Start."
+            )
+        else:
+            self.page.startQueueButton.setToolTip(
+                "Creates the queue and starts it from this window. Real, possibly billable generation."
+            )
+            self.page.addQueueButton.setToolTip("Saves it up next: it starts by itself when the running queue ends.")
+            self.page.createQueueButton.setToolTip(
+                "Saves the queue paused, also while another queue runs. Contacts no provider and uploads nothing."
+            )
         self._actions_fit.refit()
         self._schedule_preview()
         self.plan_hook()
@@ -2845,18 +2958,29 @@ class QueuePage:
     def _plan_inputs(self, request) -> tuple:
         """Everything the pure planning step needs, read on the GUI thread so a worker can run it."""
         request = self._with_weighted_loras(request, self._lora_weight_groups())
-        return self._plan_form(), request, self._wildcards_dir, self._draft_job is not None
+        return (
+            self._plan_form(),
+            request,
+            self._wildcards_dir,
+            self._draft_job is not None and not isinstance(self._draft_job, PoseJob),
+            isinstance(self._draft_job, PoseJob) or request.pose_control is not None,
+        )
 
     @staticmethod
-    def _compute_plan(form: PlanForm, request, folder: Path, edit: bool) -> tuple[Plan, PlanTable]:
+    def _compute_plan(form: PlanForm, request, folder: Path, edit: bool, pose: bool) -> tuple[Plan, PlanTable]:
         """Pure but for wildcard files: the drawn plan (what the summary and creation use) and its preview table."""
         plan = resolve_plan(bind_wildcards(build_plan(form), request.prompt, folder), request.prompt)
+        if pose and any(name == "size" for name, _ in plan.dimensions):
+            raise PlanError("A pose queue shares one fitted map; size cannot vary.")
         return plan, describe_plan(request, plan, edit=edit)
 
     @staticmethod
-    def _resolve_only(form: PlanForm, request, folder: Path, edit: bool) -> Plan:
+    def _resolve_only(form: PlanForm, request, folder: Path, edit: bool, pose: bool) -> Plan:
         """The drawn plan without the preview table: creation expands it itself."""
-        return resolve_plan(bind_wildcards(build_plan(form), request.prompt, folder), request.prompt)
+        plan = resolve_plan(bind_wildcards(build_plan(form), request.prompt, folder), request.prompt)
+        if pose and any(name == "size" for name, _ in plan.dimensions):
+            raise PlanError("A pose queue shares one fitted map; size cannot vary.")
+        return plan
 
     def _plan_failed(self, exc: ValidationError) -> None:
         """One place for a planning error: beside the plan, with the owning field marked."""

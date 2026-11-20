@@ -46,6 +46,7 @@ from dtflow.core.request_records import request_from_record
 from dtflow.services.assets import possible_missing_asset
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
+from dtflow.services.session import _require_flux1
 
 log = logging.getLogger(__name__)
 
@@ -393,17 +394,30 @@ class QueueDispatcher:
         try:
             try:
                 options = {}
-                if request.operation != "txt2img":
+                if request.operation != "txt2img" or request.pose_control is not None:
                     try:
-                        # Staged, hash-verified inputs are read on a worker only now, and released after dispatch.
+                        # Staged, hash-verified inputs are read only for the dispatched item.
                         options["prepared_inputs"] = await settle(
                             asyncio.to_thread(restore_image_inputs, self.service.input_state, request.image_inputs)
                         )
-                    except ValidationError as exc:
+                        if request.pose_control is not None:
+                            await settle(asyncio.to_thread(_require_flux1, self.service.input_state, request.model_id))
+                            inventory = await self.service.get_inventory()
+                            if not any(
+                                entry.identifier == request.pose_control.checkpoint
+                                and entry.availability == "listed_in_server_inventory"
+                                for entry in inventory.entries
+                            ):
+                                raise ValidationError(
+                                    "The selected pose control is not in DT+'s inventory. Nothing was submitted."
+                                )
+                    except (ValidationError, OSError) as exc:
                         raise BackendError(
                             BackendFailure(
                                 ErrorCategory.VALIDATION,
-                                "image_inputs_unavailable",
+                                "pose_inputs_unavailable"
+                                if request.pose_control is not None
+                                else "image_inputs_unavailable",
                                 str(exc),
                                 request.request_id,
                             )

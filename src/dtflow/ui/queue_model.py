@@ -77,7 +77,7 @@ def _tooltip(row: ItemRow, column: int) -> str:
         )
         return f"<table>{lines}</table>"
     if column == 4:
-        return row.sampler
+        return f"{row.sampler}\n{row.operation_text}" if row.pose_control is not None else row.sampler
     if column == STATUS_COLUMN:
         return row.item_id
     return DURATION_HEADER + " (observed)"

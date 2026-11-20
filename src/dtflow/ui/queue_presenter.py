@@ -252,6 +252,7 @@ class ItemRow:
     script_preview_path: str | None = None  # last committed child image, display-only on the parent
     script_preview_identity: str | None = None  # true child gallery identity; never a parent attempt
     is_final: bool = False  # a workflow image a Save node kept; display-only (blue outline)
+    pose_control: dict | None = None  # exact recorded control, never inferred from the item operation
 
     @property
     def dimensions_text(self) -> str:
@@ -259,6 +260,13 @@ class ItemRow:
 
     @property
     def operation_text(self) -> str:
+        if self.pose_control is not None:
+            pose = self.pose_control
+            label = str(pose.get("checkpoint", "Union Pro")).rsplit("/", 1)[-1]
+            strength = pose.get("strength")
+            mode = pose.get("control_mode", "Balanced")
+            start, end = pose.get("guidance_start", 0.0), pose.get("guidance_end", 1.0)
+            return f"Pose · {label} · strength {strength:g} · {mode} · {start:g}–{end:g}"
         return {
             "txt2img": "Text to image",
             "img2img": "Image to image",
@@ -300,6 +308,8 @@ class ItemRow:
 
     @property
     def edit_text(self) -> str:
+        if self.pose_control is not None:
+            return f"Pose · {self.pose_control['strength']:g}"
         if self.operation == "txt2img":
             return "—"
         name = "Inpaint" if self.operation == "inpaint" else "Image to image"
@@ -626,6 +636,7 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 None if item.get("script") else identity,
                 decode_runs(item.get("prompt") or "", item.get("prompt_runs")),
                 is_script_parent=bool(item.get("script")),
+                pose_control=item.get("pose_control"),
                 script_preview_path=script_preview[0] if script_preview else None,
                 script_preview_identity=script_preview[1] if script_preview else None,
             )

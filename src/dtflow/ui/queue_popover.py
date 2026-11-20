@@ -24,6 +24,7 @@ class QueuePopover(QObject):
     def __init__(self, queue, activity: Activity, parent: QWidget, *, changed: Callable[[str], None] = lambda _: None):
         super().__init__(parent)
         self._queue, self._activity, self._changed = queue, activity, changed
+        self._capture_generate_plan = False
         file = QFile(str(FORM))
         if not file.open(QIODevice.OpenModeFlag.ReadOnly):
             raise OSError(f"{FORM.name} could not be opened.")
@@ -77,8 +78,11 @@ class QueuePopover(QObject):
         """The composer plan changed: keep the trigger's count true (and the choice valid) while closed too."""
         self.refresh()
 
-    def open_at(self, anchor: QWidget) -> None:
+    def open_at(self, anchor: QWidget, *, capture_generate_plan: bool = False) -> None:
         """Show below ``anchor``, kept on its screen."""
+        # Only the explicit Controlnet → New queue plan handoff copies Generate. Opening the popup, Repeat,
+        # and the global header's plan action leave the independent composer untouched.
+        self._capture_generate_plan = capture_generate_plan
         self.refresh()
         form = self.form
         point = anchor.window().mapToGlobal(self.placement(anchor))
@@ -108,6 +112,12 @@ class QueuePopover(QObject):
         self.start_button.setEnabled(start)
         self.add_button.setEnabled(add)
         disclosure = self._queue.quick_disclosure(plan=self.plan_option.isChecked())
+        if self.plan_option.isChecked() and self._capture_generate_plan:
+            disclosure = (
+                "Refreshes only Generate's current pose map and controls; keeps the queue draft's base settings "
+                "and configured plan variations. "
+                "Start sends the pose map to DT+ Cloud and may consume credits."
+            )
         self.note_label.setText(f"{reason} {disclosure}")
         count = self.label().removeprefix("Queue").strip(" ×")
         self.start_button.setText(f"Start now ({count})" if count else "Start now")
@@ -116,5 +126,8 @@ class QueuePopover(QObject):
         self._changed(self.label())
 
     def _go(self, action: str) -> None:
+        plan = self.plan_option.isChecked()
         self.hide()
-        self._queue.quick_create(action, count=None if self.plan_option.isChecked() else self.repeat_spin.value())
+        if plan and self._capture_generate_plan and not self._queue.use_generate_settings(pose_only=True):
+            return  # invalid current inputs must not submit the old captured pose instead
+        self._queue.quick_create(action, count=None if plan else self.repeat_spin.value())
