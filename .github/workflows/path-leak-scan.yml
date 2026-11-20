@@ -58,7 +58,7 @@ jobs:
       - name: Scan changed files in pull request
         if: github.event_name == 'pull_request'
         run: |
-          python ./scripts/check_absolute_path_leaks.py \
+          python ./tools/check_absolute_path_leaks.py \
             --mode changed \
             --checks absolute_only \
             --base-ref "${{ github.event.pull_request.base.sha }}" \
@@ -68,7 +68,7 @@ jobs:
       - name: Scan changed files pushed to main
         if: github.event_name == 'push'
         run: |
-          python ./scripts/check_absolute_path_leaks.py \
+          python ./tools/check_absolute_path_leaks.py \
             --mode changed \
             --checks absolute_only \
             --base-ref "${{ github.event.before }}" \
@@ -83,7 +83,7 @@ jobs:
           if [ "${{ inputs.extension_scope }}" = "any_extension" ]; then
             EXTRA_ARGS="--any-extension"
           fi
-          python ./scripts/check_absolute_path_leaks.py \
+          python ./tools/check_absolute_path_leaks.py \
             --mode "${{ inputs.scan_scope }}" \
             --checks "${{ inputs.check_mode }}" \
             ${EXTRA_ARGS} \
