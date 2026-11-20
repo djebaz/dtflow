@@ -72,7 +72,7 @@ None blocking. User/runtime acceptance remains separate from implementation.
 ## Owner smoke evidence
 
 - 2026-10-09: Owner reported a smoke test using
-  `C:/Users/USER/Documents/GitHub/dtflow/tmp/smoke_test_jpg_export`.
+  repository-relative `tmp/smoke_test_jpg_export`.
 - Read-only directory listing found 345 JPGs at the root, zero subfolders and zero JSONs.
   No export/EXIF/decode check was run by the agent; exact source/executable revision and
   scenario assertions were not supplied. This is owner-reported source smoke, not packaged

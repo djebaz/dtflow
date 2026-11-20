@@ -212,7 +212,7 @@ uv run playwright install chromium
 For the updated external export:
 
 ```powershell
-$ds = 'C:/Users/USER/Downloads/DTFlow Design System (5)'
+$ds = Join-Path $HOME 'Downloads/DTFlow Design System (5)'
 # --fetch explicitly downloads the export's pinned React/ReactDOM/Babel scripts,
 # verifies SHA-384 integrity, and caches them in ignored tmp/design-system-vendor.
 uv run python tools/ui/design_shots.py tmp/ds-renders/screens --design-system $ds --fetch

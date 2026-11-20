@@ -21,6 +21,7 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 
 ## Fixed
 
+- Documentation examples no longer embed owner-specific workstation paths. The WSL X11 helper derives the current Windows application-data directory, selected WSL user's home and its own checkout path instead of hard-coding an account; this does not remove older Git history or Action logs. Static validation only; the helper was not executed.
 - Repository path/PII scanning now supports the Action's existing check presets and extension selection using the newer shared scanner; scanner failures are no longer summarized as a clean scan. These are heuristic findings, not proof of private-data exposure; the updated Action has not been rerun by the agent.
 - Controlnet → New queue plan explicitly refreshes the current pose map/controls through Use Generate settings' pose-only mode, preserving the Queue draft's base settings and plan variations instead of reusing a stale composer pose. The composer summary and queued Parameters tooltip expose exact pose checkpoint/quantization, strength, force and range (PR #513; owner-reported Windows retest confirmed non-default pose settings are preserved).
 - Generate/Retry can hand a pose to the queue-behind creation path without an argument-count or queue-ID unpacking error. Pose templates own their maps instead of retaining staged execution identities (PR #513; source-reviewed; owner smoke confirmed queue-behind and template workflows).

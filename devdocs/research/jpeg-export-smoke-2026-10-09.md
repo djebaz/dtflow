@@ -3,7 +3,7 @@
 ## Owner report
 
 The owner reported smoke-testing the export feature with destination:
-`C:/Users/USER/Documents/GitHub/dtflow/tmp/smoke_test_jpg_export`.
+repository-relative `tmp/smoke_test_jpg_export`.
 This occurred on the working `feature/jpeg-image-export` branch, before the final
 implementation commit. Exact executable/source revision and individual assertions
 were not supplied. Do not treat it as packaged acceptance or a full scenario matrix.
@@ -29,7 +29,7 @@ billable provider operation was performed by the agent.
 ## ImageDescription follow-up smoke
 
 After the ImageDescription fix (`9fa4c31`), the owner reported that the new smoke
-"seems ok", using `C:/Users/USER/Documents/GitHub/dtflow/tmp/smoke3`.
+"seems ok", using repository-relative `tmp/smoke3`.
 The exact runtime/executable revision was not supplied; the local branch was at
 `9fa4c31` when the agent inspected the supplied files.
 

@@ -25,8 +25,8 @@ function Write-Failure {
 # Check prerequisites
 Write-Step "Checking prerequisites..."
 
-$vcxsrvPath = 'C:\Program Files\VcXsrv\vcxsrv.exe'
-if (-not (Test-Path $vcxsrvPath)) {
+$vcxsrvPath = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'VcXsrv/vcxsrv.exe'
+if (-not (Test-Path -LiteralPath $vcxsrvPath)) {
     Write-Failure "VcXsrv not found at: $vcxsrvPath"
     Write-Host "Install VcXsrv from https://sourceforge.net/projects/vcxsrv/" -ForegroundColor Yellow
     exit 1
@@ -34,14 +34,33 @@ if (-not (Test-Path $vcxsrvPath)) {
 Write-Success "VcXsrv found"
 
 $wslDistro = 'Ubuntu-24.04'
-$wslPython = '/home/USER/venv-dtflow/bin/python'
+$projectRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '..'))
+$authDirectory = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'DTFlow-X11'
+$xauthorityPath = Join-Path $authDirectory 'Xauthority'
+$serverLogPath = Join-Path $authDirectory 'server.log'
+
+function ConvertTo-WslPath {
+    param([string]$WindowsPath)
+    $converted = wsl.exe -d $wslDistro -e wslpath -a -u $WindowsPath
+    if ($LASTEXITCODE -ne 0 -or -not $converted) {
+        throw "Cannot translate the Windows path for the selected WSL distribution."
+    }
+    return ($converted -join "`n").Trim()
+}
 
 try {
+    $wslHome = wsl.exe -d $wslDistro -e sh -c 'printf "%s" "$HOME"'
+    if ($LASTEXITCODE -ne 0 -or -not $wslHome) {
+        throw "Cannot resolve the selected WSL user's home directory."
+    }
+    $wslPython = "$(($wslHome -join "`n").Trim())/venv-dtflow/bin/python"
+    $wslAuthDirectory = ConvertTo-WslPath $authDirectory
+    $wslProjectRoot = ConvertTo-WslPath $projectRoot
     wsl.exe -d $wslDistro -e test -f $wslPython
-    if ($LASTEXITCODE -ne 0) { throw }
+    if ($LASTEXITCODE -ne 0) { throw "The WSL virtual environment is unavailable." }
     Write-Success "WSL Python found: $wslPython"
 } catch {
-    Write-Failure "WSL Python not found: $wslPython"
+    Write-Failure "WSL prerequisites unavailable: $_"
     Write-Host "Create the venv first with: wsl -d $wslDistro -- bash -c 'python3 -m venv ~/venv-dtflow'" -ForegroundColor Yellow
     exit 1
 }
@@ -61,8 +80,8 @@ if ($existing) {
 Write-Step "Creating X11 authentication files..."
 
 $pythonScript = @'
-import os, pathlib, secrets, struct
-base = pathlib.Path('/mnt/c/Users/USER/AppData/Local/DTFlow-X11')
+import pathlib, secrets, struct, sys
+base = pathlib.Path(sys.argv[1])
 base.mkdir(parents=True, exist_ok=True)
 client = pathlib.Path.home() / '.config/dtflow-x11'
 client.mkdir(parents=True, exist_ok=True)
@@ -84,7 +103,7 @@ print('Auth files created')
 '@
 
 try {
-    $pythonScript | wsl.exe -d $wslDistro -- $wslPython -
+    $pythonScript | wsl.exe -d $wslDistro -e $wslPython - $wslAuthDirectory
     if ($LASTEXITCODE -ne 0) { throw "Python script failed" }
     Write-Success "Authentication files created"
 } catch {
@@ -103,9 +122,9 @@ $vcxsrvArgs = @(
     '-listen'
     'tcp'
     '-auth'
-    'C:\Users\USER\AppData\Local\DTFlow-X11\Xauthority'
+    ('"{0}"' -f $xauthorityPath)
     '-logfile'
-    'C:\Users\USER\AppData\Local\DTFlow-X11\server.log'
+    ('"{0}"' -f $serverLogPath)
 )
 
 try {
@@ -115,9 +134,9 @@ try {
     
     if ($vcxsrvProcess.HasExited) {
         Write-Failure "VcXsrv exited with code: $($vcxsrvProcess.ExitCode)"
-        if (Test-Path 'C:\Users\USER\AppData\Local\DTFlow-X11\server.log') {
+        if (Test-Path -LiteralPath $serverLogPath) {
             Write-Host "`nServer log:" -ForegroundColor Yellow
-            Get-Content 'C:\Users\USER\AppData\Local\DTFlow-X11\server.log' -Tail 20
+            Get-Content -LiteralPath $serverLogPath -Tail 20
         }
         exit 1
     }
@@ -133,7 +152,7 @@ if (-not $NoTest) {
     Write-Step "Testing DTFlow GUI launch..."
     
     $launchScript = @'
-cd /mnt/c/Users/USER/Documents/GitHub/dtflow
+cd -- "$1" || exit 1
 source ~/.config/dtflow-x11/env.sh
 source ~/venv-dtflow/bin/activate
 dtflow gui &
@@ -142,7 +161,8 @@ echo "GUI_PID:$DTFLOW_PID"
 '@
     
     try {
-        $output = $launchScript | wsl.exe -d $wslDistro -- bash
+        $output = $launchScript | wsl.exe -d $wslDistro -e bash -s -- $wslProjectRoot
+        if ($LASTEXITCODE -ne 0) { throw "WSL launch script failed" }
         $dtflowPid = $null
         
         foreach ($line in $output) {
@@ -192,6 +212,9 @@ Write-Host "========================================" -ForegroundColor Green
 Write-Host "`nTo launch DTFlow GUI from WSL, run:" -ForegroundColor Cyan
 Write-Host "  source ~/.config/dtflow-x11/env.sh" -ForegroundColor White
 Write-Host "  source ~/venv-dtflow/bin/activate" -ForegroundColor White
-Write-Host "  cd /mnt/c/Users/USER/Documents/GitHub/dtflow" -ForegroundColor White
+$singleQuote = [string][char]39
+$escapedSingleQuote = $singleQuote + '"' + $singleQuote + '"' + $singleQuote
+$quotedProjectRoot = $singleQuote + $wslProjectRoot.Replace($singleQuote, $escapedSingleQuote) + $singleQuote
+Write-Host "  cd -- $quotedProjectRoot" -ForegroundColor White
 Write-Host "  dtflow gui" -ForegroundColor White
 Write-Host "`nVcXsrv is running in the background (PID: $($vcxsrvProcess.Id))" -ForegroundColor Gray

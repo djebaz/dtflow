@@ -8,7 +8,7 @@ From the repository root in PowerShell:
 
 ```powershell
 uv run python tools/images/detect_noise.py --help
-uv run python tools/images/detect_noise.py -s 'C:\Users\USER\Documents\GitHub\dtflow\tmp\smoke3' -o 'tmp/noise-report.json'
+uv run python tools/images/detect_noise.py -s 'tmp/smoke3' -o 'tmp/noise-report.json'
 ```
 
 Pass multiple files/folders after `-s/--source` to compare selected images. Folder scans are flat unless `-r/--recursive` is specified. `-o/--out` writes a new JSON file only; without it, JSON goes to stdout. The output parent directory must exist. Reports contain local paths, but no prompts or copied generation metadata. Keep reports private if paths are sensitive.
