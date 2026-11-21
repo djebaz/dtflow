@@ -60,7 +60,7 @@
         <property name="wordWrap"><bool>true</bool></property>
        </widget>
        <widget class="QToolButton" name="videoClearStartButton">
-        <property name="geometry"><rect><x>57</x><y>2</y><width>21</width><height>21</height></rect></property>
+        <property name="geometry"><rect><x>48</x><y>2</y><width>30</width><height>30</height></rect></property>
         <property name="text"><string>×</string></property>
         <property name="toolTip"><string>Clear start image</string></property>
         <property name="accessibleName"><string>Clear start image</string></property>
