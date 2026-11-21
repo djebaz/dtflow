@@ -674,7 +674,8 @@ class GenerationPage:
         form = {name: document[name] for name in self.PROVIDER_FIELDS}
         form["receipts"] = self.lora.receipts()
         video = getattr(self, "video", None)
-        if video is not None and video.active:
+        if video is not None:
+            # Keep the video draft even if the user temporarily browses image checkpoints.
             form["video"] = video.session_document()
         form["catalogue"] = {
             "domain": self.page.generationDomainCombo.currentData() or "all",
@@ -684,13 +685,15 @@ class GenerationPage:
         }
         return form
 
-    def _apply_provider_form(self, document: object) -> None:
-        """Show a provider's remembered fields (defaults for one never used); prompts stay as typed."""
+    def _apply_provider_form(self, document: object, *, restoring_session: bool = False) -> None:
+        """Restore a provider without overwriting an in-progress video draft."""
         current = self._values()
         values = replace(form_from_document(document), prompt=current.prompt, negative_prompt=current.negative_prompt)
-        self._apply(values)
         video = getattr(self, "video", None)
-        if video is not None and video.active:
+        if not restoring_session and video is not None and (video.active or rules.is_video_model(values.model)):
+            values = replace(values, width=current.width, height=current.height)
+        self._apply(values)
+        if restoring_session and video is not None:
             video.restore(document.get("video") if isinstance(document, dict) else None)
         receipts = document.get("receipts") if isinstance(document, dict) else None
         valid = (
@@ -758,7 +761,7 @@ class GenerationPage:
         self._forms = {k: v for k, v in forms.items() if isinstance(v, dict)} if isinstance(forms, dict) else {}
         self._provider = self._backend()[0] or None
         if self._provider in self._forms:
-            self._apply_provider_form(self._forms[self._provider])
+            self._apply_provider_form(self._forms[self._provider], restoring_session=True)
         elif forms is None and self._provider is not None:
             self._forms[self._provider] = self._provider_form()  # a pre-per-provider file belongs to its provider
 
