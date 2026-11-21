@@ -7,14 +7,18 @@ clip is its companion ``<prefix>-<attempt>-1.mp4``. The sidecar's ``video`` bloc
 from __future__ import annotations
 
 import json
+import logging
 import os
 import shutil
 import tempfile
 from pathlib import Path
 
 from dtflow.core.models import GenerationResult, ResolvedGenerationRequest, ResourceLimits
+from dtflow.diagnostics import event as diagnostic_event
 from dtflow.core.output_layout import FOLDER, OutputLayout, final_name, sidecar_name
 from dtflow.services.artifacts import artifact_record, atomic_write, generation_metadata, run_directory
+
+log = logging.getLogger(__name__)
 
 
 def require_video_destination(output: Path, layout: OutputLayout | None = None) -> None:
@@ -64,12 +68,18 @@ def save_video_artifacts(
         raise FileExistsError("Managed output already exists for this attempt.")
     partial = clip.with_name(clip.name + ".partial")
     try:
+        diagnostic_event(log, "video.save_started", level=logging.DEBUG,
+                         data={"request_id": request.request_id, "attempt_id": attempt_id})
         shutil.move(str(temporary), partial)  # another drive is possible, so not os.replace on the source
         os.replace(partial, clip)
     finally:
         partial.unlink(missing_ok=True)
     shutil.rmtree(temporary.parent, ignore_errors=True)
+    diagnostic_event(log, "video.clip_committed", level=logging.DEBUG,
+                     data={"attempt_id": attempt_id})
     atomic_write(poster, artifact.encoded)
+    diagnostic_event(log, "video.poster_committed", level=logging.DEBUG,
+                     data={"attempt_id": attempt_id})
     record = artifact_record(str(poster.resolve()), artifact)
     record["metadata"] = {key: value for key, value in record["metadata"].items() if not key.startswith("video_")}
     metadata = generation_metadata(attempt_id, request, result, build_identity, [record])
@@ -81,9 +91,18 @@ def save_video_artifacts(
         "has_audio": facts["video_has_audio"] == "yes",
         "audio_rate_hz": int(facts["video_audio_rate"]) or None,
         "bytes": int(facts["video_bytes"]),
-        "width_px": request.width_px,
-        "height_px": request.height_px,
+        "width_px": int(facts["video_width"]),
+        "height_px": int(facts["video_height"]),
         "poster": poster.name,
     }
     atomic_write(sidecar, (json.dumps(metadata, indent=2, allow_nan=False) + "\n").encode("utf-8"))
+    diagnostic_event(
+        log, "video.artifacts_committed", level=logging.INFO,
+        data={
+            "attempt_id": attempt_id, "frames": int(facts["video_frames"]),
+            "width": int(facts["video_width"]), "height": int(facts["video_height"]),
+            "duration_seconds": float(facts["video_duration_seconds"]),
+            "has_audio": facts["video_has_audio"] == "yes", "mp4_bytes": int(facts["video_bytes"]),
+        },
+    )
     return (str(poster.resolve()),), str(sidecar.resolve())
