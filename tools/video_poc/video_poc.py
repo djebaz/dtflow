@@ -8,7 +8,7 @@ Usage (from the repository root, PAID DT+ generation on every call):
 
 Exactly one generation per call. The request goes through ``build_generation_message`` (text-to-video config plus
 ``num_frames``); the response is read by this script's own receiver (no single-output rule, no PNG check, no size cap,
-chunking tolerated). Frames stream to disk and into the installed ``ffmpeg`` (found on PATH); ``ffprobe`` checks the
+chunking tolerated). Frames stream directly into installed ``ffmpeg`` (found on PATH), optionally saving still images; ``ffprobe`` checks the
 result. Every run writes ``tmp/video-poc-YYYYMMDD-HHMMSS.log``. The API key comes from the same place as in the app
 (saved key first, then DRAWTHINGS_API_KEY) and is never printed or logged.
 """
@@ -231,18 +231,58 @@ def match_image_ratio(image_size: tuple[int, int], budget_size: tuple[int, int])
     )
 
 
-def parse_config_field(text: str) -> tuple[str, bool | int | float | str]:
-    """Parse one native Draw Things configuration field, e.g. hiresFix=true or hiresFixStrength=0.7."""
+def parse_config_value(raw: str):
+    """Accept JSON literals, including true/false and LoRA/control arrays, or an unquoted string."""
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+
+
+def parse_config_field(text: str) -> tuple[str, object]:
+    """Parse a Draw Things field=value override without silently converting invalid values."""
     key, separator, raw = text.partition("=")
     if not separator or not key.strip() or not raw.strip():
-        raise argparse.ArgumentTypeError("--set needs a field=value pair (e.g. hiresFix=true).")
-    try:
-        value = json.loads(raw)
-    except json.JSONDecodeError:
-        value = raw
-    if value is None or isinstance(value, (list, dict)):
-        raise argparse.ArgumentTypeError("--set accepts scalar values only; use the model/LoRA controls for lists.")
-    return key.strip(), value
+        raise argparse.ArgumentTypeError("--set needs FIELD=VALUE (e.g. teaCache=true).")
+    return key.strip(), parse_config_value(raw)
+
+
+class ConfigOptionAction(argparse.Action):
+    """Append a named Draw Things field in command-line order, alongside --set overrides."""
+
+    def __init__(self, option_strings, dest, *, field_name: str, **kwargs):
+        self.field_name = field_name
+        super().__init__(option_strings, dest, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        fields = getattr(namespace, self.dest, None)
+        if fields is None:
+            fields = []
+        fields.append((self.field_name, parse_config_value(values)))
+        setattr(namespace, self.dest, fields)
+
+
+def add_drawthings_arguments(parser: argparse.ArgumentParser) -> None:
+    """Register every serializable SDK configuration field not already owned by a dedicated CLI flag."""
+    from drawthings_py.configs.gen_config import CONFIG_PROPS
+    from drawthings_py.generated.dt_grpc.config_generated import GenerationConfigurationT
+
+    reserved = {"model", "width", "height", "num_frames", "steps", "guidance", "shift", "seed", "sampler"}
+    native = GenerationConfigurationT()
+    group = parser.add_argument_group("Draw Things configuration (advanced; effective support is model/provider-specific)")
+    for field_name, prop in sorted(CONFIG_PROPS.items()):
+        if field_name in reserved or not hasattr(native, prop.config_t_name):
+            continue
+        options = ["--" + field_name.replace("_", "-"), "--" + field_name]
+        if prop.json_name not in options:
+            options.append("--" + prop.json_name)
+        is_bool = type(getattr(native, prop.config_t_name)) is bool
+        group.add_argument(
+            *dict.fromkeys(options), dest="config_fields", action=ConfigOptionAction,
+            field_name=field_name, default=argparse.SUPPRESS, metavar="VALUE",
+            **({"nargs": "?", "const": "true"} if is_bool else {}),
+            help="Draw Things setting (JSON scalar or list); boolean flags default to true if value is omitted",
+        )
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -280,9 +320,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "-set", "--set", dest="config_fields", type=parse_config_field, action="append", default=[],
         metavar="FIELD=VALUE",
-        help="override any supported scalar Draw Things configuration field (repeatable); "
-        "examples: hiresFix=true, hiresFixWidth=640, hiresFixStrength=0.7, tiledDecoding=true. "
-        "Model, sampler, steps, guidance, shift, size, frames and seed use their own flags.",
+        help="override a supported SDK field (repeatable); accepts camelCase, snake_case or kebab-case "
+        "names, JSON scalars, and JSON arrays for LoRAs/controls. Dedicated flags still own model, sampler, "
+        "steps, guidance, shift, size, frames and seed.",
     )
     parser.add_argument("-sd", dest="seed", type=int, default=None, help="seed (default random)")
     parser.add_argument(
@@ -298,6 +338,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-nomp4", dest="no_mp4", action="store_true", help="skip MP4; save PNG frames (JPEG with -jpg)")
     parser.add_argument("-to", dest="timeout", type=float, default=900, help="total timeout in seconds (default 900)")
     parser.add_argument("-lg", dest="log", type=Path, default=Path("tmp") / f"video-poc-{stamp}.log", help="log file")
+    add_drawthings_arguments(parser)
     args = parser.parse_args(argv)
     args.requested_size = args.size
     return args
