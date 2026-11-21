@@ -3394,9 +3394,6 @@ class GalleryPage(QObject):
         previous = self._presented_item
         if previous == item:
             return
-        image_changed = (
-            previous is None or previous.identity != item.identity or self._image_key(previous) != self._image_key(item)
-        )
         self._presented_item = item
         request = self._request(item)
         clip = clip_summary(request)
