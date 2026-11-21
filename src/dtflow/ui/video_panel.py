@@ -16,7 +16,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QDoubleSpinBox, QFrame, QLabel, QToolButton
+from PySide6.QtWidgets import QDoubleSpinBox, QLabel, QPushButton
 
 from dtflow.core import video as rules
 from dtflow.core.models import ResolvedGenerationRequest
@@ -119,20 +119,17 @@ class VideoPanel(QObject):
             raise RuntimeError("Video controls form could not be loaded.")
         self.seconds = self.frame.findChild(QDoubleSpinBox, "videoDurationSpinBox")
         self.summary = self.frame.findChild(QLabel, "videoDurationLabel")
-        self.start_card = self.frame.findChild(QFrame, "videoStartCard")
-        self.clear = self.frame.findChild(QToolButton, "videoClearStartButton")
+        self.choose = self.frame.findChild(QPushButton, "videoChooseStartButton")
+        self.clear = self.frame.findChild(QPushButton, "videoClearStartButton")
         self.thumb = self.frame.findChild(QLabel, "videoStartThumb")
-        self._choose_targets = (self.start_card, self.thumb)
-        for widget in self._choose_targets:
-            widget.installEventFilter(self)
-        self.start_card.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.start_card.setAccessibleName("Choose or replace start image")
+        self.start_label = self.frame.findChild(QLabel, "videoStartLabel")
+        self.thumb.installEventFilter(self)
         self.problem = self.frame.findChild(QLabel, "videoProblemLabel")
         self.seconds.valueChanged.connect(self._sync)
         page.widthSpinBox.valueChanged.connect(self._sync)
         page.heightSpinBox.valueChanged.connect(self._sync)
+        self.choose.clicked.connect(self._choose)
         self.clear.clicked.connect(self._clear)
-        self.clear.hide()
         page.generationWorkspaceLayout.insertWidget(3, self.frame)
         self.frame.hide()
         self._sync()
@@ -242,22 +239,23 @@ class VideoPanel(QObject):
             rules.effective_text(self.model, self.seconds.value()) + (" · with sound" if audio else " · no sound")
         )
         accepts = rules.accepts_start_image(self.model)
-        self.start_card.setToolTip(
-            (
-                f"{_short_name(self._start.name)} · {self._start_info.width}×{self._start_info.height}\n"
-                + crop_note(
-                    (self._start_info.width, self._start_info.height),
-                    (self.page.widthSpinBox.value(), self.page.heightSpinBox.value()),
-                )
-                + "\nHover to preview the crop. Click to replace."
-            )
-            if self._start is not None and self._start_info is not None
-            else "Click to choose a start image; leave empty for text to video."
+        self.choose.setEnabled(accepts)
+        self.choose.setText("Replace…" if self._start is not None else "Choose…")
+        self.choose.setToolTip(
+            "Choose an image to start the clip from; leave empty for text to video."
             if accepts
             else "A start image is only verified with LTX-2.3 (LTX-2 froze on it)."
         )
-        for widget in self._choose_targets:
-            widget.setCursor(Qt.CursorShape.PointingHandCursor if accepts else Qt.CursorShape.ArrowCursor)
+        self.thumb.setCursor(Qt.CursorShape.PointingHandCursor if accepts else Qt.CursorShape.ArrowCursor)
+        if self._start is not None and self._start_info is not None:
+            width, height = self._start_info.width, self._start_info.height
+            self.start_label.setText(f"{_short_name(self._start.name)} · {width}×{height}")
+            self.start_label.setToolTip(
+                crop_note((width, height), (self.page.widthSpinBox.value(), self.page.heightSpinBox.value()))
+            )
+        else:
+            self.start_label.setText("Loading…" if self._loading else "None (text to video)")
+            self.start_label.setToolTip("")
         if self._hovering:
             self._show_hover()
         self.clear.setEnabled(self._start is not None or self._loading)
@@ -351,25 +349,21 @@ class VideoPanel(QObject):
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
         """Choose on click; hover previews the current centered crop without replacing output."""
         kind = event.type()
-        if watched is self.thumb and kind == QEvent.Type.Resize and self._start_info is not None:
-            self._render_thumbnail()
-        if watched in self._choose_targets:
-            if kind == QEvent.Type.Enter:
+        if watched is self.thumb:
+            if kind == QEvent.Type.Resize and self._start_info is not None:
+                self._render_thumbnail()
+            elif kind == QEvent.Type.Enter:
                 self._hovering = True
                 self._show_hover()
-            elif watched is self.start_card and kind == QEvent.Type.Leave:
+            elif kind == QEvent.Type.Leave:
                 self._hide_hover()
-            if rules.accepts_start_image(self.model):
-                if kind == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
-                    self._choose()
-                    return True
-                if (
-                    watched is self.start_card
-                    and kind == QEvent.Type.KeyPress
-                    and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space)
-                ):
-                    self._choose()
-                    return True
+            elif (
+                kind == QEvent.Type.MouseButtonRelease
+                and event.button() == Qt.MouseButton.LeftButton
+                and rules.accepts_start_image(self.model)
+            ):
+                self._choose()
+                return True
         return super().eventFilter(watched, event)
 
     def _show_hover(self) -> None:
@@ -403,12 +397,11 @@ class VideoPanel(QObject):
         )
 
     def _show_start(self) -> None:
-        """Keep the image thumbnail at the right of the duration line, even after generating."""
+        """Show the chosen image in the thumbnail, or None for text to video."""
         info = self._start_info
-        self.clear.setVisible(self._start is not None or self._loading)
         if self._start is None or info is None:
             self.thumb.clear()
-            self.thumb.setText("Choose\nimage")
+            self.thumb.setText("None")
             self.thumb.setToolTip("")
             if self._hovering:
                 self.page.resultPreviewLabel.clear_temporary_crop()
