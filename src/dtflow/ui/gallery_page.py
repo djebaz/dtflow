@@ -2981,9 +2981,6 @@ class GalleryPage(QObject):
             badge = QLabel(f"▶ Video · {clip[0]}", button)
             badge.setObjectName("galleryVideoBadge")
             badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
-            badge.setStyleSheet(
-                "background: rgba(0, 0, 0, 170); color: white; border-radius: 4px; padding: 2px 6px; font-weight: 600;"
-            )
             over.addWidget(badge, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
             over.addStretch()
         layout.addWidget(button)
