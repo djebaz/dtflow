@@ -1552,7 +1552,7 @@ def render_active_queue_states(shell, out):
         queue._dispatch_started = owned and started
         queue._selected = queue_id
         queue._activity.set(dispatching=owned)
-        apply_read(([view], view, 2), None)
+        apply_read(([view], view), None)
         queue._timer.stop()  # No polling between presentation-only captures.
         return view
 
