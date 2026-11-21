@@ -135,6 +135,7 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
     messages = 0
     declared_download_size: int | None = None
     last_receive_log = started
+    last_beat = started
     first_response_ms: float | None = None
     first_content_ms: float | None = None
     last_stage = "preparing"
@@ -224,6 +225,15 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
                     async for response in stream:
                         messages += 1
                         observed = time.monotonic()
+                        if (
+                            frames == 0
+                            and not response.generated_images
+                            and not response.generated_audio
+                            and observed - last_beat >= 5
+                        ):
+                            # DT+ keeps sending messages while it works; each one lets the waiting estimate advance.
+                            last_beat = observed
+                            emit("progress", stage="waiting_heartbeat")
                         if first_response_ms is None:
                             first_response_ms = round((observed - started) * 1000)
                             trace("first_response", elapsed_ms=first_response_ms)

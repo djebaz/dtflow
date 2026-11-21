@@ -30,6 +30,9 @@ WINDOWS = {
 }
 
 
+BEAT_SECONDS = 10.0  # observed spacing of DT+'s messages while it works without reporting a step
+
+
 def clock(seconds: float) -> str:
     seconds = max(0, int(seconds))
     return f"{seconds // 60}:{seconds % 60:02d}"
@@ -49,6 +52,8 @@ class VideoProgress:
         self.bytes = 0
         self.steps: tuple[int, int] | None = None
         self.phase_started = self.started
+        self.beats = 0  # DT+ messages seen while waiting; about one every 10 s
+        self.last_beat = self.started
         self._peak = 0.0
 
     def fraction(self, now: float | None = None) -> float:
@@ -58,7 +63,12 @@ class VideoProgress:
         if self.done is not None and self.total:
             value = low + (high - low) * min(1.0, max(0.0, self.done / self.total))
         else:
-            value = low + (high - low) * (1.0 - math.exp(-max(0.0, now - self.phase_started) / tau))
+            elapsed = max(0.0, now - self.phase_started)
+            if self.phase == "waiting" and self.beats:
+                # Advance with DT+'s own messages: between two of them for at most one beat interval, so a silent
+                # connection stops moving the fill instead of creeping on.
+                elapsed = min(elapsed, self.beats * BEAT_SECONDS + min(BEAT_SECONDS, max(0.0, now - self.last_beat)))
+            value = low + (high - low) * (1.0 - math.exp(-elapsed / tau))
         self._peak = max(self._peak, min(0.99, value))
         return self._peak
 
@@ -79,6 +89,11 @@ class VideoProgress:
         return presented
 
     def _observe(self, event: BackendEvent) -> bool:
+        if event.kind == "progress" and event.stage == "waiting_heartbeat":
+            if self.phase == "waiting":
+                self.beats += 1
+                self.last_beat = time.monotonic()
+            return True  # text unchanged: callers keep showing the phase label, not the raw stage name
         if event.kind == "preparing":
             if event.stage in ("waiting_backend_response", "backend_response_received"):
                 self._wait()
