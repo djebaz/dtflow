@@ -14,7 +14,7 @@ import io
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from PySide6.QtCore import QFile, QIODevice, QObject, Qt
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QDoubleSpinBox, QLabel, QPushButton
@@ -37,7 +37,7 @@ MAX_START_IMAGE_BYTES = 32 * 1024 * 1024
 FORM = Path(__file__).parent / "forms" / "video_panel.ui"
 
 
-THUMB_BOX = (128, 96)  # twice the 64 x 48 label, so the preview stays sharp on a scaled display
+THUMB_BOX = (720, 224)  # 2x the largest preview slot, for sharp aspect-fit thumbnails at high DPI
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +123,7 @@ class VideoPanel(QObject):
         self.thumb = self.frame.findChild(QLabel, "videoStartThumb")
         self.start_label = self.frame.findChild(QLabel, "videoStartLabel")
         self.start_note = self.frame.findChild(QLabel, "videoStartNote")
+        self.thumb.installEventFilter(self)  # Keep the entire image fitted as the preview column resizes.
         self.problem = self.frame.findChild(QLabel, "videoProblemLabel")
         self.seconds.valueChanged.connect(self._sync)
         page.widthSpinBox.valueChanged.connect(self._sync)
@@ -288,26 +289,39 @@ class VideoPanel(QObject):
         self.clear.setEnabled(False)
         self._sync()
 
-    def _show_start(self) -> None:
-        """The start-image row: a small preview, the file name with the image's own size, or the text-to-video default."""
+    def eventFilter(self, watched: QObject, event: QEvent) -> bool:
+        """Scale the stored preview to the thumbnail slot without cropping it when the panel is resized."""
+        if watched is self.thumb and event.type() == QEvent.Type.Resize and self._start_info is not None:
+            self._render_thumbnail()
+        return super().eventFilter(watched, event)
+
+    def _render_thumbnail(self) -> None:
+        """Display the complete selected image in the space available in the shared source card."""
         info = self._start_info
-        if self._start is None or info is None:
-            self.thumb.clear()
-            self.thumb.hide()
-            self.start_label.setText("Checking start image…" if self._loading else "None (text to video)")
-            self.start_label.setToolTip("")
-            self.start_note.clear()
-            self.start_note.hide()
+        if info is None or self.thumb.width() <= 0 or self.thumb.height() <= 0:
             return
-        picture = QImage.fromData(info.thumbnail_png)
+        picture = QPixmap.fromImage(QImage.fromData(info.thumbnail_png))
         self.thumb.setPixmap(
-            QPixmap.fromImage(picture).scaled(
+            picture.scaled(
                 self.thumb.size(),
                 aspectMode=Qt.AspectRatioMode.KeepAspectRatio,
                 mode=Qt.TransformationMode.SmoothTransformation,
             )
         )
-        self.thumb.show()
+
+    def _show_start(self) -> None:
+        """Keep the preview slot stable in both modes; Choose and Clear remain beside it in the same card."""
+        info = self._start_info
+        if self._start is None or info is None:
+            self.thumb.clear()
+            self.thumb.setText("No image")
+            self.start_label.setText("Checking start image…" if self._loading else "None (text to video)")
+            self.start_label.setToolTip("")
+            self.start_note.clear()
+            self.start_note.hide()
+            return
+        self.thumb.setText("")
+        self._render_thumbnail()
         self.start_label.setText(f"{_short_name(self._start.name)} · {info.width}×{info.height}")
         self.start_label.setToolTip(str(self._start))
 
