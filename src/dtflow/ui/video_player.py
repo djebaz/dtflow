@@ -334,12 +334,12 @@ class VideoPlayer(QObject):
             if kind == QEvent.Type.ShortcutOverride and event.key() == Qt.Key.Key_K:
                 event.accept()
             return False
-        if QApplication.activeWindow() is not self.surface.window() or self._panel is None:
+        if QApplication.activeWindow() is not self.surface.window():
             return False
         key = event.key()
         keypad = bool(modifiers & Qt.KeyboardModifier.KeypadModifier)
         if (
-            not modifiers
+            modifiers == Qt.KeyboardModifier.NoModifier
             and key in (Qt.Key.Key_Left, Qt.Key.Key_Right)
             and self._on_navigate is not None
             and self._navigation_allowed is not None
