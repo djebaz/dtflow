@@ -54,6 +54,7 @@ from dtflow._diagnostic_reader import (
     segment_age,
     snapshot,
 )
+
 # Frozen builds bundle the generated catalogue; source checkouts may omit it.
 try:
     from dtflow.diagnostic_components import COMPONENTS
