@@ -3180,13 +3180,13 @@ class GalleryPage(QObject):
                     button, painter = self._make_film_entry()
                 button.setProperty("identity", item.identity)
                 self._film_entries[item.identity] = button, painter
-            button, painter = self._film_entries[item.identity]
-            clip = clip_summary(self._request(item))
-            painter.badges = (
-                (f"▶ {clip[0]}", _human_size(item.file_size))
-                if clip
-                else (self._dimensions(item), _human_size(item.file_size))
-            )
+                clip = clip_summary(self._request(item))
+                painter.badges = (
+                    (f"▶ {clip[0]}", _human_size(item.file_size))
+                    if clip
+                    else (self._dimensions(item), _human_size(item.file_size))
+                )
+            button, _painter = self._film_entries[item.identity]
             if layout.indexOf(button) != row:
                 layout.insertWidget(row, button)
             button.setChecked(item.identity == self.selected_id)
@@ -3421,7 +3421,8 @@ class GalleryPage(QObject):
         if image_changed:
             self.video_player.show_for_video(False)  # A poster alone does not establish that its clip is available.
         clip = clip_summary(request)
-        self.surface_painter.mode = "Fit" if clip else "Cover"
+        if clip:
+            self.surface_painter.mode = "Fit"
         self._widget("galleryDimensionsOverlay", QLabel).setText(
             self._dimensions(item) + (f" · Video {clip[0]}" if clip else "")
         )

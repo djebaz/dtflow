@@ -159,7 +159,8 @@ class VideoPlayer(QObject):
         def failure(_error, message: str) -> None:
             if self._player is player:
                 self.release(show_play=True)
-                self._on_problem(message or "Video playback failed. Use Open video in player.")
+                detail = message or "the file could not be decoded"
+                self._on_problem(f"Video playback failed: {detail}. Try Open video in player.")
 
         toggle.clicked.connect(self.toggle_play)
         slider.sliderMoved.connect(seek)
