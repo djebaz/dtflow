@@ -874,7 +874,9 @@ class QueuePage:
                 video_fractions = video_fractions[: max(0, running)]
             if video_fractions:
                 # Running clips add their estimated share to the settled items; the counts stay settled/total.
-                fraction = min(1.0, (summary.settled + sum(video_fractions)) / max(1, summary.total))
+                # Whole percents only: the run state is compared for equality, and a value that moved with every call
+                # would make each presentation trigger another one.
+                fraction = min(1.0, round((summary.settled + sum(video_fractions)) / max(1, summary.total), 2))
                 count = f"{summary.settled}/{summary.total}"
             detail += f" Progress: {summary.settled}/{summary.total}."
             # Only the currently running item may supply the single-item stage/progress.

@@ -139,7 +139,7 @@ class VideoProgress:
 
     def present(self, activity: Activity) -> None:
         origin = self.sent_at if self.sent_at is not None else self.started
-        fraction = self.fraction()
+        fraction = round(self.fraction(), 2)  # whole percents: equal run states are not presented again
         elapsed = clock(time.monotonic() - origin)
         wide = self.text
         if self.phase in ("receiving", "encoding", "saving") and self.steps:
