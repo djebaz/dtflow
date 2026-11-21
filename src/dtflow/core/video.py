@@ -36,7 +36,9 @@ FAMILIES: tuple[VideoFamily, ...] = (
 
 MAX_FRAMES = 361
 MIN_FRAMES = 9
-START_IMAGE_FAMILIES = ("ltx", "wan_v2.1_14b_i2v")  # evidenced on DT+ by the POC (one start frame)
+# Evidenced on DT+ by the POC (one start frame followed): LTX-2.3 and Wan 2.1 14B i2v. LTX-2 (19B) is not evidenced:
+# a smoke run with it froze on the start image.
+START_IMAGE_FAMILIES = ("ltx_2.3", "wan_v2.1_14b_i2v")
 # Real runs took up to 243 s at small sizes; the image default of 600 s is not enough for a bigger clip.
 VIDEO_TOTAL_TIMEOUT = 1800.0
 

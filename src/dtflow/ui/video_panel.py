@@ -147,7 +147,13 @@ class VideoPanel(QObject):
             f"{rules.duration_text(seconds)} at {rules.playback_fps(self.model)} fps"
             + (" · with sound" if audio else " · no sound")
         )
-        self.choose.setEnabled(rules.accepts_start_image(self.model))
+        accepts = rules.accepts_start_image(self.model)
+        self.choose.setEnabled(accepts)
+        self.choose.setToolTip(
+            "One optional start image. Without it the video is made from the prompt alone."
+            if accepts
+            else "A start image is only verified with LTX-2.3 (LTX-2 froze on it)."
+        )
         self.clear.setEnabled(self._start is not None)
         problem = video_encode.tools_problem() or rules.frame_problem(self.model, self.frames.value()) or ""
         self.problem.setText(problem)
