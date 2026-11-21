@@ -496,6 +496,14 @@ def _confirmed_absent_final(
                 pass
             else:
                 return None
+            # A missing poster does not prove a declared video companion is gone.
+            # Never hide the record as absent while any sibling MP4 remains.
+            try:
+                image.with_suffix(".mp4").lstat()
+            except FileNotFoundError:
+                pass
+            else:
+                return None
             verify_managed_sidecar(image, sidecar, record, check_digest=False, check_size=False)
             after = sidecar.stat()
             fingerprint = (info.st_size, info.st_mtime_ns, info.st_ino, info.st_dev)
@@ -828,7 +836,9 @@ def recycle_outputs(
                     if fresh != target:
                         ineligible += 1
                         _refused(target.identity, "absence_changed")
-                    elif not ledger.record_confirmed_absent(state, operation_id, target.identity, target.recorded_path):
+                    elif not ledger.record_confirmed_absent(
+                        state, operation_id, target.identity, target.recorded_path
+                    ):
                         ineligible += 1
                         if len(failure_details) < 100:
                             failure_details.append((target.identity, "ledger_requires_review"))
@@ -863,7 +873,7 @@ def recycle_outputs(
                             if video_state in ("recycled", "deleted"):
                                 video_disposed.append(target.identity)
                         raw_state = None
-                        if video_state is None and target.raw is not None:
+                        if video_state in (None, "recycled", "deleted") and target.raw is not None:
                             raw_state = _dispose(
                                 state,
                                 operation_id,

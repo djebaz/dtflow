@@ -239,8 +239,9 @@ class ImageRecyclePanel(QObject):
             return
         # Delete mode proves absence per card instead of counting a loose "missing" figure.
         raw_note = f" + {plan.raw_count} raw provider files" if plan.raw_count else ""
+        video_note = f" + {plan.video_count} video MP4s" if plan.video_count else ""
         message = (
-            f"{len(plan.targets)} originals{raw_note} · {len(plan.absent_targets)} confirmed missing cards · "
+            f"{len(plan.targets)} originals{raw_note}{video_note} · {len(plan.absent_targets)} confirmed missing cards · "
             f"{plan.hidden} checked images hidden by filters included · "
             + ("" if permanent else f"{plan.missing} missing · ")
             + f"{plan.ineligible} ineligible (untouched). "
@@ -333,12 +334,13 @@ class ImageRecyclePanel(QObject):
         finished = {*result.recycled, *result.deleted}
         stranded = [identity for identity in result.raw if identity not in finished]
         raw_note = f" {len(result.raw)} raw files included." if result.raw else ""
+        video_note = f" {len(result.video)} video MP4s included." if result.video else ""
         summary = (
             (
-                f"{len(result.deleted)} originals permanently deleted;{raw_note} "
+                f"{len(result.deleted)} originals permanently deleted;{raw_note}{video_note} "
                 f"{len(result.absent)} confirmed missing cards removed.\n"
                 if self._action == "permanent"
-                else f"{len(result.recycled)} confirmed moved to {TRASH_NAME}.{raw_note}\n"
+                else f"{len(result.recycled)} confirmed moved to {TRASH_NAME}.{raw_note}{video_note}\n"
             )
             + f"{len(result.failed)} failed; {len(result.uncertain)} uncertain (manual review required).\n"
             f"{result.missing} missing; {result.ineligible} ineligible; "
@@ -350,7 +352,8 @@ class ImageRecyclePanel(QObject):
             summary += "\n\nFailure / uncertainty details:"
             for identity, reason in result.failure_details[:5]:
                 is_raw = reason.startswith("raw_")
-                reason = reason.removeprefix("raw_")
+                is_video = reason.startswith("video_")
+                reason = reason.removeprefix("raw_").removeprefix("video_")
                 if reason.startswith("trash_receipt_"):
                     detail = (
                         f"Qt reported a successful move to {TRASH_NAME}, but the destination could not "
@@ -377,6 +380,8 @@ class ImageRecyclePanel(QObject):
                     detail = reason
                 if is_raw:
                     detail = f"raw-1.png: {detail} The final image was left in place."
+                if is_video:
+                    detail = f"video MP4: {detail} The poster was left in place."
                 summary += f"\n{identity}: {detail}"
             if len(result.failure_details) > 5:
                 summary += f"\n… and {len(result.failure_details) - 5} more (see DTFlow logs)."
@@ -384,6 +389,12 @@ class ImageRecyclePanel(QObject):
             summary += (
                 "\nSome permanent deletions may or may not have occurred. "
                 "Inspect the originals manually; no automatic retry will take place."
+            )
+        stranded_video = [identity for identity in result.video if identity not in finished]
+        if stranded_video:
+            summary += (
+                f"\n{len(stranded_video)} video clips were removed but their posters remain; "
+                "review the saved result before retrying only the remaining poster."
             )
         if stranded:
             summary += (
@@ -393,7 +404,7 @@ class ImageRecyclePanel(QObject):
         if result.canceled:
             summary += "\nStopped after the current image; completed removals remain."
         state = (
-            "partial" if result.failed or result.uncertain or stranded else "stopped" if result.canceled else "success"
+            "partial" if result.failed or result.uncertain or stranded or stranded_video else "stopped" if result.canceled else "success"
         )
         activity_strip(self.parent_widget).complete("trash", f"{label} result", summary, state)
 
