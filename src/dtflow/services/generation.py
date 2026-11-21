@@ -39,6 +39,7 @@ from dtflow.persistence.original_io import (
 )
 from dtflow.core.output_layout import OutputLayout
 from dtflow.services.artifacts import save_artifacts, validate_result
+from dtflow.services.video_artifacts import require_video_destination
 from dtflow.services.assets import AssetService, AssetValidator
 from dtflow.services.budget import BufferBudget
 from dtflow.services.catalogue import Catalogue
@@ -362,6 +363,17 @@ class GenerationService:
                     request.request_id,
                 )
             ) from exc
+        if request.num_frames is not None:
+            try:
+                await settle(asyncio.to_thread(require_video_destination, self.output, layout))
+            except (OSError, ValueError) as exc:
+                diagnostic_event(log, "video.storage_unavailable", level=logging.WARNING,
+                                 data={"request_id": request.request_id, "reason": type(exc).__name__})
+                raise BackendError(BackendFailure(
+                    ErrorCategory.PERSISTENCE, "video_storage_unavailable",
+                    "Video output storage is unavailable. Generation was not submitted.",
+                    request.request_id,
+                )) from exc
         reserved = False
         if attempt_id is None:
             attempt_id = uuid4().hex
@@ -426,6 +438,17 @@ class GenerationService:
                 )
                 if snapshot != request.image_inputs:
                     raise ValueError("Committed image inputs differ from the prepared attempt.")
+            if request.num_frames is not None:
+                try:
+                    await settle(asyncio.to_thread(require_video_destination, self.output, layout))
+                except (OSError, ValueError) as exc:
+                    raise BackendError(BackendFailure(
+                        ErrorCategory.PERSISTENCE, "video_storage_unavailable",
+                        "Video output storage became unavailable before submission. No video was sent.",
+                        request.request_id,
+                    )) from exc
+                diagnostic_event(log, "video.storage_ready", level=logging.DEBUG,
+                                 data={"request_id": request.request_id, "revalidated": True})
             preparation("recording_submission_state")
             await self.store.transition(
                 attempt_id,
