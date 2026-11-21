@@ -684,9 +684,7 @@ def _run_export(state, destination, options, query, identities, cancel, progress
                         item_notes = _export_video(item, destination, options, state=Path(state))
                         category = "root"
                     else:
-                        item_notes, category = _export_one(
-                            item, destination, options, computations, state=Path(state)
-                        )
+                        item_notes, category = _export_one(item, destination, options, computations, state=Path(state))
                     notes.update(item_notes)
                     noise += category == "noise"
                     blank += category == "blank"

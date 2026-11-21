@@ -871,8 +871,11 @@ def recycle_outputs(
                         video_state = None
                         if target.video is not None:
                             video_state = _dispose(
-                                state, operation_id, target.video,
-                                permanent=permanent, recycle_adapter=recycle_adapter,
+                                state,
+                                operation_id,
+                                target.video,
+                                permanent=permanent,
+                                recycle_adapter=recycle_adapter,
                                 failure_details=failure_details,
                             )
                             if video_state in ("recycled", "deleted"):

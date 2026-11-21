@@ -141,7 +141,8 @@ def declared_video_companion(sidecar: Path, row: dict) -> tuple[str, int] | None
                     and artifact.get("path") == row["path"]
                 )
                 for artifact in artifacts
-            ) != 1
+            )
+            != 1
         ):
             raise ValueError
         return clip, video["bytes"]
