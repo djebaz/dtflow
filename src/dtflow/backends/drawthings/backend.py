@@ -404,6 +404,10 @@ class DrawThingsBackend:
         """
         if self._closing or self._closed:
             raise error(ErrorCategory.CONNECTIVITY, "backend_closed", "Backend is closed.", request.request_id)
+        if request.num_frames is not None:
+            from dtflow.backends.drawthings.video_stream import generate_video
+
+            return await generate_video(self, request, on_event)
         if request.operation not in self.capabilities.operations:
             raise error(
                 ErrorCategory.VALIDATION,

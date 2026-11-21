@@ -87,6 +87,11 @@ def save_artifacts(
 ) -> tuple[tuple[str, ...], str]:
     if request.operation != "txt2img":
         raise ValueError("Image-operation output saving requires dedicated raw/final evidence handling.")
+    if request.num_frames is not None:
+        from dtflow.services.video_artifacts import save_video_artifacts
+
+        validate_result(result, request, limits)
+        return save_video_artifacts(output, attempt_id, request, result, build_identity, limits, layout)
     validate_result(result, request, limits)
     directory, prefix = run_directory(output, attempt_id, request, layout)
     sidecar = directory / sidecar_name(prefix, attempt_id)
