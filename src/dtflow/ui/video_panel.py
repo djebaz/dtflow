@@ -188,6 +188,8 @@ class VideoPanel(QObject):
             return
         self._clear()
         if not isinstance(document, dict):
+            family = rules.family_of(self.model)
+            self.seconds.setValue(round(family.default_frames / family.fps, 2))
             return
         duration = document.get("duration_seconds")
         low, high = rules.duration_limits(self.model)
@@ -397,7 +399,13 @@ class VideoPanel(QObject):
         if self._start is None or info is None:
             self.thumb.clear()
             self.thumb.setText("Choose image")
-            self.start_label.setText("Checking start image…" if self._loading else "None (text to video)")
+            self.start_label.setText(
+                "Checking start image…"
+                if self._loading
+                else f"{_short_name(self._start.name)} · unavailable"
+                if self._start is not None
+                else "None (text to video)"
+            )
             self.start_label.setToolTip("")
             self.start_note.clear()
             self.start_note.hide()
