@@ -1,7 +1,7 @@
 """Video mode of the Generate page: duration and one start image.
 
-Video checkpoints show the existing video panel without resetting the draft's duration, size, source image or sampling values. The backend remains responsible for validating the selected model and request. The panel only reads and writes plain values; the request, wire, receiving, encoding and storage layers
-do the work (``core.video``, ``backends.drawthings.video_stream``, ``services.video_artifacts``).
+Changing a video checkpoint or base model never resets duration, output size, start image or sampling values.
+The panel owns the controls; request validation and video execution stay in the existing core, backend and services layers.
 """
 
 from __future__ import annotations
