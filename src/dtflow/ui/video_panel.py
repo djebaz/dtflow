@@ -38,7 +38,7 @@ MAX_START_IMAGE_BYTES = 32 * 1024 * 1024
 FORM = Path(__file__).parent / "forms" / "video_panel.ui"
 
 
-THUMB_BOX = (720, 224)  # 2x the largest preview slot, for sharp aspect-fit thumbnails at high DPI
+THUMB_BOX = (1600, 1600)  # One cached preview serves the small thumbnail and the large hover crop.
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +106,7 @@ class VideoPanel(QObject):
         self._start_source: tuple | None = None
         self._choice_revision = 0
         self._loading = False
+        self._hovering = False
         self._choice_problem = ""
         self._locked_tips: dict[str, str] = {}
         self._catalogue_previous_model = ""
@@ -123,10 +124,7 @@ class VideoPanel(QObject):
         self.start_card = self.frame.findChild(QFrame, "videoStartCard")
         self.clear = self.frame.findChild(QToolButton, "videoClearStartButton")
         self.thumb = self.frame.findChild(QLabel, "videoStartThumb")
-        self.start_title = self.frame.findChild(QLabel, "videoStartTitle")
-        self.start_label = self.frame.findChild(QLabel, "videoStartLabel")
-        self.start_note = self.frame.findChild(QLabel, "videoStartNote")
-        self._choose_targets = (self.start_card, self.thumb, self.start_title, self.start_label, self.start_note)
+        self._choose_targets = (self.start_card, self.thumb)
         for widget in self._choose_targets:
             widget.installEventFilter(self)
         self.start_card.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -163,6 +161,8 @@ class VideoPanel(QObject):
             self._clear()
         self.model = selected
         now = self.active
+        if not now:
+            self._hide_hover()
         self.frame.setVisible(now)
         if now and selected != previous and not restoring_same:
             self._apply_defaults()
@@ -274,22 +274,25 @@ class VideoPanel(QObject):
         self.summary.setText(
             rules.effective_text(self.model, self.seconds.value()) + (" · with sound" if audio else " · no sound")
         )
-        if self._start_info is not None:
-            self.start_note.setText(
-                crop_note(
+        accepts = rules.accepts_start_image(self.model)
+        self.start_card.setToolTip(
+            (
+                f"{_short_name(self._start.name)} · {self._start_info.width}×{self._start_info.height}\n"
+                + crop_note(
                     (self._start_info.width, self._start_info.height),
                     (self.page.widthSpinBox.value(), self.page.heightSpinBox.value()),
                 )
+                + "\nHover to preview the crop. Click to replace."
             )
-            self.start_note.show()
-        accepts = rules.accepts_start_image(self.model)
-        self.start_card.setToolTip(
-            "Click to choose or replace the start image."
+            if self._start is not None and self._start_info is not None
+            else "Click to choose a start image; leave empty for text to video."
             if accepts
             else "A start image is only verified with LTX-2.3 (LTX-2 froze on it)."
         )
         for widget in self._choose_targets:
             widget.setCursor(Qt.CursorShape.PointingHandCursor if accepts else Qt.CursorShape.ArrowCursor)
+        if self._hovering:
+            self._show_hover()
         self.clear.setEnabled(self._start is not None or self._loading)
         problem = (
             (_unverified(self.model) if not rules.supported_video_model(self.model) else "")
@@ -356,6 +359,7 @@ class VideoPanel(QObject):
         self._runner.submit(asyncio.to_thread(_read_start_image, chosen), done)
 
     def _clear(self) -> None:
+        self._hide_hover()
         self._choice_revision += 1
         self._start, self._sha, self._start_source, self._start_info = None, "", None, None
         self._loading = False
@@ -365,24 +369,47 @@ class VideoPanel(QObject):
         self._sync()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        """The card chooses an image by click or keyboard; the separate close control only clears it."""
-        if watched is self.thumb and event.type() == QEvent.Type.Resize and self._start_info is not None:
+        """Choose on click; hover previews the current centered crop without replacing output."""
+        kind = event.type()
+        if watched is self.thumb and kind == QEvent.Type.Resize and self._start_info is not None:
             self._render_thumbnail()
-        if watched in self._choose_targets and rules.accepts_start_image(self.model):
-            if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
-                self._choose()
-                return True
-            if (
-                watched is self.start_card
-                and event.type() == QEvent.Type.KeyPress
-                and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space)
-            ):
-                self._choose()
-                return True
+        if watched in self._choose_targets:
+            if kind == QEvent.Type.Enter:
+                self._hovering = True
+                self._show_hover()
+            elif watched is self.start_card and kind == QEvent.Type.Leave:
+                self._hide_hover()
+            if rules.accepts_start_image(self.model):
+                if kind == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+                    self._choose()
+                    return True
+                if (
+                    watched is self.start_card
+                    and kind == QEvent.Type.KeyPress
+                    and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space)
+                ):
+                    self._choose()
+                    return True
         return super().eventFilter(watched, event)
 
+    def _show_hover(self) -> None:
+        """Show the cached source in the canvas; preserve its current result underneath."""
+        if not self.active or self._start_info is None or self._start is None:
+            self.page.resultPreviewLabel.clear_temporary_crop()
+            return
+        picture = QPixmap.fromImage(QImage.fromData(self._start_info.thumbnail_png))
+        self.page.resultPreviewLabel.show_temporary_crop(
+            picture,
+            (self.page.widthSpinBox.value(), self.page.heightSpinBox.value()),
+        )
+
+    def _hide_hover(self) -> None:
+        """Restore whatever output the central viewer currently holds."""
+        self._hovering = False
+        self.page.resultPreviewLabel.clear_temporary_crop()
+
     def _render_thumbnail(self) -> None:
-        """Display the complete selected image in the space available in the shared source card."""
+        """Fit the entire selected image within the fixed thumbnail, without cropping."""
         info = self._start_info
         if info is None or self.thumb.width() <= 0 or self.thumb.height() <= 0:
             return
@@ -396,27 +423,21 @@ class VideoPanel(QObject):
         )
 
     def _show_start(self) -> None:
-        """Keep a large clickable preview; only the top-right close icon clears the selected image."""
+        """Keep the image thumbnail at the right of the duration line, even after generating."""
         info = self._start_info
         self.clear.setVisible(self._start is not None or self._loading)
         if self._start is None or info is None:
             self.thumb.clear()
-            self.thumb.setText("Choose image")
-            self.start_label.setText(
-                "Checking start image…"
-                if self._loading
-                else f"{_short_name(self._start.name)} · unavailable"
-                if self._start is not None
-                else "None (text to video)"
-            )
-            self.start_label.setToolTip("")
-            self.start_note.clear()
-            self.start_note.hide()
+            self.thumb.setText("Choose\nimage")
+            self.thumb.setToolTip("")
+            if self._hovering:
+                self.page.resultPreviewLabel.clear_temporary_crop()
             return
         self.thumb.setText("")
         self._render_thumbnail()
-        self.start_label.setText(f"{_short_name(self._start.name)} · {info.width}×{info.height}")
-        self.start_label.setToolTip(str(self._start))
+        self.thumb.setToolTip(f"{self._start.name} · {info.width}×{info.height}")
+        if self._hovering:
+            self._show_hover()
 
     def apply(self, request: ResolvedGenerationRequest) -> ResolvedGenerationRequest:
         """The resolved image request plus the video fields; the request model checks the frame rule and the image."""
