@@ -605,9 +605,9 @@ class GenerationPage:
     def _filter_samplers(self, keep: str | None = None) -> None:
         """Offer every sampler in every mode; the selected model's profile only steers the choice.
 
-        When the model changes and the current sampler is not one the model's profile suits, the profile's recommended
-        sampler is selected, but the user can still pick any other one. ``keep`` is a sampler the caller restores on
-        purpose (a loaded configuration) and is never replaced.
+        Image checkpoints retain their existing profile recommendation when it differs from the current choice.
+        Video checkpoint and family browsing never changes the sampler. ``keep`` is an explicit value restored
+        from a loaded configuration and is never replaced.
         """
         page = self.page
         combo = page.samplerCombo
@@ -616,7 +616,9 @@ class GenerationPage:
         profile = profile_for(model, entry.base_model if entry else None) if model else None
         allowed = sorted(SAMPLERS)
         wanted = keep or combo.currentText()
-        if not keep and profile and wanted not in [item.value for item in profile.samplers]:
+        if not keep and profile and not rules.is_video_model(model) and wanted not in [
+            item.value for item in profile.samplers
+        ]:
             wanted = profile.sampler.value
         if [combo.itemText(i) for i in range(combo.count())] != allowed:
             combo.blockSignals(True)
