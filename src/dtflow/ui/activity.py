@@ -26,7 +26,9 @@ class RunState:
     stage: str = ""
     wide: str = ""
     queued: int = 0
-    # Text for the bar's count when completed/total are only a fill scale (empty: "completed / total").
+    # Estimated whole-run fraction (0..1) that fills the bar and tints the ring; completed/total stay the real counts.
+    fraction: float | None = None
+    # Text for the bar's count when it should not read "completed / total" (empty: use that).
     count: str = ""
 
 

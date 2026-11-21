@@ -851,6 +851,7 @@ class QueuePage:
         detail = f"Queue {queue_id[:8]} · {summary.headline}"
         waiting = len(up_next_ids(self._views.values())) if dispatching_here else 0
         stage = wide = count = ""
+        fraction = None
 
         if phase == "running":
             # The ring counts settled items, which is meaningful however many items run at once.
@@ -864,8 +865,8 @@ class QueuePage:
                 if owner == queue_id and (running_ids is None or item_id in running_ids)
             ]
             if video_fractions:
-                # Running clips add their estimated share (hundredths) to the settled items; the count stays settled/total.
-                completed, total = summary.settled * 100 + round(100 * sum(video_fractions)), summary.total * 100
+                # Running clips add their estimated share to the settled items; the counts stay settled/total.
+                fraction = min(1.0, (summary.settled + sum(video_fractions)) / max(1, summary.total))
                 count = f"{summary.settled}/{summary.total}"
             detail += f" Progress: {summary.settled}/{summary.total}."
             # Only the currently running item may supply the single-item stage/progress.
@@ -1006,6 +1007,7 @@ class QueuePage:
                 stage=stage,
                 wide=wide,
                 queued=waiting,
+                fraction=fraction,
                 count=count,
             )
         )

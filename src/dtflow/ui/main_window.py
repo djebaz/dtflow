@@ -1287,6 +1287,7 @@ class MainWindow:
             action=state.action,
             completed=state.completed,
             total=state.total,
+            fraction=state.fraction,
             detail=" ".join(
                 part for part in (state.detail, " · ".join(p for p in (state.elapsed, state.eta) if p)) if part
             ),
@@ -1504,8 +1505,7 @@ class MainWindow:
             return
         state = self.activity.run_state
         # Each settled image or finished run pushes a refresh hint to Images (it checks the database cheaply).
-        # A video queue scales `completed` by the estimated fraction; its count text changes only when an item settles.
-        marker = (self.activity.generating, self.activity.dispatching, state.count or state.completed)
+        marker = (self.activity.generating, self.activity.dispatching, state.completed)
         if marker != self._last_run_marker:
             self._last_run_marker = marker
             self.gallery.notify_changed()
@@ -1529,8 +1529,8 @@ class MainWindow:
             self.progress_strip.rows["run"].setProperty("runIdentity", run_identity)
         self.progress_strip.update(
             "run",
-            state.completed or 0,
-            state.total or 0,
+            round(state.fraction * 1000) if state.fraction is not None else state.completed or 0,
+            1000 if state.fraction is not None else state.total or 0,
             detail=state.detail,
             elapsed=state.elapsed,
             eta=state.eta,
