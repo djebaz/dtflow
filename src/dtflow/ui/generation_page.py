@@ -673,6 +673,8 @@ class GenerationPage:
         document = form_to_document(self._values())
         form = {name: document[name] for name in self.PROVIDER_FIELDS}
         form["receipts"] = self.lora.receipts()
+        if self.video.active:
+            form["video"] = self.video.session_document()
         form["catalogue"] = {
             "domain": self.page.generationDomainCombo.currentData() or "all",
             "base_model": self.page.baseModelCombo.currentData() or self._pending_family,
@@ -686,6 +688,8 @@ class GenerationPage:
         current = self._values()
         values = replace(form_from_document(document), prompt=current.prompt, negative_prompt=current.negative_prompt)
         self._apply(values)
+        if self.video.active:
+            self.video.restore(document.get("video") if isinstance(document, dict) else None)
         receipts = document.get("receipts") if isinstance(document, dict) else None
         valid = (
             {k: v for k, v in receipts.items() if type(k) is str and type(v) is str}
@@ -953,7 +957,8 @@ class GenerationPage:
             button.setToolTip("")
 
     def _video_model_changed(self, text: str) -> None:
-        self.video.model_changed(text)
+        # Inventory rebuilds briefly clear and reselect checkpoints; this is not an explicit model change.
+        self.video.model_changed(text, catalogue_update=self._updating_catalogue)
         self._sync_generate()
 
     def _unlisten_activity(self) -> None:
