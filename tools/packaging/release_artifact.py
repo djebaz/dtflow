@@ -86,7 +86,9 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-c", "--commit", required=True, help="expected full checkout commit")
     parser.add_argument("-t", "--tag", default="", help="optional release tag matching the application version")
-    parser.add_argument("--ffmpeg-provider", choices=("gyan", "tas", "unpins", "imageio", "imageio-mini"), default="gyan")
+    parser.add_argument(
+        "--ffmpeg-provider", choices=("gyan", "tas", "unpins", "imageio", "imageio-mini"), default="gyan"
+    )
     args = parser.parse_args()
     record = verify(args.commit, args.tag, args.ffmpeg_provider)
     out = ROOT / "dist"

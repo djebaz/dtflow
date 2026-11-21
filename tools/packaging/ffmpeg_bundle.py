@@ -34,8 +34,7 @@ PROVIDERS = {
         "vendor": "Gyan Doshi Essentials, Windows x64 static build",
         "archive_name": f"ffmpeg-{VERSION}-essentials_build.zip",
         "archive_url": (
-            f"https://github.com/GyanD/codexffmpeg/releases/download/{VERSION}/"
-            f"ffmpeg-{VERSION}-essentials_build.zip"
+            f"https://github.com/GyanD/codexffmpeg/releases/download/{VERSION}/ffmpeg-{VERSION}-essentials_build.zip"
         ),
         "archive_sha256": "db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec",
         "license": "GPL-3.0",
@@ -58,10 +57,7 @@ PROVIDERS = {
     "imageio-mini": {
         "vendor": "imageio-ffmpeg 0.5.1 FFmpeg 4.2.2 + ffmpeg-mini-win64 1.0.1 FFprobe 7.1",
         "archive_name": "ffmpeg-mini-win64.zip",
-        "archive_url": (
-            "https://github.com/nichiken/ffmpeg-mini-win64/releases/download/v1.0.1/"
-            "ffmpeg-mini-win64.zip"
-        ),
+        "archive_url": ("https://github.com/nichiken/ffmpeg-mini-win64/releases/download/v1.0.1/ffmpeg-mini-win64.zip"),
         "archive_sha256": "f921d628254e824975ff9a60462cc1d48a5e627ed62c9a893c32ca36c55531cb",
         "license": "Mixed FFmpeg 4.2.2 + LGPL FFprobe 7.1; source review pending",
         "stage": ROOT / "tmp" / "packaging" / "imageio-mini-ffprobe-7.1",
@@ -71,8 +67,7 @@ PROVIDERS = {
         "vendor": "unpins FFmpeg, Windows x64 headless multicall build (no GPU acceleration)",
         "archive_name": "ffmpeg-8.1.2-1-x86_64-windows.exe.zst",
         "archive_url": (
-            "https://github.com/unpins/ffmpeg/releases/download/v8.1.2-1/"
-            "ffmpeg-8.1.2-1-x86_64-windows.exe.zst"
+            "https://github.com/unpins/ffmpeg/releases/download/v8.1.2-1/ffmpeg-8.1.2-1-x86_64-windows.exe.zst"
         ),
         "archive_sha256": "abb78672e21721e7eadd84450616bd954f6b067d9355a27ef5d2b80f65a6f842",
         "license": "GPL-3.0-or-later",
@@ -83,8 +78,7 @@ PROVIDERS = {
         "vendor": "NevermindNilas TAS-FFMPEG, Windows x64 shared build",
         "archive_name": f"tas-ffmpeg-{VERSION}-win64.zip",
         "archive_url": (
-            f"https://github.com/NevermindNilas/TAS-FFMPEG/releases/download/v{VERSION}/"
-            f"tas-ffmpeg-{VERSION}-win64.zip"
+            f"https://github.com/NevermindNilas/TAS-FFMPEG/releases/download/v{VERSION}/tas-ffmpeg-{VERSION}-win64.zip"
         ),
         "archive_sha256": "1d570273dc8be2b3f386467657591a22045d058a830b1eb1eaa881dafb689bfb",
         "license": "GPL-2.0-or-later",
@@ -94,9 +88,7 @@ PROVIDERS = {
             f"https://github.com/NevermindNilas/TAS-FFMPEG/releases/download/v{VERSION}/"
             f"tas-ffmpeg-{VERSION}-corresponding-source.tar.xz"
         ),
-        "corresponding_source_sha256": (
-            "74605032486afbaaf6a489420eb4eea870c20604aace2b993e850a3e7d338ebd"
-        ),
+        "corresponding_source_sha256": ("74605032486afbaaf6a489420eb4eea870c20604aace2b993e850a3e7d338ebd"),
     },
 }
 
@@ -215,11 +207,7 @@ def _stage_imageio(
 
     gyan_archive = _archive("gyan")
     with zipfile.ZipFile(gyan_archive) as z:
-        entries = {
-            name: name[: -len("bin/ffprobe.exe")]
-            for name in z.namelist()
-            if name.endswith("/bin/ffprobe.exe")
-        }
+        entries = {name: name[: -len("bin/ffprobe.exe")] for name in z.namelist() if name.endswith("/bin/ffprobe.exe")}
         if len(entries) != 1:
             raise ValueError("Pinned Gyan archive has no unique ffprobe.exe.")
         root = next(iter(entries.values()))
@@ -260,27 +248,29 @@ def prepare(provider: str = "gyan") -> dict:
             if len(roots) != 1:
                 raise ValueError("Pinned FFmpeg archive has no unique bin/ffmpeg.exe.")
             root = roots[0]
-    
+
             required = {name: root + "bin/" + name for name in binaries}
             if provider == "gyan":
-                required.update({
-                    "UPSTREAM-LICENSE.txt": root + "LICENSE",
-                    "UPSTREAM-README.txt": root + "README.txt",
-                })
+                required.update(
+                    {
+                        "UPSTREAM-LICENSE.txt": root + "LICENSE",
+                        "UPSTREAM-README.txt": root + "README.txt",
+                    }
+                )
             else:
                 # Retain the publisher's full notice tree, not a hand-selected subset.
                 license_root = root + "licenses/"
                 for name in members:
                     if not name.startswith(license_root):
                         continue
-                    relative = name[len(license_root):]
+                    relative = name[len(license_root) :]
                     if not relative or ".." in PurePosixPath(relative).parts:
                         raise ValueError("Unsafe TAS license archive member.")
                     required["UPSTREAM/" + relative] = name
                 required["UPSTREAM-MANIFEST.json"] = root + "manifest.json"
                 if "UPSTREAM/LICENSING.md" not in required or "UPSTREAM/README.txt" not in required:
                     raise ValueError("TAS archive lacks its required license and corresponding-source notices.")
-    
+
             missing = [name for name, member in required.items() if member not in members]
             if missing:
                 raise ValueError(f"FFmpeg archive missing required members: {', '.join(missing)}.")
@@ -291,9 +281,7 @@ def prepare(provider: str = "gyan") -> dict:
                     shutil.copyfileobj(source, output)
 
     shutil.copyfile(ROOT / "LICENSE", notices_dir / "GPL-3.0.txt")
-    shutil.copyfile(
-        ROOT / "tools" / "packaging" / spec["notice"], notices_dir / "DTFlow-FFmpeg-NOTICE.txt"
-    )
+    shutil.copyfile(ROOT / "tools" / "packaging" / spec["notice"], notices_dir / "DTFlow-FFmpeg-NOTICE.txt")
     record = {
         "provider": provider,
         "multicall": provider == "unpins",
@@ -346,18 +334,24 @@ def staged_record(provider: str = "gyan") -> dict:
         or record.get("version") != ("4.2.2" if provider in ("imageio", "imageio-mini") else VERSION)
         or record.get("archive_sha256") != spec["archive_sha256"]
         or record.get("archive_url") != spec["archive_url"]
-        or (provider == "imageio" and (
-            record.get("ffprobe_version") != VERSION
-            or record.get("ffprobe_archive_sha256") != _spec("gyan")["archive_sha256"]
-            or record.get("ffprobe_archive_url") != _spec("gyan")["archive_url"]
-        ))
-        or (provider == "imageio-mini" and (
-            record.get("ffprobe_version") != "7.1"
-            or record.get("ffmpeg_archive_sha256") != _spec("imageio")["archive_sha256"]
-            or record.get("ffmpeg_archive_url") != _spec("imageio")["archive_url"]
-            or record.get("ffprobe_archive_sha256") != spec["archive_sha256"]
-            or record.get("ffprobe_archive_url") != spec["archive_url"]
-        ))
+        or (
+            provider == "imageio"
+            and (
+                record.get("ffprobe_version") != VERSION
+                or record.get("ffprobe_archive_sha256") != _spec("gyan")["archive_sha256"]
+                or record.get("ffprobe_archive_url") != _spec("gyan")["archive_url"]
+            )
+        )
+        or (
+            provider == "imageio-mini"
+            and (
+                record.get("ffprobe_version") != "7.1"
+                or record.get("ffmpeg_archive_sha256") != _spec("imageio")["archive_sha256"]
+                or record.get("ffmpeg_archive_url") != _spec("imageio")["archive_url"]
+                or record.get("ffprobe_archive_sha256") != spec["archive_sha256"]
+                or record.get("ffprobe_archive_url") != spec["archive_url"]
+            )
+        )
     ):
         raise ValueError("Staged FFmpeg provider or pinned archive does not match the requested build.")
     expected_dlls = set(TAS_DLLS) if provider == "tas" else set()

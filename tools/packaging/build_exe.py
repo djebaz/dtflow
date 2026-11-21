@@ -46,7 +46,9 @@ def main(argv: list[str] | None = None) -> int:
         "--onedir", action="store_true", help="build a folder distribution instead of the default one-file executable"
     )
     parser.add_argument(
-        "--ffmpeg-provider", choices=("gyan", "tas", "unpins", "imageio", "imageio-mini"), default="gyan",
+        "--ffmpeg-provider",
+        choices=("gyan", "tas", "unpins", "imageio", "imageio-mini"),
+        default="gyan",
         help="Windows FFmpeg: gyan default; tas, unpins, imageio, or imageio-mini (minimal ffprobe) experimental",
     )
     args = parser.parse_args(argv)
