@@ -28,7 +28,6 @@ from PySide6.QtWidgets import (
 
 from dtflow.ui.file_dialogs import QFileDialog
 from dtflow import startup
-from dtflow.composition import BACKENDS
 from dtflow.core.compute_units import ComputeUnitEstimate, estimate_compute_units
 from dtflow.core.model_profiles import has_own_profile, profile_for
 from dtflow.core.models import (
@@ -381,7 +380,8 @@ class GenerationPage:
         page.checkpointDetailsButton.setEnabled(bool(page.modelCombo.currentText().strip()))
         for label, scenario in SIMULATED_OUTCOMES:
             page.simulationScenarioCombo.addItem(label, scenario)
-        page.generationBackendCombo.addItems(BACKENDS)
+        page.generationBackendCombo.addItems(("fake", "local", "cloud"))
+        page.generationBackendCombo.view().setRowHidden(page.generationBackendCombo.findText("fake"), True)
         page.generationBackendCombo.setToolTip("Chosen on the Connection page.")
         page.generateButton.clicked.connect(lambda _=False: self.generate())
         self.retryButton = self._add_retry_button(page)
@@ -493,6 +493,9 @@ class GenerationPage:
         """Mirror the Connection page's backend; it is read-only here so there is one selector."""
         name, _ = self._backend()
         if not name:
+            self.page.generationBackendCombo.setCurrentIndex(-1)
+            self.page.simulationBox.setVisible(False)
+            self._sync_generate()
             return
         self.page.generationBackendCombo.setCurrentText(name)
         self._sync_generate()  # the fake backend needs no model, the others do
@@ -905,7 +908,7 @@ class GenerationPage:
         dispatching = self._activity.dispatching
         button = self.page.generateButton
         blocked = self._busy or self._generating
-        no_model = self._model_missing()
+        no_model = self._model_missing() or not self._backend()[0]
         button.setEnabled(not blocked and not no_model)
         if hasattr(self, "retryButton"):
             self.retryButton.setEnabled(not blocked)

@@ -10,25 +10,25 @@ run-name: >-
 # also applies to preview:PART/preview:ALL label events on docs-only PRs;
 # explicit workflow_dispatch remains available for those cases.
 on:
-  # pull_request:
-  #   types: [opened, synchronize, reopened, ready_for_review, labeled]
-  #   # Keep aligned with shared + preview in tools/ci/action_dependencies.json.
-  #   # GitHub matches the cumulative PR changed-file list (not only the last push).
-  #   paths:
-  #     - 'pyproject.toml'
-  #     - 'uv.lock'
-  #     - '.python-version'
-  #     - '.github/actions/**'
-  #     - 'tools/ci/action_changes.py'
-  #     - 'tools/ci/action_dependencies.json'
-  #     - 'src/dtflow/**'
-  #     - 'tools/ui/**'
-  #     - 'tools/ci/preview_*.py'
-  #     - 'tests/fixtures/**'
-  #     - 'tests/support/**'
-  #     - 'tests/conftest.py'
-  #     - 'tests/helpers/**'
-  #     - '.github/workflows/preview-ui.yml'
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    # Keep aligned with shared + preview in tools/ci/action_dependencies.json.
+    # GitHub matches the cumulative PR changed-file list (not only the last push).
+    paths:
+      - 'pyproject.toml'
+      - 'uv.lock'
+      - '.python-version'
+      - '.github/actions/**'
+      - 'tools/ci/action_changes.py'
+      - 'tools/ci/action_dependencies.json'
+      - 'src/dtflow/**'
+      - 'tools/ui/**'
+      - 'tools/ci/preview_*.py'
+      - 'tests/fixtures/**'
+      - 'tests/support/**'
+      - 'tests/conftest.py'
+      - 'tests/helpers/**'
+      - '.github/workflows/preview-ui.yml'
   workflow_dispatch:
     inputs:
       pr:

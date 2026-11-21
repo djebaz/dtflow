@@ -1552,7 +1552,7 @@ def render_active_queue_states(shell, out):
         queue._dispatch_started = owned and started
         queue._selected = queue_id
         queue._activity.set(dispatching=owned)
-        apply_read(([view], view, 2), None)
+        apply_read(([view], view), None)
         queue._timer.stop()  # No polling between presentation-only captures.
         return view
 
@@ -1612,14 +1612,14 @@ def render_active_queue_states(shell, out):
         queue.close_composer()
         timed = present("running", ["succeeded", "running", "pending"], owned=True)
         timed.update(successful_durations=[45], started_at_utc=datetime.now(UTC).isoformat())
-        apply_read(([timed], timed, 2), None)
+        apply_read(([timed], timed), None)
         queue._timer.stop()
         snap("queues-33-elapsed-eta")
         with patch("dtflow.ui.queue_page.monotonic", return_value=queue._countdown.deadline - 89):
             queue._timing_tick()
         snap("queues-34-eta-countdown")
         resumed = dict(timed, resume_event_id=1)
-        apply_read(([resumed], resumed, 2), None)
+        apply_read(([resumed], resumed), None)
         queue._timer.stop()
         snap("queues-35-resume-between-polls")
         present("paused", ["succeeded", "pending", "pending"], owned=True)
@@ -1628,7 +1628,7 @@ def render_active_queue_states(shell, out):
         snap("queues-13-foreign-running")
         stale = present("running", ["succeeded", "running", "pending"])
         stale["owner_active"] = False
-        apply_read(([stale], stale, 2), None)
+        apply_read(([stale], stale), None)
         queue._timer.stop()
         snap("queues-31-interrupted-dispatch")
         present("running", ["unknown", "running", "pending"], owned=True)
@@ -1648,11 +1648,11 @@ def render_active_queue_states(shell, out):
         )
         running = present("running", ["succeeded", "running", "pending"], owned=True)
         queue._selected = paused["queue_id"]
-        apply_read(([running, paused], paused, 2), None)
+        apply_read(([running, paused], paused), None)
         queue._timer.stop()
         snap("queues-24-start-next")
         queued = dict(paused, status="queued", up_next=1)
-        apply_read(([running, queued], queued, 2), None)
+        apply_read(([running, queued], queued), None)
         queue._timer.stop()
         snap("queues-25-up-next")
         # #122: a long, grouped list (Running, Up next, Paused, History), its filter, Remove and an item filter.
@@ -1682,7 +1682,7 @@ def render_active_queue_states(shell, out):
         everything = [running, queued, *history]
         mixed = history[1]
         queue._selected = mixed["queue_id"]
-        apply_read((everything, mixed, 2), None)
+        apply_read((everything, mixed), None)
         queue._timer.stop()
         snap("queues-26-list-groups")
         # The queue list, not the shared left QScrollArea, owns vertical scrolling.
@@ -1717,7 +1717,7 @@ def render_active_queue_states(shell, out):
         page.failedFilterButton.setChecked(True)
         fresh = dict(history[4], queue_id="offline-queue-new")
         queue._select_after = fresh["queue_id"]
-        apply_read(([fresh], fresh, 2), None)
+        apply_read(([fresh], fresh), None)
         queue._timer.stop()
         snap("queues-32-new-queue-filter-reset")
         queue._selected = queue_id
@@ -1915,7 +1915,7 @@ def render_active_queue_states(shell, out):
         queue._dispatch_started = False
         queue._selected = None
         queue._activity.set(dispatching=False)
-        apply_read(([], None, 2), None)
+        apply_read(([], None), None)
         queue._timer.stop()
 
 
@@ -1946,7 +1946,11 @@ def render_queue_template_states(shell, out):
         save(shell.form, out, name)
 
     recipe = Recipe(
-        ResolvedGenerationRequest("fixture-draft", "a {cat|dog}", "fake-fixture", 123), PlanForm("Repeat"), 3, "fake", 2
+        ResolvedGenerationRequest("fixture-draft", "a {cat|dog}", "fake-fixture", 123),
+        PlanForm("Repeat"),
+        3,
+        "fake",
+        False,
     )
     template = QueueTemplate("fixture-template", "My reusable queue recipe", 1, recipe)
     with patch.object(shell.runner, "submit", side_effect=hold):
@@ -2198,7 +2202,7 @@ def render_item_table_states(shell, out, state):
         queue._dispatch_started = True
         queue._selected = queue_id
         queue._activity.set(dispatching=True)
-        queue._read_done(([view], view, 2), None)
+        queue._read_done(([view], view), None)
         queue._timer.stop()
         model, table = queue.model, page.queueItemsView
         model.thumbnails._runner = SimpleNamespace(submit=real_submit, closed=False)
@@ -2300,7 +2304,7 @@ def render_item_table_states(shell, out, state):
         )
         queue._dispatching = None
         queue._selected = script_view["queue_id"]
-        queue._read_done(([script_view], script_view, 2), None)
+        queue._read_done(([script_view], script_view), None)
         queue._timer.stop()
         # The script's display-only thumbnail comes from its last committed
         # child, without borrowing that child's actionable gallery identity.
@@ -2365,7 +2369,7 @@ def render_item_table_states(shell, out, state):
             cap=1,
         )
         queue._selected = workflow_view["queue_id"]
-        queue._read_done(([workflow_view], workflow_view, 2), None)
+        queue._read_done(([workflow_view], workflow_view), None)
         queue._timer.stop()
         select(0)
         strip = activity_strip(page)
@@ -2385,12 +2389,12 @@ def render_item_table_states(shell, out, state):
                 },
             },
         ]
-        queue._read_done(([workflow_view], workflow_view, 2), None)
+        queue._read_done(([workflow_view], workflow_view), None)
         queue._timer.stop()
         snap("queues-75-workflow-lora-warning")
         queue._selected = None
         queue._activity.set(dispatching=False)
-        queue._read_done(([], None, 2), None)
+        queue._read_done(([], None), None)
         queue._timer.stop()
 
 

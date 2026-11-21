@@ -24,8 +24,8 @@ and records every request so each image has an inspectable origin.
   Fullscreen Detail slideshows loop through filtered images with adjustable timing and a prompt/LoRA information rail.
 - **Searchable logs.** Browse, filter and export structured application diagnostics from the
   desktop. Sensitive values such as tokens, signed URLs and image data are kept out of logs.
-- **Offline exploration.** A fake provider exercises the same forms, progress, outputs and queues
-  without model inference or network access.
+- **Offline development fixtures.** The Fake backend supports CLI checks, automated tests and
+  UI previews without model inference or network access; it is not offered in the desktop provider selector.
 - **Automation CLI.** The same generation, queue and gallery services are available from the
   command line for scripting and development.
 - **Native workflows.** Build saved graphs of generation, face-mask detection, inpainting and refinement steps, with per-node settings, branch-level progress and explicit retry. See the [Workflows guide](devdocs/guides/workflows.md) for supported nodes and acceptance limits.
@@ -55,8 +55,8 @@ uv sync
 uv run dtflow gui
 ```
 
-Pick the **fake** provider on the Connection page for an offline tour, or configure local
-Draw Things or DT+. The [desktop guide](devdocs/guides/desktop.md) covers connection setup,
+Choose **Local Draw Things** or **DT+ Cloud** on the Connection page. The Fake backend
+remains available to developers through the CLI and offline tooling, not the desktop selector. The [desktop guide](devdocs/guides/desktop.md) covers connection setup,
 launch options and each workspace.
 
 DTFlow always opens on **Connection** at startup. It remembers the last Generate sub-mode (Text to image, Inpaint, Controlnet or Scripts), but only opens that mode when you navigate to **Generate**; a remembered Scripts mode never redirects startup. DTFlow checks the restored connection once in the background. Its colored power icon at the far right of the bottom bar opens Connection and retains the last check result; it is not continuous monitoring. Images opens from the button above ordinary inspectors (above the centre on narrow windows), hidden in Images and Logs. Missing connection configuration stays unchecked, and startup never generates images or resumes queues.

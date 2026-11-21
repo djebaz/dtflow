@@ -11,6 +11,10 @@ Updated 2026-11-20 for PR #513 review repairs, 6.4.1 preparation and in-review P
 - Slideshow New direction shows arrivals next under Newest first sorting, then resumes forward playback.
 - Downloads runs bounded stale staging/orphan-source cleanup once at startup, off Qt; failed/refused conversion sources remain retained. Civitai documentation now covers tokens, permissions, file retention and recorded acceptance boundaries.
 
+## Unreleased: desktop provider selection (#518, PR #519)
+
+- Connection and Generate no longer offer Fake as a desktop provider. A saved Fake session restores without an active provider, requiring an explicit Local Draw Things or DT+ Cloud selection before generation. Fake remains supported by the CLI, tests and offline previews; saved results and backend registration are retained. Owner-reported manual acceptance and successful CI/Preview on PR #519 are not packaged Windows release acceptance.
+
 ## Unreleased: Controlnet mode (#503, PR #504)
 
 - Generate Controlnet mode: pose guidance from a photograph (local YOLO26n-pose ONNX) or a body map with Union Pro 1.0 on DT+ Cloud; control force, apply from / to, person pick, Gallery Use settings restore. Verified only for `flux_1_dev_q5p` with Union Pro 1.0 q5p at 0.7; other FLUX.1 checkpoints are "not verified". Queueing a pose is implemented in PR #513 (#505), pending owner smoke and review.

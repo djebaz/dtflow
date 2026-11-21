@@ -21,6 +21,7 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 
 ## Fixed
 
+- The desktop Connection and Generate provider selectors no longer offer the internal Fake backend. Previously saved Fake selections require an explicit choice of Local Draw Things or DT+ Cloud before generation; existing Fake data and CLI/test/preview support are preserved (PR #519, refs #518; owner-reported manual testing and CI/Preview passed on the preceding code commit).
 - Documentation examples no longer embed owner-specific workstation paths. The WSL X11 helper derives the current Windows application-data directory, selected WSL user's home and its own checkout path instead of hard-coding an account; this does not remove older Git history or Action logs. Static validation only; the helper was not executed.
 - Repository path/PII scanning now supports the Action's existing check presets and extension selection using the newer shared scanner; scanner failures are no longer summarized as a clean scan. These are heuristic findings, not proof of private-data exposure; the updated Action has not been rerun by the agent.
 - Controlnet → New queue plan explicitly refreshes the current pose map/controls through Use Generate settings' pose-only mode, preserving the Queue draft's base settings and plan variations instead of reusing a stale composer pose. The composer summary and queued Parameters tooltip expose exact pose checkpoint/quantization, strength, force and range (PR #513; owner-reported Windows retest confirmed non-default pose settings are preserved).

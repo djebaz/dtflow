@@ -552,6 +552,8 @@ class MainWindow:
         self.generation.queue_behind = self.queue.queue_behind
         self.generation.queue_images = self._queue_images
         form.backendCombo.addItems(BACKENDS)
+        form.backendCombo.view().setRowHidden(form.backendCombo.findText("fake"), True)
+        form.backendCombo.setPlaceholderText("Select a provider")
         startup.mark("page wiring")
         self._restore_session()
         startup.mark("pages wired, session restored")
@@ -1551,7 +1553,10 @@ class MainWindow:
         if document is None:
             return
         provider, endpoint = document.get("provider"), document.get("endpoint")
-        if provider in BACKENDS:
+        if provider == "fake":
+            # Legacy fake sessions must not silently select a real, potentially billable provider.
+            self.form.backendCombo.setCurrentIndex(-1)
+        elif provider in ("local", "cloud"):
             self.form.backendCombo.setCurrentText(provider)
         if isinstance(endpoint, str):
             self.form.endpointEdit.setText(endpoint)

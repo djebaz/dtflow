@@ -7,7 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QApplication, QLineEdit
+from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton
 from shiboken6 import isValid
 
 from dtflow.ui.app_filters import install_app_filter, remove_app_filter
@@ -34,6 +34,9 @@ class InlineFeedback(QObject):
         self.strip = activity_strip(window)
         self.strip.mount_feedback(self)
         self.form.hide()
+        # Resolve the actual button rather than a QUiLoader name attribute that can
+        # collide with a layout item wrapper during repeated Qt window lifecycles.
+        self.form.inlineDismissButton = self.form.findChild(QPushButton, "inlineDismissButton")
         self.form.inlineDismissButton.clicked.connect(self.dismiss)
         self.form.inlineEditorCancelButton.clicked.connect(self.dismiss)
         self._armed = None
