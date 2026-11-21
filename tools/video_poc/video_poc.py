@@ -836,7 +836,8 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
     from drawthings_py.generated.dt_grpc import image_service
     from grpclib.const import Cardinality
 
-    fps = int(args.preset.get("fps", FPS_BY_FAMILY.get(family_of(args.model), DEFAULT_FPS))) if args.preset_name else FPS_BY_FAMILY.get(family_of(args.model), DEFAULT_FPS)
+    family_fps = FPS_BY_FAMILY.get(family_of(args.model), DEFAULT_FPS)
+    fps = int(args.preset.get("fps", family_fps)) if args.preset_name else family_fps
     encode = not args.no_mp4
 
     # Section 3: profile and request summary.
@@ -855,8 +856,7 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
     if args.preset_name:
         numeric_sampler = args.preset.get("sampler")
         sampler = next(
-            (candidate for candidate, name in SAMPLER_NAME.items()
-             if SAMPLER_WIRE_VALUE[name] == numeric_sampler),
+            (candidate for candidate, name in SAMPLER_NAME.items() if SAMPLER_WIRE_VALUE[name] == numeric_sampler),
             None,
         )
         if sampler is None:
@@ -889,7 +889,8 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
     ):
         value = own if wanted is None else wanted
         setattr(args, name, None if value is None else (float(value) if name != "steps" else int(value)))
-        sources.append(f"{name} {value} ({'profile' if wanted is None else 'argument'})")
+        source = "profile" if wanted is None else "preset" if args.preset_name and getattr(args, name) is not None else "argument"
+        sources.append(f"{name} {value} ({source})")
     log.line("values used: " + ", ".join(sources), echo=True)
     seed = args.seed if args.seed is not None else random.randrange(0, 2**31)
     count = len(args.images)
@@ -900,8 +901,9 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
     )
     log.line(f"playback fps assumed from the Draw Things model table: {fps} (the response carries none)")
     if args.preset_name:
+        loras = [(item["file"], item.get("mode", "all"), item["weight"]) for item in args.preset.get("loras", [])]
         log.line(f"selected preset: {args.preset_name!r}; refiner {args.preset.get('refinerModel', 'none')}; "
-                 f"LoRAs {[(item['file'], item.get('mode', 'all'), item['weight']) for item in args.preset.get('loras', [])]}")
+                 f"LoRAs {loras}")
         if "shiftForAudio" in args.preset:
             log.warn("This SDK's generated FlatBuffer has no shiftForAudio field; provider default applies.")
     else:
@@ -977,8 +979,11 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
                 for index, item in enumerate(args.preset.get("loras", [])):
                     lora = raw.Loras(index)
                     modes = {"all": 0, "base": 1, "refiner": 2}
-                    if (lora.File().decode() != item["file"]
-                        or lora.Mode() != modes[item.get("mode", "all").lower()]):
+                    if (
+                        lora.File().decode() != item["file"]
+                        or lora.Mode() != modes[item.get("mode", "all").lower()]
+                        or abs(lora.Weight() - float(item["weight"])) > 0.0001
+                    ):
                         raise ValidationError(f"Serialized LoRA {index} differs from selected preset.")
                 if args.preset.get("refinerModel") and raw.RefinerModel().decode() != args.preset["refinerModel"]:
                     raise ValidationError("Serialized refiner model differs from selected preset.")
