@@ -147,15 +147,19 @@ def development_mode() -> bool:
 def install_qt_multimedia_logging() -> None:
     """Keep Qt/FFmpeg playback warnings off the console; retain them in the dev log only.
 
-    Called once for the GUI after normal logging setup. Capture only messages Qt
-    already emits; enabling QT_FFMPEG_DEBUG would flood the console with decoder
-    internals. Native stderr writes outside Qt cannot be intercepted here.
-    Non-multimedia Qt messages keep their existing output behavior.
+    Called once for the GUI after normal logging setup. Qt's FFmpeg backend
+    otherwise writes its messages directly to stderr; QT_FFMPEG_DEBUG routes
+    them through Qt but also enables verbose decoder messages. Discard the
+    latter, retaining only warnings/errors in -x. Native writes outside Qt
+    remain outside this handler.
     """
     global _QT_MULTIMEDIA_HANDLER
     if _QT_MULTIMEDIA_HANDLER is not None:
         return
 
+    # Qt's FFmpeg plugin only forwards native libav messages to Qt when this is
+    # set before plugin initialization. Its verbose messages are discarded below.
+    os.environ.setdefault("QT_FFMPEG_DEBUG", "1")
     from PySide6.QtCore import QtMsgType, qFormatLogMessage, qInstallMessageHandler
 
     logger = logging.getLogger("dtflow.qt.multimedia")
@@ -166,7 +170,7 @@ def install_qt_multimedia_logging() -> None:
         multimedia = (
             category == "qt.multimedia"
             or category.startswith("qt.multimedia.")
-            or message.lstrip('"').startswith("FFmpeg log:")
+            or message.lstrip('"').startswith(("FFmpeg log:", "D3D11 smoke test:"))
         )
         if multimedia and kind != QtMsgType.QtFatalMsg:
             if development_mode() and kind in (QtMsgType.QtWarningMsg, QtMsgType.QtCriticalMsg):
