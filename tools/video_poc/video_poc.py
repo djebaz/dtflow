@@ -1267,8 +1267,9 @@ def main() -> int:
             if not isinstance(selected_model, str) or not selected_model:
                 raise ValueError("Selected preset is missing its model checkpoint.")
             if args.model is not None and args.model != selected_model:
-                raise ValueError("-m must match the selected preset's model; use another -n instead.")
-            args.model = selected_model
+                log.line(f"checkpoint override: preset model {selected_model} -> -m {args.model}", echo=True)
+            else:
+                args.model = selected_model
         elif args.model is None:
             args.model = DEFAULT_MODEL
         if family_of(args.model) == "unknown":
