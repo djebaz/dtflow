@@ -34,6 +34,7 @@ __all__ = [
     "LogSession",
     "LoggingSetupError",
     "configure_logging",
+    "install_qt_multimedia_logging",
     "configured_directory",
     "default_directory",
     "dev_enabled",
@@ -135,11 +136,63 @@ def _prune(directory: Path, keep: str) -> None:
 
 
 _DEVELOPMENT = False
+_QT_MULTIMEDIA_HANDLER = None
 
 
 def development_mode() -> bool:
-    """Whether this process runs with the explicit ``-x/--dev`` diagnostic mode; it never changes generation."""
+    """Whether this process runs with the explicit -x/--dev diagnostic mode; it never changes generation."""
     return _DEVELOPMENT
+
+
+def install_qt_multimedia_logging() -> None:
+    """Keep Qt/FFmpeg playback warnings off the console; retain them in the dev log only.
+
+    Called once for the GUI after normal logging setup. Qt's FFmpeg plugin otherwise
+    writes libav warnings directly to stderr. Its documented switch sends them through
+    Qt's message handler instead; it also enables verbose messages, which we discard.
+    Non-multimedia Qt messages keep their existing output behavior.
+    """
+    global _QT_MULTIMEDIA_HANDLER
+    if _QT_MULTIMEDIA_HANDLER is not None:
+        return
+
+    # Must be set before QtMultimedia initializes. Respect an explicit user setting.
+    os.environ.setdefault("QT_FFMPEG_DEBUG", "1")
+    from PySide6.QtCore import QtMsgType, qFormatLogMessage, qInstallMessageHandler
+
+    logger = logging.getLogger("dtflow.qt.multimedia")
+    previous = None
+
+    def route(kind, context, message) -> None:
+        category = context.category or ""
+        multimedia = category == "qt.multimedia" or category.startswith("qt.multimedia.") or message.startswith(
+            "FFmpeg log:"
+        )
+        if multimedia and kind != QtMsgType.QtFatalMsg:
+            if development_mode() and kind in (QtMsgType.QtWarningMsg, QtMsgType.QtCriticalMsg):
+                # Sanitize before bounding: truncating first could expose a partial credential.
+                detail = sanitize(message)
+                if len(detail) > 2048:
+                    detail = "[omitted: oversized Qt multimedia diagnostic]"
+                from dtflow.diagnostics import event
+
+                event(
+                    logger,
+                    "qt.multimedia.warning",
+                    level=logging.DEBUG,
+                    data={"category": category, "severity": kind.name, "message": detail},
+                )
+            return
+
+        # Preserve unrelated Qt warnings (and fatal diagnostics) rather than redirecting
+        # the process's stderr or suppressing important errors outside the player.
+        if previous is not None:
+            previous(kind, context, message)
+        elif sys.stderr is not None:
+            sys.stderr.write(qFormatLogMessage(kind, context, message) + "\n")
+
+    previous = qInstallMessageHandler(route)
+    _QT_MULTIMEDIA_HANDLER = route
 
 
 def configure_logging(
