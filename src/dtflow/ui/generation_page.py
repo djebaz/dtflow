@@ -88,6 +88,7 @@ from dtflow.ui.generation_presenter import (
 from dtflow.ui.inline_feedback import InlineNotice, edit_text
 from dtflow.ui.video_progress import VideoProgress
 from dtflow.ui.video_panel import IMAGE_ONLY_REASON, VideoPanel
+from dtflow.core import video as rules
 from dtflow.core.video import VIDEO_TOTAL_TIMEOUT
 from dtflow.services.video_artifacts import video_path_for
 from dtflow.ui.controlnet_editor import ControlnetEditor, PoseJob
@@ -1469,8 +1470,14 @@ class GenerationPage:
         )
         presentation = present_outcome(outcome)
         if self._run_video:
+            request = outcome.request
+            length = ""
+            if request is not None and request.num_frames is not None:
+                seconds = rules.duration_seconds(request.model_id, request.num_frames)
+                length = f" ({seconds:.2f} s · {request.num_frames} frames)"
             presentation = replace(
-                presentation, detail=presentation.detail.replace("1 image", "1 video clip and its poster")
+                presentation,
+                detail=presentation.detail.replace("1 image", f"1 video clip{length} and its poster"),
             )
         self._status(presentation)
         activity_strip(self.page).complete(
