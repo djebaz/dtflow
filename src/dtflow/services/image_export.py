@@ -444,9 +444,7 @@ def _export_video(item: GalleryItem, destination: Path, options: ExportOptions, 
         "reencoded": False,
     }
     document["exported_at_utc"] = datetime.now(UTC).isoformat()
-    target, sidecar, target_handle, sidecar_handle = _reserve(
-        destination, _filename(item, document), extension=".mp4"
-    )
+    target, sidecar, target_handle, sidecar_handle = _reserve(destination, _filename(item, document), extension=".mp4")
     try:
         with clip.open("rb") as source:
             source_info = os.fstat(source.fileno())

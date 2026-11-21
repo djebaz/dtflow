@@ -843,9 +843,7 @@ def recycle_outputs(
                     if fresh != target:
                         ineligible += 1
                         _refused(target.identity, "absence_changed")
-                    elif not ledger.record_confirmed_absent(
-                        state, operation_id, target.identity, target.recorded_path
-                    ):
+                    elif not ledger.record_confirmed_absent(state, operation_id, target.identity, target.recorded_path):
                         ineligible += 1
                         if len(failure_details) < 100:
                             failure_details.append((target.identity, "ledger_requires_review"))

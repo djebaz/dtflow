@@ -429,9 +429,7 @@ def _delete(request):
             and folder == identity[1]
             and name == (f"final-{ordinal}.png" if kind == "final" else "raw-1.png")
         )
-        match = re.fullmatch(
-            r"([a-z0-9][a-z0-9-]{0,62})-" + identity[1] + r"-(raw-)?([1-9][0-9]*)\.(png|mp4)", name
-        )
+        match = re.fullmatch(r"([a-z0-9][a-z0-9-]{0,62})-" + identity[1] + r"-(raw-)?([1-9][0-9]*)\.(png|mp4)", name)
         current = (
             match is not None
             and bool(match[2]) == (kind == "raw")

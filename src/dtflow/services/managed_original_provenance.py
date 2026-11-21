@@ -135,9 +135,11 @@ def declared_video_companion(sidecar: Path, row: dict) -> tuple[str, int] | None
             or video["bytes"] <= 0
             or not isinstance(artifacts, list)
             or sum(
-                isinstance(artifact, dict)
-                and artifact.get("designation") == "final"
-                and artifact.get("path") == row["path"]
+                (
+                    isinstance(artifact, dict)
+                    and artifact.get("designation") == "final"
+                    and artifact.get("path") == row["path"]
+                )
                 for artifact in artifacts
             ) != 1
         ):

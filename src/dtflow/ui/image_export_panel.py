@@ -209,7 +209,9 @@ class ImageExportPanel(QObject):
         if self._running:
             self._stop.set()
             self.form.imageExportCancelButton.setEnabled(False)
-            self.form.imageExportStatusLabel.setText("Stopping after the current output; completed exports will remain…")
+            self.form.imageExportStatusLabel.setText(
+                "Stopping after the current output; completed exports will remain…"
+            )
 
     def _done(self, result, failure) -> None:
         self._set_running(False)
