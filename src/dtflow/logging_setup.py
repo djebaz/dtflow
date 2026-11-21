@@ -37,6 +37,7 @@ __all__ = [
     "configured_directory",
     "default_directory",
     "dev_enabled",
+    "development_mode",
     "perf_enabled",
     "sanitize",
 ]
@@ -239,6 +240,11 @@ def _configure_logging(*, directory, dev, build, backend, session, report_error)
 def dev_enabled() -> bool:
     """Development mode changes diagnostic detail only."""
     return logging.getLogger(LOGGER).isEnabledFor(logging.DEBUG)
+
+
+def development_mode() -> bool:
+    """Compatibility query for GUI diagnostics; does not import Qt."""
+    return dev_enabled()
 
 
 def perf_enabled() -> bool:
