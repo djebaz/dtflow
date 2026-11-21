@@ -2836,3 +2836,7 @@ QLabel#galleryVideoBadge {
   padding: 2px 6px;
   font-weight: 600;
 }
+
+/* In-app video playback: controls are defined by gallery_video_controls.ui. */
+QWidget#galleryVideoPanel { background-color: #000000; }
+QWidget#galleryVideoControls { background-color: ${color.host}; }
