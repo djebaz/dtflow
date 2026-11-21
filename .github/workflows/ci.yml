@@ -34,24 +34,24 @@ on:
         required: false
         default: ""
         type: string
-  # push:
-    # branches: [main]
+  push:
+    branches: [main]
     # Avoid launching the full suite for documentation-only merges.
-    # paths-ignore:
-      # - '**/*.md'
-      # - '**/*.rst'
-      # - 'LICENSE*'
-      # - 'NOTICE*'
-      # - '.github/ISSUE_TEMPLATE/**'
+    paths-ignore:
+      - '**/*.md'
+      - '**/*.rst'
+      - 'LICENSE*'
+      - 'NOTICE*'
+      - '.github/ISSUE_TEMPLATE/**'
   # Automatic runs paused: GitHub Actions credits exhausted (owner decision).
-  # pull_request:
-  #   types: [ready_for_review, closed]
-  #   paths-ignore:
-  #    - '**/*.md'
-  #    - '**/*.rst'
-  #    - 'LICENSE*'
-  #    - 'NOTICE*'
-  #    - '.github/ISSUE_TEMPLATE/**'
+  pull_request:
+    types: [ready_for_review, closed]
+    paths-ignore:
+     - '**/*.md'
+     - '**/*.rst'
+     - 'LICENSE*'
+     - 'NOTICE*'
+     - '.github/ISSUE_TEMPLATE/**'
      
 permissions:
   contents: read
