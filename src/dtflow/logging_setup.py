@@ -163,8 +163,10 @@ def install_qt_multimedia_logging() -> None:
 
     def route(kind, context, message) -> None:
         category = context.category or ""
-        multimedia = category == "qt.multimedia" or category.startswith("qt.multimedia.") or message.lstrip('"').startswith(
-            "FFmpeg log:"
+        multimedia = (
+            category == "qt.multimedia"
+            or category.startswith("qt.multimedia.")
+            or message.lstrip('"').startswith("FFmpeg log:")
         )
         if multimedia and kind != QtMsgType.QtFatalMsg:
             if development_mode() and kind in (QtMsgType.QtWarningMsg, QtMsgType.QtCriticalMsg):
