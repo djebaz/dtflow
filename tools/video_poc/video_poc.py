@@ -685,54 +685,111 @@ def patch_configuration(
     if h3:
         table.stochasticSamplingGamma = 1.0
         table.resolutionDependentShift = False
+    from drawthings_py.configs.gen_config import CONFIG_PROPS
+    from drawthings_py.generated.dt_grpc.config_generated import CompressionMethod, SeedMode
+
+    def normalized(name: str) -> str:
+        return re.sub(r"[-_ ]", "", name).lower()
+
     reserved = {
-        "model": "-m", "width": "-sz", "height": "-sz", "numFrames": "-f",
-        "steps": "-s", "guidanceScale": "-g", "shift": "-sh", "seed": "-sd",
-        "sampler": "-sampler", "negativePrompt": "-neg",
+        "model": "-m", "width": "-sz", "height": "-sz", "startwidth": "-sz", "startheight": "-sz",
+        "numframes": "-f", "steps": "-s", "guidance": "-g", "guidancescale": "-g",
+        "shift": "-sh", "seed": "-sd", "sampler": "--sampler", "negativeprompt": "-neg",
     }
+    enum_types = {"seed_mode": SeedMode, "compression_artifacts": CompressionMethod}
     applied = {}
     for raw_key, supplied in config_fields or ():
-        key = re.sub(r"_([a-z])", lambda match: match[1].upper(), raw_key)
-        if key in reserved:
-            raise ValueError(f"--set {raw_key}: use {reserved[key]} instead.")
+        name = normalized(raw_key)
+        if name in reserved:
+            raise ValueError(f"Configuration {raw_key}: use {reserved[name]} instead.")
+        field_name, prop = next(
+            (
+                (field_name, item)
+                for field_name, item in CONFIG_PROPS.items()
+                if name in {normalized(field_name), normalized(item.json_name), normalized(item.config_t_name)}
+            ),
+            (None, None),
+        )
+        key = prop.config_t_name if prop is not None else re.sub(r"_([a-z])", lambda m: m[1].upper(), raw_key)
         if not hasattr(table, key):
-            raise ValueError(
-                f"Unsupported Draw Things setting {raw_key!r} in the pinned SDK; it was not sent."
-            )
+            raise ValueError(f"Unsupported Draw Things setting {raw_key!r} in the pinned SDK; it was not sent.")
         current = getattr(table, key)
         value = supplied
-        if isinstance(current, bool):
-            valid = type(value) is bool
-        elif isinstance(current, int):
-            valid = type(value) is int
-        elif isinstance(current, float):
-            valid = type(value) in (int, float) and math.isfinite(float(value))
-            if valid:
-                value = float(value)
+        if field_name in enum_types:
+            enum_class = enum_types[field_name]
+            choices = {
+                normalized(field): number
+                for field, number in vars(enum_class).items()
+                if not field.startswith("_") and type(number) is int
+            }
+            if type(value) is int and value in choices.values():
+                pass
+            elif isinstance(value, str) and normalized(value) in choices:
+                value = choices[normalized(value)]
+            else:
+                raise ValueError(f"{raw_key}: expected one of {', '.join(choices)} (or its numeric value), got {value!r}.")
+        elif field_name in ("loras", "controls"):
+            if not isinstance(value, list) or any(
+                not isinstance(item, dict) or not isinstance(item.get("file"), str) or not item["file"]
+                for item in value
+            ):
+                raise ValueError(f"{raw_key}: expected a JSON array of objects with nonempty file names.")
+            converted = prop._from_json_value(value)
+            if len(converted) != len(value):
+                raise ValueError(f"{raw_key}: invalid list entry was rejected; nothing was sent.")
+            value = prop._to_fbs_value(converted)
+            if len(value) != len(converted):
+                raise ValueError(f"{raw_key}: an SDK conversion dropped a list entry.")
+        elif type(current) is bool:
+            if type(value) is not bool:
+                raise ValueError(f"{raw_key}: expected true or false, got {value!r}.")
+        elif type(current) is int:
+            if type(value) is not int:
+                raise ValueError(f"{raw_key}: expected an integer, got {value!r}.")
+            if prop is not None and getattr(prop, "unit", 1) != 1:
+                # SDK JSON names use pixel dimensions; FlatBuffer stores these as 64-pixel units.
+                native_hi_res_name = (
+                    field_name in ("hires_fix_width", "hires_fix_height")
+                    and name == normalized(prop.config_t_name)
+                )
+                if not native_hi_res_name:
+                    if value % prop.unit:
+                        raise ValueError(f"{raw_key}: expected a multiple of {prop.unit} pixels, got {value}.")
+                    value = prop._to_fbs_value(value)
+        elif type(current) is float:
+            if type(value) not in (int, float) or not math.isfinite(float(value)):
+                raise ValueError(f"{raw_key}: expected a finite number, got {value!r}.")
+            value = float(value)
         elif isinstance(current, str) or current is None:
-            valid = isinstance(value, str)
+            if value is not None and not isinstance(value, str):
+                raise ValueError(f"{raw_key}: expected a string or null, got {value!r}.")
         else:
-            valid = False
-        if not valid:
-            raise ValueError(
-                f"--set {raw_key}: expected a scalar compatible with "
-                f"{type(current).__name__}, got {value!r}."
-            )
+            raise ValueError(f"{raw_key}: unsupported nested field in pinned SDK.")
         setattr(table, key, value)
         applied[key] = value
     builder = flatbuffers.Builder(0)
     builder.Finish(table.Pack(builder))
     payload = bytes(builder.Output())
     roundtrip = GenerationConfigurationT.InitFromObj(GenerationConfiguration.GetRootAs(payload, 0))
+
+    def same(a, b) -> bool:
+        if isinstance(a, bytes) and isinstance(b, str):
+            return a.decode("utf-8") == b
+        if isinstance(b, bytes) and isinstance(a, str):
+            return a == b.decode("utf-8")
+        if type(a) in (int, float) and type(b) in (int, float) and (type(a) is float or type(b) is float):
+            return math.isclose(a, b, rel_tol=1e-5, abs_tol=1e-5)
+        if isinstance(a, list) and isinstance(b, list):
+            return len(a) == len(b) and all(same(x, y) for x, y in zip(a, b))
+        if hasattr(a, "__dict__") and hasattr(b, "__dict__"):
+            return a.__dict__.keys() == b.__dict__.keys() and all(
+                same(a.__dict__[name], b.__dict__[name]) for name in vars(a)
+            )
+        return a == b
+
     for key, value in applied.items():
-        actual = getattr(roundtrip, key)
-        matches = (
-            math.isclose(actual, value, rel_tol=1e-5, abs_tol=1e-5)
-            if type(value) is float and type(actual) in (int, float)
-            else actual == value
-        )
-        if not matches:
-            raise ValueError(f"--set {key} was not preserved by the FlatBuffer serializer.")
+        if not same(getattr(roundtrip, key), value):
+            raise ValueError(f"{key}: requested value was not preserved by the FlatBuffer serializer.")
     return payload
 
 
