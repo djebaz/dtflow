@@ -380,7 +380,8 @@ class GenerationPage:
         page.checkpointDetailsButton.setEnabled(bool(page.modelCombo.currentText().strip()))
         for label, scenario in SIMULATED_OUTCOMES:
             page.simulationScenarioCombo.addItem(label, scenario)
-        page.generationBackendCombo.addItems(("local", "cloud"))
+        page.generationBackendCombo.addItems(("fake", "local", "cloud"))
+        page.generationBackendCombo.view().setRowHidden(page.generationBackendCombo.findText("fake"), True)
         page.generationBackendCombo.setToolTip("Chosen on the Connection page.")
         page.generateButton.clicked.connect(lambda _=False: self.generate())
         self.retryButton = self._add_retry_button(page)
