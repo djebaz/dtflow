@@ -6,6 +6,8 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 
 ## Added
 
+- Images Detail video playback now has a compact dark player toolbar, owner-approved one/ten-second and restart shortcuts, and saved/probed video facts; video durations are identified in Grid/List and the filmstrip. Still-image presentation and existing navigation remain unchanged (draft PR #534, refs #531; Windows UI and Preview acceptance pending).
+
 - Pose-enabled Queue drafts expose ControlNet checkpoint/quantization, strength, control force and Apply from/to, with a read-only map preview and explicit replacement by another prepared body map. Edits remain local to the draft; template Save/Update remains explicit, and photo extraction stays in Generate (PR #522, refs #515; owner-reported functional acceptance and automatic CI/Preview passed on `c22d8cd8`; UI/UX polish is tracked separately in #528, not broad DPI/packaged acceptance).
 - Controlnet pose generations can be queued with **Images N**, **Repeat**, and **New queue plan** (DT+ Cloud only): each item gets a separate seed and shares one staged pose map and Union control. Queue creation stays local; Start sends the map and may consume credits (PR #513, refs #505; owner-reported Windows smoke completed).
 - Local pose templates retain a bounded body map and exact control settings from a captured Controlnet or recorded queue draft, without execution-file dependencies or upload consent. Loading changes only the composer; creating/starting the queue keeps the existing DT+ checks and consent (PR #513; owner-reported template Save/Load smoke completed).

@@ -39,10 +39,11 @@ def clock(milliseconds: int) -> str:
 
 
 class VideoPlayer(QObject):
-    def __init__(self, surface: QWidget, on_problem) -> None:
+    def __init__(self, surface: QWidget, on_problem, on_playback_changed=None) -> None:
         super().__init__(surface)
         self.surface = surface
         self._on_problem = on_problem
+        self._on_playback_changed = on_playback_changed
         self._panel: QWidget | None = None
         self._player = None
         self._audio = None
@@ -172,9 +173,14 @@ class VideoPlayer(QObject):
         player.mediaStatusChanged.connect(media_status)
         player.errorOccurred.connect(failure)
         state_changed()
+        if self._muted:
+            mute.setToolTip("Unmute video (M)")
+            mute.setAccessibleName("Unmute video")
         self._place()
         panel.show()
         panel.raise_()
+        if self._on_playback_changed is not None:
+            self._on_playback_changed(True)
         app = QApplication.instance()
         if app is not None:
             app.installEventFilter(self)
@@ -233,6 +239,8 @@ class VideoPlayer(QObject):
         if panel is not None:
             panel.hide()
             panel.deleteLater()
+            if self._on_playback_changed is not None:
+                self._on_playback_changed(False)
         if show_play and panel is not None:
             self.play_button.show()
             self._place()
