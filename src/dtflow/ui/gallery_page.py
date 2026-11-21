@@ -105,6 +105,7 @@ from dtflow.ui.gallery_detail_preview import (
 )
 from dtflow.ui.gallery_loading import GalleryCanvasLoading
 from dtflow.ui.gallery_pager import GalleryPager
+from dtflow.ui.video_player import VideoPlayer
 from dtflow.ui.gallery_selection_check import GallerySelectionCheck
 from dtflow.ui.gallery_preparation import GalleryPreparation, GalleryRetirement
 from dtflow.ui.inline_feedback import feedback
@@ -579,6 +580,8 @@ class GalleryPage(QObject):
         self.surface_painter = self._presentation_painters[0]
         self.surface_painter.pixmap = QPixmap()
         self.surface = self._widget("galleryImageSurface", QLabel)
+        self.video_player = VideoPlayer(self.surface, lambda text: self._selection_notice(text))
+        self.video_player.play_button.clicked.connect(self._play_video)
         self.hover_card = GalleryHoverCard(self.surface)
         self.slideshow = GallerySlideshow(self)
         self._widget("galleryFixtureOverlay").hide()
@@ -1342,6 +1345,7 @@ class GalleryPage(QObject):
 
     def _request_recycle(self) -> None:
         """Only the confirmation controller can authorize a Recycle Bin operation."""
+        self.video_player.release()
         if self._snapshot_at:
             return
         callback = self._permanent_callback if self.removal_mode == "permanent" else self._recycle_callback
@@ -1433,6 +1437,7 @@ class GalleryPage(QObject):
         first_activation = active and not self._active and not self.items
         self._active = active
         if not active:
+            self.video_player.release(show_play=True)
             self.slideshow.stop()
             self._cancel_open_output()
         self._sync_canvas_loading()
@@ -3393,6 +3398,8 @@ class GalleryPage(QObject):
             return
         self._presented_item = item
         request = self._request(item)
+        if image_changed:
+            self.video_player.show_for_video(clip_summary(request) is not None and not item.issue)
         clip = clip_summary(request)
         self._widget("galleryDimensionsOverlay", QLabel).setText(
             self._dimensions(item) + (f"  ·  Video {clip[1]}" if clip else "")
@@ -4417,6 +4424,30 @@ class GalleryPage(QObject):
         elif action == "edit" and self._edit_callback is not None:
             self._edit_callback(result)
 
+    def _play_video(self) -> None:
+        """Resolve the MP4 on a worker, then play it in Images without blocking Qt."""
+        item = self._selected()
+        if item is None or clip_summary(self._request(item)) is None:
+            return
+
+        def find():
+            with original_images_lock(self.state_dir, timeout=12):
+                path = resolve_item_read(item, self.state_dir)[0]
+            clip = video_path_for(path)
+            if not clip.is_file():
+                raise FileNotFoundError("the video file is missing; only its poster remains.")
+            return str(clip)
+
+        def done(result, error) -> None:
+            if self.selected_id != item.identity or self.runner.closed:
+                return
+            if error is not None or not result:
+                self._selection_notice(f"Video unavailable: {error or 'it could not be read.'}")
+                return
+            self.video_player.start(result)
+
+        self.runner.submit(asyncio.to_thread(find), done)
+
     def _copy_path(self) -> None:
         self._read_action("copy")
 
@@ -4447,6 +4478,7 @@ class GalleryPage(QObject):
         return next((item for item in self.items if item.identity == self.selected_id), None)
 
     def _clear_detail(self) -> None:
+        self.video_player.show_for_video(False)
         self.surface_painter.finish_transition()
         self._image_pending = False
         self._presented_item = None
