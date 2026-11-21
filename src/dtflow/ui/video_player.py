@@ -290,7 +290,12 @@ class VideoPlayer(QObject):
 
         if self._panel is None or kind not in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress):
             return False
-        if QApplication.activeModalWidget() is not None or QApplication.activeWindow() is not self.surface.window():
+        if QApplication.activeModalWidget() is not None:
+            return False
+        modifiers = event.modifiers()
+        if modifiers & (
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.MetaModifier
+        ):
             return False
         focus = QApplication.focusWidget()
         editing = (
@@ -300,14 +305,11 @@ class VideoPlayer(QObject):
             or (isinstance(focus, QComboBox) and focus.isEditable())
         )
         if editing:
-            # Let text inputs use ordinary letters and Space even with a video open.
+            # Keep ordinary typing even while window-scoped video shortcuts exist.
             if kind == QEvent.Type.ShortcutOverride and event.key() in (Qt.Key.Key_Space, Qt.Key.Key_K):
                 event.accept()
             return False
-        modifiers = event.modifiers()
-        if modifiers & (
-            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.MetaModifier
-        ):
+        if QApplication.activeWindow() is not self.surface.window():
             return False
         key = event.key()
         keypad = bool(modifiers & Qt.KeyboardModifier.KeypadModifier)
