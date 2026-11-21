@@ -40,10 +40,14 @@ class VideoLease:
             disks[volume] = path, previous[1] + amount
         return disks
 
-    def _check_disks(self, disks, *, wait_for_reserved: bool = False) -> bool:
+    def _check_disks(self, disks, *, wait_for_reserved: bool = False, include_peers: bool = True) -> bool:
         waiting = False
         for volume, (path, amount) in disks.items():
-            reserved = sum(held.get(volume, (path, 0))[1] for owner, (_, held) in _active.items() if owner is not self)
+            reserved = (
+                sum(held.get(volume, (path, 0))[1] for owner, (_, held) in _active.items() if owner is not self)
+                if include_peers
+                else 0
+            )
             if shutil.disk_usage(path).free < reserved + amount + DISK_HEADROOM:
                 if wait_for_reserved and reserved:
                     # Another admitted clip can release its temporary files/reservation. Keep this item
@@ -70,7 +74,10 @@ class VideoLease:
 
     def recheck(self):
         with _lock:
-            self._check_disks(_active[self][1])
+            # Admission already accounted for peers. Their materialized files now reduce free space;
+            # charging their full reservations again would double-count and reject admitted clips.
+            # Keep this clip's complete budget plus headroom: a conservative bound on its remaining need.
+            self._check_disks(_active[self][1], include_peers=False)
 
     def release(self):
         with _lock:
@@ -82,7 +89,7 @@ def recheck_video_storage(request_id: str) -> None:
     with _lock:
         for owner, (_, disks) in _active.items():
             if owner.request.request_id == request_id:
-                owner._check_disks(disks)
+                owner._check_disks(disks, include_peers=False)
                 return
 
 

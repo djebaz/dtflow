@@ -21,6 +21,8 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 
 ## Changed
 
+- Video queues distinguish local resource waiting from preparation, summarize concurrent phases compactly, retain start images atomically and report MP4 size caps explicitly. Video processing uses a dedicated worker pool; pre-submit disk rechecks no longer double-charge other clips' reservations. Source retention remains indefinite, with no automatic orphan cleanup (PR #547; source/static-reviewed, owner runtime acceptance pending).
+
 - The Queues composer shows editable **Fixed LoRAs** independently of LoRA weight sweeps and lists available models across inventory families in **Add model** (PR #510, refs #507).
 - The pose detector is now YOLO26n-pose (reinstall it once from the Pose guidance card or the CLI).
 - The sampler list offers every sampler in all Generate modes, sorted A to Z.

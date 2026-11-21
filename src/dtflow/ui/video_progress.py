@@ -41,7 +41,7 @@ class VideoProgress:
                 self._wait()
             else:
                 self.phase, self.text, self.done, self.total = (
-                    "preparing",
+                    "waiting" if event.stage == "waiting_video_resources" else "preparing",
                     event_stage(event) or "Preparing",
                     None,
                     None,

@@ -7,11 +7,9 @@ source development resolves them from ``PATH``. No console window opens on Windo
 
 from __future__ import annotations
 
-import json
 import asyncio
 import contextvars
-from functools import partial
-from concurrent.futures import ThreadPoolExecutor
+import json
 import os
 import queue
 import shutil
@@ -19,11 +17,13 @@ import subprocess
 import sys
 import threading
 from collections import deque
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 
-from dtflow.services.video_resources import MP4_LIMIT
 from dtflow.core.models import MAX_QUEUE_CONCURRENCY
+from dtflow.services.video_resources import MP4_LIMIT
 
 _VIDEO_WORKERS = ThreadPoolExecutor(max_workers=MAX_QUEUE_CONCURRENCY, thread_name_prefix="dtflow-video")
 
