@@ -18,6 +18,8 @@ def event_stage(event: BackendEvent) -> str:
             "checking_output_storage": "Checking output storage",
             "creating_attempt": "Creating generation attempt",
             "waiting_buffer_budget": "Waiting for memory budget",
+            "waiting_video_resources": "Waiting for local video resources",
+            "video_preparing": "Preparing video",
             "saving_image_snapshot": "Saving image input snapshot",
             "recording_submission_state": "Recording submission state",
             "waiting_backend_response": "Waiting for the provider's reply",

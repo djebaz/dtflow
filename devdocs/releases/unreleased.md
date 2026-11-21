@@ -29,6 +29,8 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 
 ## Fixed
 
+- Video queue admission no longer reserves a fixed 1.5 GiB per clip on a shared drive: derived output/temporary charges are 300/600 MiB, and items wait when other active clips hold disk budget. This addresses owner smoke in which 12 GiB free admitted only seven of ten clips; ten-clip validation of the refined policy remains pending (PR #547, refs #546).
+
 - Generate's Video controls now use the shared section-card structure and token-backed button/crop states, with explicit 12 px body padding, one control row (Duration/readout left, cover-filled source thumbnail/red × badge right) and no reserved blank warning height. Crop inspection also follows hover, keyboard focus and edits on Width/Height. Video draft validation refreshes Generate availability, and second-pass progress no longer retains first-pass counts (PR #545, refs #540; owner confirmed all ACs passed and exact-head CI/Preview succeeded on `7f15b25f` before squash merge `39369d30`; not new packaged-release acceptance).
 
 - The desktop Connection and Generate provider selectors no longer offer the internal Fake backend. Previously saved Fake selections require an explicit choice of Local Draw Things or DT+ Cloud before generation; existing Fake data and CLI/test/preview support are preserved (PR #519, refs #518; owner-reported manual testing and CI/Preview passed on the preceding code commit).

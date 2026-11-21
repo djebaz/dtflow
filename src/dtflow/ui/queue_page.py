@@ -3101,7 +3101,7 @@ class QueuePage:
             self._dispatch_started = True
         key = (wrapped.queue_id, wrapped.item_id)
         label = event_stage(event)
-        if event.stage == "video_preparing":
+        if event.stage in ("waiting_video_resources", "video_preparing") and key not in self._video_progress:
             from dtflow.ui.video_progress import VideoProgress
 
             self._video_progress[key] = VideoProgress()

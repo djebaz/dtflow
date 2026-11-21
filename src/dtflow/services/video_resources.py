@@ -14,8 +14,10 @@ MIB = 1024 * 1024
 TENSOR_LIMIT = 64 * MIB
 AUDIO_LIMIT = 64 * MIB
 MP4_LIMIT = 256 * MIB
-SCRATCH_RESERVE = 1024 * MIB
-OUTPUT_RESERVE = 512 * MIB
+# Encoder MP4 + muxed MP4 + bounded raw audio, with 24 MiB for container/packet overhead.
+SCRATCH_RESERVE = 2 * MP4_LIMIT + AUDIO_LIMIT + 24 * MIB
+# Final MP4 (256 MiB), poster (at most 32 MiB), and bounded sidecar/commit overhead.
+OUTPUT_RESERVE = 300 * MIB
 DISK_HEADROOM = 256 * MIB
 MEMORY_BUDGET = 4 * 1024 * MIB
 _lock = threading.Lock()
@@ -38,13 +40,20 @@ class VideoLease:
             disks[volume] = path, previous[1] + amount
         return disks
 
-    def _check_disks(self, disks):
+    def _check_disks(self, disks, *, wait_for_reserved: bool = False) -> bool:
+        waiting = False
         for volume, (path, amount) in disks.items():
             reserved = sum(held.get(volume, (path, 0))[1] for owner, (_, held) in _active.items() if owner is not self)
             if shutil.disk_usage(path).free < reserved + amount + DISK_HEADROOM:
+                if wait_for_reserved and reserved:
+                    # Another admitted clip can release its temporary files/reservation. Keep this item
+                    # unsubmitted, cancellable and outside _active until capacity is available.
+                    waiting = True
+                    continue
                 raise ValidationError(
                     "Insufficient free storage for this video and the other admitted clips. Nothing was submitted."
                 )
+        return not waiting
 
     def acquire(self) -> bool:
         with _lock:
@@ -54,7 +63,8 @@ class VideoLease:
             ):
                 return False
             disks = self._disks()
-            self._check_disks(disks)
+            if not self._check_disks(disks, wait_for_reserved=True):
+                return False
             _active[self] = self.memory, disks
             return True
 
