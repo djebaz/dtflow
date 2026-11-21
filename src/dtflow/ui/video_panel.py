@@ -17,7 +17,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
 from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QDoubleSpinBox, QLabel, QPushButton
+from PySide6.QtWidgets import QDoubleSpinBox, QFrame, QLabel, QToolButton
 
 from dtflow.core import video as rules
 from dtflow.core.models import ResolvedGenerationRequest
@@ -73,7 +73,7 @@ def _read_start_image(path: Path) -> StartImageInfo:
 
 
 def _short_name(name: str, limit: int = 48) -> str:
-    """A long file name cut in the middle (the extension stays) so the Choose and Clear buttons keep their room."""
+    """A long file name cut in the middle, preserving the extension and keeping the card readable."""
     if len(name) <= limit:
         return name
     keep = limit - 1
@@ -118,18 +118,23 @@ class VideoPanel(QObject):
             raise RuntimeError("Video controls form could not be loaded.")
         self.seconds = self.frame.findChild(QDoubleSpinBox, "videoDurationSpinBox")
         self.summary = self.frame.findChild(QLabel, "videoDurationLabel")
-        self.choose = self.frame.findChild(QPushButton, "videoChooseStartButton")
-        self.clear = self.frame.findChild(QPushButton, "videoClearStartButton")
+        self.start_card = self.frame.findChild(QFrame, "videoStartCard")
+        self.clear = self.frame.findChild(QToolButton, "videoClearStartButton")
         self.thumb = self.frame.findChild(QLabel, "videoStartThumb")
+        self.start_title = self.frame.findChild(QLabel, "videoStartTitle")
         self.start_label = self.frame.findChild(QLabel, "videoStartLabel")
         self.start_note = self.frame.findChild(QLabel, "videoStartNote")
-        self.thumb.installEventFilter(self)  # Keep the entire image fitted as the preview column resizes.
+        self._choose_targets = (self.start_card, self.thumb, self.start_title, self.start_label, self.start_note)
+        for widget in self._choose_targets:
+            widget.installEventFilter(self)
+        self.start_card.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self.start_card.setAccessibleName("Choose or replace start image")
         self.problem = self.frame.findChild(QLabel, "videoProblemLabel")
         self.seconds.valueChanged.connect(self._sync)
         page.widthSpinBox.valueChanged.connect(self._sync)
         page.heightSpinBox.valueChanged.connect(self._sync)
-        self.choose.clicked.connect(self._choose)
         self.clear.clicked.connect(self._clear)
+        self.clear.hide()
         page.generationWorkspaceLayout.insertWidget(3, self.frame)
         self.frame.hide()
         self._sync()
@@ -211,12 +216,13 @@ class VideoPanel(QObject):
             )
             self.start_note.show()
         accepts = rules.accepts_start_image(self.model)
-        self.choose.setEnabled(accepts)
-        self.choose.setToolTip(
-            "One optional start image. Without it the video is made from the prompt alone."
+        self.start_card.setToolTip(
+            "Click to choose or replace the start image."
             if accepts
             else "A start image is only verified with LTX-2.3 (LTX-2 froze on it)."
         )
+        for widget in self._choose_targets:
+            widget.setCursor(Qt.CursorShape.PointingHandCursor if accepts else Qt.CursorShape.ArrowCursor)
         self.clear.setEnabled(self._start is not None or self._loading)
         problem = (
             (_unverified(self.model) if not rules.supported_video_model(self.model) else "")
@@ -248,6 +254,8 @@ class VideoPanel(QObject):
         return video_encode.tools_problem() or rules.frame_problem(self.model, self.frame_count) or ""
 
     def _choose(self) -> None:
+        if not rules.accepts_start_image(self.model):
+            return
         path = QFileDialog.getOpenFileName(self.page, "Choose start image", "", IMAGE_FILTER)[0]
         if not path:
             return
@@ -256,7 +264,7 @@ class VideoPanel(QObject):
         token, model, source = self._choice_revision, self.model, self._backend_source()
         chosen = Path(path)
         self._loading = True
-        self.start_label.setText("Checking start image…")
+        self._show_start()
         self._sync()
 
         def done(info, failure) -> None:
@@ -290,9 +298,20 @@ class VideoPanel(QObject):
         self._sync()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        """Scale the stored preview to the thumbnail slot without cropping it when the panel is resized."""
+        """The card chooses an image by click or keyboard; the separate close control only clears it."""
         if watched is self.thumb and event.type() == QEvent.Type.Resize and self._start_info is not None:
             self._render_thumbnail()
+        if watched in self._choose_targets and rules.accepts_start_image(self.model):
+            if event.type() == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
+                self._choose()
+                return True
+            if (
+                watched is self.start_card
+                and event.type() == QEvent.Type.KeyPress
+                and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space)
+            ):
+                self._choose()
+                return True
         return super().eventFilter(watched, event)
 
     def _render_thumbnail(self) -> None:
@@ -310,11 +329,12 @@ class VideoPanel(QObject):
         )
 
     def _show_start(self) -> None:
-        """Keep the preview slot stable in both modes; Choose and Clear remain beside it in the same card."""
+        """Keep a large clickable preview; only the top-right close icon clears the selected image."""
         info = self._start_info
+        self.clear.setVisible(self._start is not None or self._loading)
         if self._start is None or info is None:
             self.thumb.clear()
-            self.thumb.setText("No image")
+            self.thumb.setText("Choose image")
             self.start_label.setText("Checking start image…" if self._loading else "None (text to video)")
             self.start_label.setToolTip("")
             self.start_note.clear()
