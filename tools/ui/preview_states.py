@@ -2198,7 +2198,7 @@ def render_item_table_states(shell, out, state):
         queue._dispatch_started = True
         queue._selected = queue_id
         queue._activity.set(dispatching=True)
-        queue._read_done(([view], view, 2), None)
+        queue._read_done(([view], view), None)
         queue._timer.stop()
         model, table = queue.model, page.queueItemsView
         model.thumbnails._runner = SimpleNamespace(submit=real_submit, closed=False)
@@ -2300,7 +2300,7 @@ def render_item_table_states(shell, out, state):
         )
         queue._dispatching = None
         queue._selected = script_view["queue_id"]
-        queue._read_done(([script_view], script_view, 2), None)
+        queue._read_done(([script_view], script_view), None)
         queue._timer.stop()
         # The script's display-only thumbnail comes from its last committed
         # child, without borrowing that child's actionable gallery identity.
@@ -2365,7 +2365,7 @@ def render_item_table_states(shell, out, state):
             cap=1,
         )
         queue._selected = workflow_view["queue_id"]
-        queue._read_done(([workflow_view], workflow_view, 2), None)
+        queue._read_done(([workflow_view], workflow_view), None)
         queue._timer.stop()
         select(0)
         strip = activity_strip(page)
@@ -2385,12 +2385,12 @@ def render_item_table_states(shell, out, state):
                 },
             },
         ]
-        queue._read_done(([workflow_view], workflow_view, 2), None)
+        queue._read_done(([workflow_view], workflow_view), None)
         queue._timer.stop()
         snap("queues-75-workflow-lora-warning")
         queue._selected = None
         queue._activity.set(dispatching=False)
-        queue._read_done(([], None, 2), None)
+        queue._read_done(([], None), None)
         queue._timer.stop()
 
 
