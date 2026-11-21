@@ -910,6 +910,8 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
         log.line("hires fix and start-frame strength fields are not sent (defaults)")
     if (warning := frame_rule(args.model, args.frames)) is not None:
         log.warn(warning)
+    if "ref2va" in args.model.lower() and not count:
+        log.warn("Ref2VA typically requires a reference image; no -i was supplied (video output unverified).")
     if count > args.frames:
         raise ValidationError(f"{count} start images but only {args.frames} frames requested.")
     start_frames = await asyncio.to_thread(load_images, args.images, args.width, args.height, log) if count else None
@@ -1157,9 +1159,11 @@ async def finish_run(
     log.section("7 Encode")
     if not encode:
         log.line(f"-nomp4: no encode; PNG frames kept in {sink.frames_dir} ({result.frames} written)")
-        found.ok = result.error is None
+        found.ok = result.error is None and frames_in == args.frames
         found.outputs.append(str(sink.frames_dir))
-        found.verdict = f"{frames_in} frames received at {returned[1]}x{returned[0]}, PNG only (-nomp4)"
+        found.verdict = f"{frames_in}/{args.frames} frames received at {returned[1]}x{returned[0]}, PNG only (-nomp4)"
+        if frames_in != args.frames:
+            found.verdict += "; incomplete video, NOT a successful generation"
         return
     log.line(f"ffmpeg command: {result.command}")
     log.line(f"ffmpeg exit code: {result.returncode}; frames written {result.frames}")
@@ -1234,11 +1238,13 @@ async def finish_run(
     log.line("differences from the request: " + ("; ".join(differences) if differences else "none"), echo=True)
     for item in differences:
         log.line("  DIFF " + item)
-    found.ok = True
+    found.ok = frames_in == args.frames and result.frames == args.frames and real_frames == args.frames
     audio_text = f", audio {audio_rate / 1000:g} kHz" if audio_samples and audio else ", no audio"
-    found.verdict = f"{frames_in} frames returned at {returned[1]}x{returned[0]}, {fps} fps{audio_text}, MP4 OK" + (
+    found.verdict = f"{frames_in}/{args.frames} frames returned at {returned[1]}x{returned[0]}, {fps} fps{audio_text}, MP4 OK" + (
         f" ({len(differences)} difference(s) from the request)" if differences else ""
     )
+    if not found.ok:
+        found.verdict += "; incomplete video, NOT a successful generation"
     if count_images := len(args.images):
         found.verdict += f"; start image(s) {count_images}: DT+ accepted them, compare the first frames by eye"
 
