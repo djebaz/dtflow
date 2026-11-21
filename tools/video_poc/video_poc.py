@@ -791,9 +791,9 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
     if profile is None and not pika:
         raise ValidationError(f"No bundled profile for {args.model}; cannot pick a sampler.")
     if pika:
-        sampler = Sampler.TCD
+        sampler = Sampler.TCD_TRAILING
         defaults = {"steps": 6, "guidance": 1.0, "shift": 4.0}
-        log.line("Pika Ref2VA POC settings: TCD, 6 steps, guidance 1, shift 4, "
+        log.line("Pika Ref2VA POC settings: TCD Trailing, 6 steps, guidance 1, shift 4, "
                  "stochastic sampling 100%; audio shift 1 unavailable in pinned SDK", echo=True)
     else:
         sampler = profile.sampler
@@ -834,6 +834,12 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
     )
     if (warning := frame_rule(args.model, args.frames)) is not None:
         log.warn(warning)
+    if pika and min(args.width, args.height) < 448:
+        log.warn(
+            f"Pika short side {min(args.width, args.height)}px is below the 448px used in a reported "
+            "working Draw Things gRPC run and below its native 480p tier. "
+            "This remains an exploratory, potentially nonrepresentative paid run."
+        )
     if pika and not count:
         raise ValidationError("Pika H3 Flex Ref2VA requires at least one -i reference image.")
     if count > args.frames:
@@ -904,8 +910,8 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
                 from drawthings_py.generated.dt_grpc.config_generated import GenerationConfiguration, SamplerType
 
                 raw = GenerationConfiguration.GetRootAs(message.configuration, 0)
-                if raw.Sampler() != SamplerType.TCD or abs(raw.StochasticSamplingGamma() - 1.0) > 0.001:
-                    raise ValidationError("Pika TCD/stochastic sampling settings were not serialized as requested.")
+                if raw.Sampler() != SamplerType.TCDTrailing or abs(raw.StochasticSamplingGamma() - 1.0) > 0.001:
+                    raise ValidationError("Pika TCD Trailing/stochastic sampling settings were not serialized as requested.")
             for key, wanted in (
                 ("num_frames", args.frames),
                 ("steps", args.steps),
