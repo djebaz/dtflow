@@ -513,7 +513,15 @@ class GenerationService:
                             )
                         return self.saver(self.output, attempt_id, request, result, identity(), caps.limits, **extra)
 
-                saved = await settle(asyncio.to_thread(commit_originals))
+                try:
+                    saved = await settle(asyncio.to_thread(commit_originals))
+                except Exception as exc:
+                    if request.num_frames is not None:
+                        diagnostic_event(
+                            log, "video.artifacts_save_failed", level=logging.WARNING,
+                            data={"attempt_id": attempt_id, "reason": type(exc).__name__},
+                        )
+                    raise
                 paths, metadata = saved[:2]
                 display_image = saved[2] if image_operation else None
             await self._attribute_credential(attempt_id)
@@ -538,6 +546,11 @@ class GenerationService:
                 display_image=display_image,
             )
         except asyncio.CancelledError:
+            if request.num_frames is not None:
+                diagnostic_event(
+                    log, "video.attempt_interrupted", level=logging.WARNING,
+                    data={"attempt_id": attempt_id, "submission_stage": stage, "remote_outcome": outcome},
+                )
             diagnostic_event(
                 log,
                 "generation.attempt_interrupted",
