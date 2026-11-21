@@ -552,6 +552,7 @@ class MainWindow:
         self.generation.queue_behind = self.queue.queue_behind
         self.generation.queue_images = self._queue_images
         form.backendCombo.addItems(("local", "cloud"))
+        form.backendCombo.setPlaceholderText("Select a provider")
         startup.mark("page wiring")
         self._restore_session()
         startup.mark("pages wired, session restored")
