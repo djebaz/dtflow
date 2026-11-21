@@ -163,9 +163,9 @@ class VideoPanel(QObject):
         self.clear.setEnabled(self._start is not None or self._loading)
         problem = (
             (
-                "This exact checkpoint is not verified for video yet. "
-                "Select LTX-2.3 distilled 1.1 q6p or q8p."
-                if not rules.supported_video_model(self.model) else ""
+                "This exact checkpoint is not verified for video yet. Select LTX-2.3 distilled 1.1 q6p or q8p."
+                if not rules.supported_video_model(self.model)
+                else ""
             )
             or self._choice_problem
             or (
@@ -216,8 +216,7 @@ class VideoPanel(QObject):
             self._loading = False
             if failure is not None:
                 self._choice_problem = (
-                    str(failure) if isinstance(failure, ValueError)
-                    else "The start image could not be read."
+                    str(failure) if isinstance(failure, ValueError) else "The start image could not be read."
                 )
                 self.start_label.setText("None (text to video)")
             else:

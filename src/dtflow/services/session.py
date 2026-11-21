@@ -541,15 +541,17 @@ async def generate_once(
         # Both evidenced quantizations have no *exact* published community description at this revision.
         # Pin that absence: a later description addition changes the permit identity and fails closed
         # until the owner reviews it. Never borrow the f16 or another checkpoint's description.
-        video_permits = (ImageOperationPermit(
-            backend_id="drawthings-cloud",
-            endpoint=image_endpoint_label(selection),
-            model_id=request.model_id,
-            operation="img2img",
-            evidence_id=evidence,
-            status="owner_verified",
-            model_description_sha256=None,
-        ),)
+        video_permits = (
+            ImageOperationPermit(
+                backend_id="drawthings-cloud",
+                endpoint=image_endpoint_label(selection),
+                model_id=request.model_id,
+                operation="img2img",
+                evidence_id=evidence,
+                status="owner_verified",
+                model_description_sha256=None,
+            ),
+        )
 
     async def run(timeline: GenerationTimeline) -> GenerationOutcome:
         sink = timeline.sink
@@ -557,8 +559,13 @@ async def generate_once(
         bound = await bind_prepared(state, selection.name, request, asset_ids)
         _preparation_event(sink, bound, "opening_session")
         async with open_session(
-            selection, state, output=output, timeouts=timeouts, saved=saved,
-            timeline=timeline, image_permits=video_permits,
+            selection,
+            state,
+            output=output,
+            timeouts=timeouts,
+            saved=saved,
+            timeline=timeline,
+            image_permits=video_permits,
         ) as service:
             _preparation_event(sink, bound, "session_ready")
             return await run_generation(service, bound, prefix=prefix, on_event=sink, timeline=timeline)

@@ -366,21 +366,31 @@ class GenerationService:
             ) from exc
         if request.num_frames is not None:
             if await settle(asyncio.to_thread(video_encode.find_tools)) is None:
-                raise BackendError(BackendFailure(
-                    ErrorCategory.VALIDATION, "ffmpeg_missing",
-                    video_encode.tools_problem() or "ffmpeg and ffprobe are unavailable.",
-                    request.request_id,
-                ))
+                raise BackendError(
+                    BackendFailure(
+                        ErrorCategory.VALIDATION,
+                        "ffmpeg_missing",
+                        video_encode.tools_problem() or "ffmpeg and ffprobe are unavailable.",
+                        request.request_id,
+                    )
+                )
             try:
                 await settle(asyncio.to_thread(require_video_destination, self.output, layout))
             except (OSError, ValueError) as exc:
-                diagnostic_event(log, "video.storage_unavailable", level=logging.WARNING,
-                                 data={"request_id": request.request_id, "reason": type(exc).__name__})
-                raise BackendError(BackendFailure(
-                    ErrorCategory.PERSISTENCE, "video_storage_unavailable",
-                    "Video output storage is unavailable. Generation was not submitted.",
-                    request.request_id,
-                )) from exc
+                diagnostic_event(
+                    log,
+                    "video.storage_unavailable",
+                    level=logging.WARNING,
+                    data={"request_id": request.request_id, "reason": type(exc).__name__},
+                )
+                raise BackendError(
+                    BackendFailure(
+                        ErrorCategory.PERSISTENCE,
+                        "video_storage_unavailable",
+                        "Video output storage is unavailable. Generation was not submitted.",
+                        request.request_id,
+                    )
+                ) from exc
         reserved = False
         if attempt_id is None:
             attempt_id = uuid4().hex
@@ -447,22 +457,35 @@ class GenerationService:
                     raise ValueError("Committed image inputs differ from the prepared attempt.")
             if request.num_frames is not None:
                 if await settle(asyncio.to_thread(video_encode.find_tools)) is None:
-                    raise BackendError(BackendFailure(
-                        ErrorCategory.VALIDATION, "ffmpeg_missing",
-                        "Video tools became unavailable before submission. No video was sent.",
-                        request.request_id,
-                    ))
+                    raise BackendError(
+                        BackendFailure(
+                            ErrorCategory.VALIDATION,
+                            "ffmpeg_missing",
+                            "Video tools became unavailable before submission. No video was sent.",
+                            request.request_id,
+                        )
+                    )
                 try:
                     await settle(asyncio.to_thread(require_video_destination, self.output, layout))
                 except (OSError, ValueError) as exc:
-                    raise BackendError(BackendFailure(
-                        ErrorCategory.PERSISTENCE, "video_storage_unavailable",
-                        "Video output storage became unavailable before submission. No video was sent.",
-                        request.request_id,
-                    )) from exc
+                    raise BackendError(
+                        BackendFailure(
+                            ErrorCategory.PERSISTENCE,
+                            "video_storage_unavailable",
+                            "Video output storage became unavailable before submission. No video was sent.",
+                            request.request_id,
+                        )
+                    ) from exc
                 diagnostic_event(
-                    log, "video.storage_ready", level=logging.DEBUG,
-                    data={"request_id": request.request_id, "revalidated": True, "ffmpeg_ready": True, "ffprobe_ready": True},
+                    log,
+                    "video.storage_ready",
+                    level=logging.DEBUG,
+                    data={
+                        "request_id": request.request_id,
+                        "revalidated": True,
+                        "ffmpeg_ready": True,
+                        "ffprobe_ready": True,
+                    },
                 )
             preparation("recording_submission_state")
             await self.store.transition(
@@ -518,7 +541,9 @@ class GenerationService:
                 except Exception as exc:
                     if request.num_frames is not None:
                         diagnostic_event(
-                            log, "video.artifacts_save_failed", level=logging.WARNING,
+                            log,
+                            "video.artifacts_save_failed",
+                            level=logging.WARNING,
                             data={"attempt_id": attempt_id, "reason": type(exc).__name__},
                         )
                     raise
@@ -548,7 +573,9 @@ class GenerationService:
         except asyncio.CancelledError:
             if request.num_frames is not None:
                 diagnostic_event(
-                    log, "video.attempt_interrupted", level=logging.WARNING,
+                    log,
+                    "video.attempt_interrupted",
+                    level=logging.WARNING,
                     data={"attempt_id": attempt_id, "submission_stage": stage, "remote_outcome": outcome},
                 )
             diagnostic_event(

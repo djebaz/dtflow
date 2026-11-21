@@ -33,7 +33,9 @@ def require_video_destination(output: Path, layout: OutputLayout | None = None) 
     directory.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
-        with tempfile.NamedTemporaryFile(prefix=".dtflow-video-check-", suffix=".tmp", dir=directory, delete=False) as f:
+        with tempfile.NamedTemporaryFile(
+            prefix=".dtflow-video-check-", suffix=".tmp", dir=directory, delete=False
+        ) as f:
             temporary = Path(f.name)
             f.write(b"DTFlow video destination readiness\n")
             f.flush()
@@ -68,18 +70,20 @@ def save_video_artifacts(
         raise FileExistsError("Managed output already exists for this attempt.")
     partial = clip.with_name(clip.name + ".partial")
     try:
-        diagnostic_event(log, "video.save_started", level=logging.DEBUG,
-                         data={"request_id": request.request_id, "attempt_id": attempt_id})
+        diagnostic_event(
+            log,
+            "video.save_started",
+            level=logging.DEBUG,
+            data={"request_id": request.request_id, "attempt_id": attempt_id},
+        )
         shutil.move(str(temporary), partial)  # another drive is possible, so not os.replace on the source
         os.replace(partial, clip)
     finally:
         partial.unlink(missing_ok=True)
     shutil.rmtree(temporary.parent, ignore_errors=True)
-    diagnostic_event(log, "video.clip_committed", level=logging.DEBUG,
-                     data={"attempt_id": attempt_id})
+    diagnostic_event(log, "video.clip_committed", level=logging.DEBUG, data={"attempt_id": attempt_id})
     atomic_write(poster, artifact.encoded)
-    diagnostic_event(log, "video.poster_committed", level=logging.DEBUG,
-                     data={"attempt_id": attempt_id})
+    diagnostic_event(log, "video.poster_committed", level=logging.DEBUG, data={"attempt_id": attempt_id})
     record = artifact_record(str(poster.resolve()), artifact)
     record["metadata"] = {key: value for key, value in record["metadata"].items() if not key.startswith("video_")}
     metadata = generation_metadata(attempt_id, request, result, build_identity, [record])
@@ -97,12 +101,17 @@ def save_video_artifacts(
     }
     atomic_write(sidecar, (json.dumps(metadata, indent=2, allow_nan=False) + "\n").encode("utf-8"))
     diagnostic_event(
-        log, "video.artifacts_committed", level=logging.INFO,
+        log,
+        "video.artifacts_committed",
+        level=logging.INFO,
         data={
-            "attempt_id": attempt_id, "frames": int(facts["video_frames"]),
-            "width": int(facts["video_width"]), "height": int(facts["video_height"]),
+            "attempt_id": attempt_id,
+            "frames": int(facts["video_frames"]),
+            "width": int(facts["video_width"]),
+            "height": int(facts["video_height"]),
             "duration_seconds": float(facts["video_duration_seconds"]),
-            "has_audio": facts["video_has_audio"] == "yes", "mp4_bytes": int(facts["video_bytes"]),
+            "has_audio": facts["video_has_audio"] == "yes",
+            "mp4_bytes": int(facts["video_bytes"]),
         },
     )
     return (str(poster.resolve()),), str(sidecar.resolve())

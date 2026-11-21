@@ -41,10 +41,12 @@ MIN_FRAMES = 9
 # Only these exact files are authorized for the initial production LTX slice.
 # #523 established the 1.1 q6p path; the owner supplied two successful q8p Windows runs in PR #527.
 # A new quantization or similarly named checkpoint needs its own evidence before admission.
-SUPPORTED_VIDEO_MODELS = frozenset({
-    "ltx_2.3_22b_distilled_1.1_q6p.ckpt",
-    "ltx_2.3_22b_distilled_q8p.ckpt",
-})
+SUPPORTED_VIDEO_MODELS = frozenset(
+    {
+        "ltx_2.3_22b_distilled_1.1_q6p.ckpt",
+        "ltx_2.3_22b_distilled_q8p.ckpt",
+    }
+)
 START_IMAGE_EVIDENCE = {
     "ltx_2.3_22b_distilled_1.1_q6p.ckpt": "video-poc-523",
     "ltx_2.3_22b_distilled_q8p.ckpt": "video-windows-527",
