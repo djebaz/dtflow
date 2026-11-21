@@ -9,11 +9,34 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import tempfile
 from pathlib import Path
 
 from dtflow.core.models import GenerationResult, ResolvedGenerationRequest, ResourceLimits
-from dtflow.core.output_layout import OutputLayout, final_name, sidecar_name
+from dtflow.core.output_layout import FOLDER, OutputLayout, final_name, sidecar_name
 from dtflow.services.artifacts import artifact_record, atomic_write, generation_metadata, run_directory
+
+
+def require_video_destination(output: Path, layout: OutputLayout | None = None) -> None:
+    """Verify the managed clip destination is writable before a potentially paid submission.
+
+    The check cannot reserve future disk capacity, but it catches a missing, read-only or
+    inaccessible output directory without starting provider work. No managed result is overwritten.
+    """
+    if layout is not None and not FOLDER.fullmatch(layout.group):
+        raise ValueError("Output folder name is not allowed.")
+    directory = Path(output) / layout.group if layout is not None else Path(output)
+    directory.mkdir(parents=True, exist_ok=True)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(prefix=".dtflow-video-check-", suffix=".tmp", dir=directory, delete=False) as f:
+            temporary = Path(f.name)
+            f.write(b"DTFlow video destination readiness\n")
+            f.flush()
+            os.fsync(f.fileno())
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
 
 
 def video_path_for(poster: str | Path) -> Path:
