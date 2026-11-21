@@ -1504,7 +1504,8 @@ class MainWindow:
             return
         state = self.activity.run_state
         # Each settled image or finished run pushes a refresh hint to Images (it checks the database cheaply).
-        marker = (self.activity.generating, self.activity.dispatching, state.completed)
+        # A video queue scales `completed` by the estimated fraction; its count text changes only when an item settles.
+        marker = (self.activity.generating, self.activity.dispatching, state.count or state.completed)
         if marker != self._last_run_marker:
             self._last_run_marker = marker
             self.gallery.notify_changed()
@@ -1536,6 +1537,7 @@ class MainWindow:
             stage=state.stage,
             wide=state.wide,
             queued=state.queued,
+            count=state.count or None,
         )
 
     def show(self) -> None:

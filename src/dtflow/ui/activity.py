@@ -26,6 +26,8 @@ class RunState:
     stage: str = ""
     wide: str = ""
     queued: int = 0
+    # Text for the bar's count when completed/total are only a fill scale (empty: "completed / total").
+    count: str = ""
 
 
 class Activity:

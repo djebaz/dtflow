@@ -850,11 +850,20 @@ class QueuePage:
         running_items = [item for item in items if item["state"] == "running"]
         detail = f"Queue {queue_id[:8]} · {summary.headline}"
         waiting = len(up_next_ids(self._views.values())) if dispatching_here else 0
-        stage = wide = ""
+        stage = wide = count = ""
 
         if phase == "running":
             # The ring counts settled items, which is meaningful however many items run at once.
             completed, total = summary.settled, summary.total
+            video_fractions = [
+                self._video_progress[(queue_id, item["item_id"])].fraction()
+                for item in running_items
+                if (queue_id, item["item_id"]) in self._video_progress
+            ]
+            if video_fractions:
+                # Running clips add their estimated share (hundredths) to the settled items; the count stays settled/total.
+                completed, total = summary.settled * 100 + round(100 * sum(video_fractions)), summary.total * 100
+                count = f"{summary.settled}/{summary.total}"
             detail += f" Progress: {summary.settled}/{summary.total}."
             # Only the currently running item may supply the single-item stage/progress.
             # Historical callbacks for other items must not take over the status.
@@ -970,7 +979,8 @@ class QueuePage:
             remaining = self._countdown.remaining(view, monotonic())
             elapsed, eta = elapsed_text(view), eta_text(view, remaining=remaining)
             stage_timed = len(running_items) == 1 and (queue_id, running_items[0]["item_id"]) in self._run_stage_started
-            if elapsed or eta or stage_timed:
+            video_live = any((queue_id, item["item_id"]) in self._video_progress for item in running_items)
+            if elapsed or eta or stage_timed or video_live:
                 if not self._timing_timer.isActive() and not self._runner.closed:
                     self._timing_timer.start()
             else:
@@ -993,6 +1003,7 @@ class QueuePage:
                 stage=stage,
                 wide=wide,
                 queued=waiting,
+                count=count,
             )
         )
 
