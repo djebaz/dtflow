@@ -182,7 +182,7 @@ jobs:
             dist/build-manifest.json
           if-no-files-found: error
           compression-level: 0
-          retention-days: 14
+          retention-days: 1
 
       - name: Link build downloads
         env:
@@ -191,7 +191,7 @@ jobs:
           @(
             "## Build downloads"
             "Download the verified EXE, SHA256SUMS.txt and build-manifest.json together from the run's Artifacts section."
-            "Artifact: $env:ARTIFACT_NAME (14-day retention)."
+            "Artifact: $env:ARTIFACT_NAME (24-hour retention)."
           ) | Add-Content $env:GITHUB_STEP_SUMMARY -Encoding utf8
 
   draft:
