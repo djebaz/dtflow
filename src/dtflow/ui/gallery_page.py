@@ -13,6 +13,7 @@ from collections import deque
 from dataclasses import asdict, replace
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path, PureWindowsPath
+from stat import S_ISREG
 from time import monotonic, thread_time
 
 from PySide6.QtCore import (
@@ -3396,10 +3397,13 @@ class GalleryPage(QObject):
         previous = self._presented_item
         if previous == item:
             return
+        image_changed = (
+            previous is None or previous.identity != item.identity or self._image_key(previous) != self._image_key(item)
+        )
         self._presented_item = item
         request = self._request(item)
         if image_changed:
-            self.video_player.show_for_video(clip_summary(request) is not None and not item.issue)
+            self.video_player.show_for_video(False)  # A poster alone does not establish that its clip is available.
         clip = clip_summary(request)
         self._widget("galleryDimensionsOverlay", QLabel).setText(
             self._dimensions(item) + (f"  ·  Video {clip[1]}" if clip else "")
@@ -3509,6 +3513,43 @@ class GalleryPage(QObject):
             else inspect_output(self.state_dir, item.identity),
             lambda result, error: self._detail_done(detail_generation, item.identity, result, error),
         )
+        if clip is not None and not item.issue:
+            self.external_button.setEnabled(False)
+            self.copy_button.setEnabled(False)
+            self.runner.submit(
+                asyncio.to_thread(self._video_companion_path, item),
+                lambda result, error: self._video_companion_done(detail_generation, item.identity, result, error),
+            )
+
+    def _video_companion_path(self, item: GalleryItem) -> str:
+        """Resolve the poster's companion on a worker, never using its path as mutation authority."""
+        with original_images_lock(self.state_dir, timeout=12):
+            poster = resolve_item_read(item, self.state_dir)[0]
+            clip = video_path_for(poster)
+            if not S_ISREG(clip.stat().st_mode):
+                raise OSError("The video companion is not a regular file.")
+            return str(clip)
+
+    def _video_companion_done(self, generation: int, identity: str, path, error) -> None:
+        if self.runner.closed or generation != self._detail_generation or identity != self.selected_id:
+            return
+        available = error is None and bool(path)
+        self.external_button.setEnabled(available)
+        self.copy_button.setEnabled(available)
+        if not available:
+            self.video_player.show_for_video(False)
+            message = (
+                "The video file is missing; only its poster remains."
+                if isinstance(error, FileNotFoundError)
+                else "The video file is unavailable; only its poster can be shown."
+            )
+            self.surface.setToolTip(message)
+            label = self._widget("galleryDimensionsOverlay", QLabel)
+            label.setText(f"{label.text()} · Video unavailable (poster only)")
+            if self._active:
+                feedback(self.page).notice("Video unavailable", message, "warning")
+        elif not self.video_player.playing:
+            self.video_player.show_for_video(True)
 
     def _image_done(self, generation: int, identity: str, result, error) -> None:
         if generation != self._image_generation or identity != self.selected_id:
@@ -4365,13 +4406,10 @@ class GalleryPage(QObject):
         video = action in ("copy", "external") and clip_summary(self._request(item)) is not None
 
         def read():
+            if video:
+                return self._video_companion_path(item)
             with original_images_lock(self.state_dir, timeout=12):
                 path = resolve_item_read(item, self.state_dir)[0]
-            if video:  # the clip is the poster's companion; a missing clip never falls back to the poster
-                clip = video_path_for(path)
-                if not clip.is_file():
-                    raise FileNotFoundError("the video file is missing; only its poster remains.")
-                return str(clip)
             return path
 
         self.runner.submit(
@@ -4429,24 +4467,22 @@ class GalleryPage(QObject):
         item = self._selected()
         if item is None or clip_summary(self._request(item)) is None:
             return
-
-        def find():
-            with original_images_lock(self.state_dir, timeout=12):
-                path = resolve_item_read(item, self.state_dir)[0]
-            clip = video_path_for(path)
-            if not clip.is_file():
-                raise FileNotFoundError("the video file is missing; only its poster remains.")
-            return str(clip)
+        generation = self._detail_generation
 
         def done(result, error) -> None:
-            if self.selected_id != item.identity or self.runner.closed:
+            if (
+                self.selected_id != item.identity
+                or generation != self._detail_generation
+                or self.runner.closed
+                or not self._active
+            ):
                 return
             if error is not None or not result:
                 self._selection_notice(f"Video unavailable: {error or 'it could not be read.'}")
                 return
             self.video_player.start(result)
 
-        self.runner.submit(asyncio.to_thread(find), done)
+        self.runner.submit(asyncio.to_thread(self._video_companion_path, item), done)
 
     def _copy_path(self) -> None:
         self._read_action("copy")

@@ -333,6 +333,7 @@ class GenerationPage:
         self._video_tick = QTimer(page)
         self._video_tick.setInterval(1000)
         self._video_tick.timeout.connect(self._tick_video)
+        self._runner.shutdown_started.connect(self._video_tick.stop)
         # The last submission exactly as sent (request, backend, endpoint, receipts, prefix, simulation, edit), for
         # Retry: it resends the recorded request with the same seed, never the form's current values (#240).
         self._last_submission: tuple | None = None
@@ -1173,7 +1174,7 @@ class GenerationPage:
 
     def _tick_video(self) -> None:
         """Keep the elapsed time moving while DT+ is silent."""
-        if self._generating and self._run_video:
+        if not self._runner.closed and self._generating and self._run_video:
             self._video_progress.present(self._activity)
         else:
             self._video_tick.stop()
@@ -1197,6 +1198,13 @@ class GenerationPage:
         )
         diagnostic_event(log, "generation.retry", level=logging.INFO, data={"backend": name})
         if self._activity.dispatching:
+            if retried.num_frames is not None:
+                self._status(
+                    Presentation(
+                        "warning", "Retry not started", "A video cannot be queued. Retry after the queue stops."
+                    )
+                )
+                return False
             if self.queue_behind is None:
                 self._status(Presentation("error", "Retry not started", "Queue submission is unavailable."))
                 return False

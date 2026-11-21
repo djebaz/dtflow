@@ -171,6 +171,8 @@ async def create_queue(
     ``up_next`` it is queued last behind that live dispatch owner, which starts it after its current queue. Without a
     live owner there is nothing to wait behind, so the queue is saved paused.
     """
+    if any(request.num_frames is not None for request in requests):
+        raise ValidationError("Video generation is not supported in queues; use Generate directly.")
     if backend.get("name") == "local" and not backend.get("endpoint"):
         raise ValidationError("The local backend requires --endpoint HOST:PORT.")
     store = SQLiteAttempts(state)
