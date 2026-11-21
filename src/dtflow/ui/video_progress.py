@@ -20,13 +20,13 @@ from dtflow.ui.progress_stages import event_stage
 # Window of the whole-run fraction owned by each phase, and the time constant (seconds) used while the phase reports
 # no counter. Values are rough shares of a typical clip, not measurements.
 WINDOWS = {
-    "preparing": (0.00, 0.05, 6.0),
-    "waiting": (0.05, 0.15, 25.0),
-    "sampling": (0.15, 0.60, 120.0),
-    "second_pass": (0.45, 0.60, 60.0),
-    "receiving": (0.60, 0.90, 40.0),
-    "encoding": (0.90, 0.97, 10.0),
-    "saving": (0.97, 0.99, 3.0),
+    "preparing": (0.00, 0.03, 6.0),
+    "waiting": (0.03, 0.50, 60.0),
+    "sampling": (0.50, 0.80, 120.0),
+    "second_pass": (0.70, 0.80, 60.0),
+    "receiving": (0.80, 0.93, 40.0),
+    "encoding": (0.93, 0.98, 10.0),
+    "saving": (0.98, 0.995, 3.0),
 }
 
 
