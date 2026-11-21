@@ -85,7 +85,7 @@ from dtflow.ui.generation_presenter import (
     snap_dimension,
     values_from_request,
 )
-from dtflow.ui.inline_feedback import InlineNotice, confirm_action, edit_text
+from dtflow.ui.inline_feedback import InlineNotice, edit_text
 from dtflow.ui.video_progress import VideoProgress
 from dtflow.ui.video_panel import IMAGE_ONLY_REASON, VideoPanel
 from dtflow.core.video import VIDEO_TOTAL_TIMEOUT
@@ -1115,16 +1115,6 @@ class GenerationPage:
                     )
                 )
                 return False
-            if self.video.notice_needed():
-                confirm_action(
-                    self.page,
-                    self.page.generateButton,
-                    "Video takes minutes",
-                    self.video.notice_text(),
-                    self._notice_confirmed,
-                    confirm_text="Generate video",
-                )
-                return False
         images = 1 if self.video.active else self.page.imagesSpinBox.value()
         if (edit is None or isinstance(edit, PoseJob)) and images > 1 and self.queue_images is not None:
             # One total: every picture is its own single-image queue item (Repeat expansion), so it has a row,
@@ -1187,10 +1177,6 @@ class GenerationPage:
             self._video_progress.present(self._activity)
         else:
             self._video_tick.stop()
-
-    def _notice_confirmed(self) -> None:
-        self.video.notice_seen()
-        self.generate()
 
     def retry(self) -> bool:
         """Retry: resend the last request as recorded (same settings, same seed, same provider) under a new identity.

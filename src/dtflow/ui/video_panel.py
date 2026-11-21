@@ -26,7 +26,6 @@ COST_NOTE = (
     "A video takes minutes and can use a large part of the monthly allowance. DT+ does not report what a run costs, "
     "so no cost is shown."
 )
-NOTICE_FILE = "video_notice_seen"
 MAX_START_IMAGE_BYTES = 32 * 1024 * 1024
 LOCKED = ("inpaintModeButton", "controlnetModeButton", "scriptsModeButton", "imagesSpinBox", "queueGenerateButton")
 
@@ -197,17 +196,3 @@ class VideoPanel(QObject):
                 ("video.playback_fps", str(rules.playback_fps(self.model))),
             ),
         )
-
-    # -- one-time notice -------------------------------------------------------------------------------------------
-    def notice_needed(self) -> bool:
-        return not (self._state / NOTICE_FILE).exists()
-
-    def notice_seen(self) -> None:
-        try:
-            (self._state / NOTICE_FILE).write_text("1", encoding="utf-8")
-        except OSError:
-            pass
-
-    def notice_text(self) -> str:
-        seconds = rules.duration_seconds(self.model, self.frames.value())
-        return f"This makes a clip of about {rules.duration_text(seconds)}. " + COST_NOTE
