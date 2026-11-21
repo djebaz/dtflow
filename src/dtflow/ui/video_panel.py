@@ -8,12 +8,14 @@ do the work (``core.video``, ``backends.drawthings.video_stream``, ``services.vi
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import QObject
-from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QPushButton, QSpinBox, QVBoxLayout
+from PySide6.QtCore import QFile, QIODevice, QObject
+from PySide6.QtUiTools import QUiLoader
+from PySide6.QtWidgets import QLabel, QPushButton, QSpinBox
 
 from dtflow.core import video as rules
 from dtflow.core.models import ResolvedGenerationRequest
@@ -27,56 +29,58 @@ COST_NOTE = (
     "so no cost is shown."
 )
 MAX_START_IMAGE_BYTES = 32 * 1024 * 1024
+FORM = Path(__file__).parent / "forms" / "video_panel.ui"
+
+
+def _read_start_image(path: Path) -> str:
+    """Read and hash a bounded file away from Qt; keep only its digest in the controller."""
+    if path.stat().st_size > MAX_START_IMAGE_BYTES:
+        raise ValueError("The start image is larger than 32 MiB.")
+    with path.open("rb") as source:
+        data = source.read(MAX_START_IMAGE_BYTES + 1)
+    if not data or len(data) > MAX_START_IMAGE_BYTES:
+        raise ValueError("The start image is empty or larger than 32 MiB.")
+    return hashlib.sha256(data).hexdigest()
+
+
 LOCKED = ("inpaintModeButton", "controlnetModeButton", "scriptsModeButton", "imagesSpinBox", "queueGenerateButton")
 
 
 class VideoPanel(QObject):
-    def __init__(self, page, state_dir: Path):
+    def __init__(self, page, state_dir: Path, runner, backend_source):
         super().__init__(page)
         self.page, self._state = page, Path(state_dir)
+        self._runner, self._backend_source = runner, backend_source
         self.model = ""
         self._start: Path | None = None
         self._sha = ""
+        self._start_source: tuple | None = None
+        self._choice_revision = 0
+        self._loading = False
+        self._choice_problem = ""
         self._locked_tips: dict[str, str] = {}
-        self.frame = QFrame(page)
-        self.frame.setObjectName("videoPanel")
-        self.frame.setProperty("role", "card")
-        column = QVBoxLayout(self.frame)
-        column.setContentsMargins(10, 8, 10, 8)
-        row = QHBoxLayout()
-        row.addWidget(QLabel("Frames", self.frame))
-        self.frames = QSpinBox(self.frame)
-        self.frames.setObjectName("videoFramesSpinBox")
+        file = QFile(str(FORM))
+        if not file.open(QIODevice.OpenModeFlag.ReadOnly):
+            raise OSError("Video controls form could not be opened.")
+        try:
+            self.frame = QUiLoader().load(file, page)
+        finally:
+            file.close()
+        if self.frame is None:
+            raise RuntimeError("Video controls form could not be loaded.")
+        self.frames = self.frame.findChild(QSpinBox, "videoFramesSpinBox")
+        self.duration = self.frame.findChild(QLabel, "videoDurationLabel")
+        self.choose = self.frame.findChild(QPushButton, "videoChooseStartButton")
+        self.clear = self.frame.findChild(QPushButton, "videoClearStartButton")
+        self.start_label = self.frame.findChild(QLabel, "videoStartLabel")
+        self.note = self.frame.findChild(QLabel, "videoCostNote")
+        self.problem = self.frame.findChild(QLabel, "videoProblemLabel")
+        self.note.setText(COST_NOTE)
         self.frames.setRange(rules.MIN_FRAMES, rules.MAX_FRAMES)
-        self.frames.setAccessibleName("Number of video frames")
         self.frames.editingFinished.connect(self._snap_frames)
         self.frames.valueChanged.connect(self._sync)
-        row.addWidget(self.frames)
-        self.duration = QLabel(self.frame)
-        self.duration.setProperty("role", "secondary")
-        row.addWidget(self.duration, 1)
-        column.addLayout(row)
-        start = QHBoxLayout()
-        start.addWidget(QLabel("Start image", self.frame))
-        self.choose = QPushButton("Choose…", self.frame)
-        self.choose.setToolTip("One optional start image. Without it the video is made from the prompt alone.")
         self.choose.clicked.connect(self._choose)
-        self.clear = QPushButton("Clear", self.frame)
         self.clear.clicked.connect(self._clear)
-        self.start_label = QLabel("None (text to video)", self.frame)
-        self.start_label.setProperty("role", "secondary")
-        start.addWidget(self.choose)
-        start.addWidget(self.clear)
-        start.addWidget(self.start_label, 1)
-        column.addLayout(start)
-        self.note = QLabel(COST_NOTE, self.frame)
-        self.note.setWordWrap(True)
-        self.note.setProperty("role", "secondary")
-        column.addWidget(self.note)
-        self.problem = QLabel(self.frame)
-        self.problem.setWordWrap(True)
-        self.problem.setProperty("state", "warning")
-        column.addWidget(self.problem)
         page.generationWorkspaceLayout.insertWidget(3, self.frame)
         self.frame.hide()
         self._sync()
@@ -89,6 +93,8 @@ class VideoPanel(QObject):
     def model_changed(self, text: str) -> None:
         """Called when the checkpoint changes; fills the video defaults when the page enters video mode."""
         was = self.active
+        if text.strip() != self.model:
+            self._clear()
         self.model = text.strip()
         now = self.active
         self.frame.setVisible(now)
@@ -154,8 +160,8 @@ class VideoPanel(QObject):
             if accepts
             else "A start image is only verified with LTX-2.3 (LTX-2 froze on it)."
         )
-        self.clear.setEnabled(self._start is not None)
-        problem = video_encode.tools_problem() or rules.frame_problem(self.model, self.frames.value()) or ""
+        self.clear.setEnabled(self._start is not None or self._loading)
+        problem = self._choice_problem or video_encode.tools_problem() or rules.frame_problem(self.model, self.frames.value()) or ""
         self.problem.setText(problem)
         self.problem.setVisible(bool(problem))
 
@@ -163,35 +169,64 @@ class VideoPanel(QObject):
         """Why a video cannot start now (empty when it can); checked before submit so no paid run is wasted."""
         if not self.active:
             return ""
+        if self._loading:
+            return "Checking the selected start image; generation cannot begin yet."
+        if self._choice_problem:
+            return self._choice_problem
         return video_encode.tools_problem() or rules.frame_problem(self.model, self.frames.value()) or ""
 
     def _choose(self) -> None:
         path = QFileDialog.getOpenFileName(self.page, "Choose start image", "", IMAGE_FILTER)[0]
         if not path:
             return
-        try:
-            data = Path(path).read_bytes() if Path(path).stat().st_size <= MAX_START_IMAGE_BYTES else b""
-        except OSError:
-            data = b""
-        if not data:
-            self.problem.setText("The start image could not be read or is larger than 32 MiB.")
-            self.problem.setVisible(True)
-            return
-        self._start, self._sha = Path(path), hashlib.sha256(data).hexdigest()
-        self.start_label.setText(Path(path).name)
+        self._clear()
+        self._choice_revision += 1
+        token, model, source = self._choice_revision, self.model, self._backend_source()
+        chosen = Path(path)
+        self._loading = True
+        self.start_label.setText("Checking start image…")
         self._sync()
 
+        def done(digest, failure) -> None:
+            if (
+                token != self._choice_revision or model != self.model
+                or source != self._backend_source() or self._runner.closed
+            ):
+                return
+            self._loading = False
+            if failure is not None:
+                self._choice_problem = (
+                    str(failure) if isinstance(failure, ValueError)
+                    else "The start image could not be read."
+                )
+                self.start_label.setText("None (text to video)")
+            else:
+                self._start, self._sha, self._start_source = chosen, digest, source
+                self.start_label.setText(chosen.name)
+            self._sync()
+
+        self._runner.submit(asyncio.to_thread(_read_start_image, chosen), done)
+
     def _clear(self) -> None:
-        self._start, self._sha = None, ""
+        self._choice_revision += 1
+        self._start, self._sha, self._start_source = None, "", None
+        self._loading = False
+        self._choice_problem = ""
         self.start_label.setText("None (text to video)")
         self.clear.setEnabled(False)
 
     def apply(self, request: ResolvedGenerationRequest) -> ResolvedGenerationRequest:
         """The resolved image request plus the video fields; the request model checks the frame rule and the image."""
-        if request.loras:
-            from dtflow.core.models import ValidationError
+        from dtflow.core.models import ValidationError
 
+        if request.loras:
             raise ValidationError("LoRAs are not supported for video yet.")
+        if self._loading:
+            raise ValidationError("The start image is still being checked.")
+        if self._choice_problem:
+            raise ValidationError(self._choice_problem)
+        if self._start is not None and self._start_source != self._backend_source():
+            raise ValidationError("Connection changed; choose the start image again.")
         return replace(
             request,
             num_frames=self.frames.value(),
