@@ -1,8 +1,6 @@
 """Video mode of the Generate page: duration and one start image.
 
-Selecting a video checkpoint switches the page to video mode (``model_changed``): the model's own profile fills steps,
-guidance and sampler, frames and size get video defaults, image-only controls are disabled with the reason, and this
-panel appears. The panel only reads and writes plain values; the request, wire, receiving, encoding and storage layers
+Video checkpoints show the existing video panel without resetting the draft's duration, size, source image or sampling values. The backend remains responsible for validating the selected model and request. The panel only reads and writes plain values; the request, wire, receiving, encoding and storage layers
 do the work (``core.video``, ``backends.drawthings.video_stream``, ``services.video_artifacts``).
 """
 
@@ -109,7 +107,7 @@ class VideoPanel(QObject):
         self._hovering = False
         self._choice_problem = ""
         self._locked_tips: dict[str, str] = {}
-        self._catalogue_previous_model = ""
+        self._seen_video = False
         file = QFile(str(FORM))
         if not file.open(QIODevice.OpenModeFlag.ReadOnly):
             raise OSError("Video controls form could not be opened.")
@@ -150,28 +148,19 @@ class VideoPanel(QObject):
         return rules.frames_for_duration(self.model, self.seconds.value())
 
     def model_changed(self, text: str, *, catalogue_update: bool = False) -> None:
-        """Reset settings on a real checkpoint change, not on transient inventory repopulation."""
-        selected = text.strip()
-        was, previous = self.active, self.model
-        catalogue_gap = catalogue_update and not selected and was
-        if catalogue_gap:
-            self._catalogue_previous_model = previous
-        restoring_same = catalogue_update and selected and selected == self._catalogue_previous_model
-        if selected != previous and not (catalogue_gap or restoring_same):
-            self._clear()
-        self.model = selected
+        """Change the video mode, never the user's draft, including during catalogue refreshes."""
+        was = self.active
+        self.model = text.strip()
         now = self.active
+        if now and not self._seen_video:
+            self._seen_video = True
+            family = rules.family_of(self.model)
+            self.seconds.setValue(round(family.default_frames / family.fps, 2))
         if not now:
             self._hide_hover()
         self.frame.setVisible(now)
-        if now and selected != previous and not restoring_same:
-            self._apply_defaults()
         if now != was:
             self._lock(now)
-            if not now and not catalogue_gap:
-                self._clear()
-        if selected:
-            self._catalogue_previous_model = ""
         self._sync()
 
     def session_document(self) -> dict:
@@ -183,18 +172,18 @@ class VideoPanel(QObject):
         }
 
     def restore(self, document: object) -> None:
-        """Restore the draft, rechecking its source image before another paid submission is possible."""
-        if not self.active:
+        """Restore a saved video draft without resetting it for the current checkpoint."""
+        if not isinstance(document, dict):
             return
         self._clear()
-        if not isinstance(document, dict):
-            family = rules.family_of(self.model)
-            self.seconds.setValue(round(family.default_frames / family.fps, 2))
-            return
         duration = document.get("duration_seconds")
-        low, high = rules.duration_limits(self.model)
-        if type(duration) in (int, float) and math.isfinite(duration) and low <= duration <= high:
+        if (
+            type(duration) in (int, float)
+            and math.isfinite(duration)
+            and self.seconds.minimum() <= duration <= self.seconds.maximum()
+        ):
             self.seconds.setValue(float(duration))
+            self._seen_video = True
         path, digest = document.get("start_image"), document.get("start_image_sha256")
         if not (
             isinstance(path, str)
@@ -206,7 +195,7 @@ class VideoPanel(QObject):
             return
         chosen = Path(path)
         self._choice_revision += 1
-        token, model, source = self._choice_revision, self.model, self._backend_source()
+        token, source = self._choice_revision, self._backend_source()
         self._start, self._sha, self._start_source = chosen, digest, source
         self._loading = True
         self._show_start()
@@ -215,13 +204,8 @@ class VideoPanel(QObject):
         def done(info, failure) -> None:
             if token != self._choice_revision or self._runner.closed:
                 return
-            # Inventory refresh briefly blanks the checkpoint selector without changing the user's draft.
-            if model != self.model and not (not self.model and self._catalogue_previous_model == model):
-                return
             self._loading = False
-            if source != self._backend_source():
-                self._choice_problem = "Connection changed; choose the start image again."
-            elif failure is not None:
+            if failure is not None:
                 self._choice_problem = "Saved start image is missing or unreadable; choose it again."
             elif info.digest != digest:
                 self._choice_problem = "Saved start image has changed; choose it again."
@@ -231,23 +215,6 @@ class VideoPanel(QObject):
             self._sync()
 
         self._runner.submit(asyncio.to_thread(_read_start_image, chosen), done)
-
-    def _apply_defaults(self) -> None:
-        page, family = self.page, rules.family_of(self.model)
-        profile = rules.video_profile(self.model)
-        if profile is not None:
-            page.stepsSpinBox.setValue(profile.steps)
-            page.guidanceSpinBox.setValue(profile.guidance)
-            index = page.samplerCombo.findText(profile.sampler.value)
-            if index >= 0:
-                page.samplerCombo.setCurrentIndex(index)
-        low, high = rules.duration_limits(self.model)
-        self.seconds.setRange(round(low, 2), round(high, 2))
-        self.seconds.setValue(round(family.default_frames / family.fps, 2))
-        page.widthSpinBox.setValue(family.default_size[0])
-        page.heightSpinBox.setValue(family.default_size[1])
-        if not rules.accepts_start_image(self.model):
-            self._clear()
 
     def _lock(self, locked: bool) -> None:
         page = self.page
@@ -296,6 +263,7 @@ class VideoPanel(QObject):
         self.clear.setEnabled(self._start is not None or self._loading)
         problem = (
             (_unverified(self.model) if not rules.supported_video_model(self.model) else "")
+            or self._incompatible_settings()
             or self._choice_problem
             or (
                 "Connection changed; choose the start image again."
@@ -309,12 +277,28 @@ class VideoPanel(QObject):
         self.problem.setText(problem)
         self.problem.setVisible(bool(problem))
 
+    def _incompatible_settings(self) -> str:
+        """Explain incompatible values rather than silently resetting the video draft."""
+        low, high = rules.duration_limits(self.model)
+        duration = self.seconds.value()
+        if duration < low - 0.005 or duration > high + 0.005:
+            return (
+                f"This checkpoint supports {low:.2f}–{high:.2f} s; the {duration:.2f} s draft is preserved. "
+                "Choose a compatible checkpoint or edit Duration."
+            )
+        if self._start is not None and not rules.accepts_start_image(self.model):
+            return "This checkpoint cannot use a start image. Your image is preserved; choose a compatible checkpoint."
+        return ""
+
     def blocker(self) -> str:
         """Why a video cannot start now (empty when it can); checked before submit so no paid run is wasted."""
         if not self.active:
             return ""
         if not rules.supported_video_model(self.model):
             return _unverified(self.model)
+        incompatible = self._incompatible_settings()
+        if incompatible:
+            return incompatible
         if self._loading:
             return "Checking the selected start image; generation cannot begin yet."
         if self._choice_problem:
@@ -331,18 +315,14 @@ class VideoPanel(QObject):
             return
         self._clear()
         self._choice_revision += 1
-        token, model, source = self._choice_revision, self.model, self._backend_source()
+        token, source = self._choice_revision, self._backend_source()
         chosen = Path(path)
         self._loading = True
         self._show_start()
         self._sync()
 
         def done(info, failure) -> None:
-            if token != self._choice_revision or model != self.model or self._runner.closed:
-                return
-            if source != self._backend_source():
-                self._clear()
-                self._sync()
+            if token != self._choice_revision or self._runner.closed:
                 return
             self._loading = False
             if failure is not None:
