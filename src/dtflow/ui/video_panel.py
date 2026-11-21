@@ -201,6 +201,7 @@ class VideoPanel(QObject):
                     (self.page.widthSpinBox.value(), self.page.heightSpinBox.value()),
                 )
             )
+            self.start_note.show()
         accepts = rules.accepts_start_image(self.model)
         self.choose.setEnabled(accepts)
         self.choose.setToolTip(
@@ -293,6 +294,7 @@ class VideoPanel(QObject):
             self.start_label.setText("Checking start image…" if self._loading else "None (text to video)")
             self.start_label.setToolTip("")
             self.start_note.clear()
+            self.start_note.hide()
             return
         picture = QImage.fromData(info.thumbnail_png)
         self.thumb.setPixmap(
