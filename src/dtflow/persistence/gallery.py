@@ -212,6 +212,30 @@ def get_record(state: Path, identity: str) -> dict | None:
         return dict(row) if row else None
 
 
+def recorded_video_identities(state: Path, identities: tuple[str, ...]) -> frozenset[str]:
+    """Find selected video requests in bounded SQLite batches, without loading image pixels."""
+    result = set()
+    if not identities:
+        return frozenset()
+    for offset in range(0, len(identities), MAX_EXPORT_AVAILABILITY_BATCH):
+        batch = identities[offset : offset + MAX_EXPORT_AVAILABILITY_BATCH]
+        with reader(state) as db:
+            if db is None:
+                return frozenset(result)
+            rows = db.execute(
+                """SELECT a.attempt_id FROM attempts a
+                   WHERE a.attempt_id IN (SELECT substr(value, 1, 32) FROM json_each(?))
+                     AND json_type(CASE WHEN json_valid(a.request_json) THEN a.request_json ELSE '{}' END,
+                                   '$.num_frames') = 'integer'
+                     AND json_type(CASE WHEN json_valid(a.request_json) THEN a.request_json ELSE '{}' END,
+                                   '$.model_id') = 'text'""",
+                (json.dumps(batch),),
+            )
+            matches = {row[0] for row in rows}
+        result.update(identity for identity in batch if identity.partition(":")[0] in matches)
+    return frozenset(result)
+
+
 def available_export_identities(state: Path, identities: tuple[str, ...]) -> frozenset[str]:
     """Read only committed, non-recycled identities using selected attempt primary keys.
 

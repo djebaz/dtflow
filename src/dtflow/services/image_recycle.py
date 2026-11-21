@@ -33,6 +33,7 @@ from dtflow.persistence.original_io import (
 from dtflow.services.artifact_paths import ArtifactReadPaths, foreign_windows_path
 from dtflow.services.managed_original_provenance import (
     declared_raw_artifact,
+    declared_video_companion,
     file_sha256,
     matches_managed_state,
     verify_managed_sidecar,
@@ -75,6 +76,7 @@ class RecycleTarget:
     kind: str = "final"
     digest: str = ""
     raw: RecycleTarget | None = None
+    video: RecycleTarget | None = None
 
     @property
     def ledger_identity(self) -> str:
@@ -108,6 +110,10 @@ class RecyclePlan:
     def raw_count(self) -> int:
         return sum(target.raw is not None for target in self.targets)
 
+    @property
+    def video_count(self) -> int:
+        return sum(target.video is not None for target in self.targets)
+
 
 @dataclass(frozen=True, slots=True)
 class RecycleResult:
@@ -124,6 +130,7 @@ class RecycleResult:
     deleted: tuple[str, ...] = ()
     absent: tuple[str, ...] = ()
     raw: tuple[str, ...] = ()  # images whose raw-1.png was disposed, whatever became of their final
+    video: tuple[str, ...] = ()  # video clips disposed, even if their poster remains
 
 
 def _managed_key(path: str) -> str:
@@ -186,6 +193,46 @@ def _raw_companion(
         mounts,
         kind="raw",
         digest=digest,
+    )
+
+
+def _video_companion(
+    expected: Path, metadata: Path, record: dict, *, keep_recorded: bool, mounts: tuple[tuple[str, str], ...]
+) -> RecycleTarget | None:
+    """Authorize a present MP4 only through the sidecar's exact video declaration."""
+    clip = expected.with_suffix(".mp4")
+    try:
+        attrs = clip.lstat()
+    except FileNotFoundError:
+        return None
+    declared = declared_video_companion(metadata, record)
+    if declared is None:
+        # An undeclared sibling might be unrelated, or a video whose sidecar
+        # was damaged. Neither case permits removal of the poster.
+        raise OSError("MP4 beside poster has no ownership declaration.")
+    name, recorded_size = declared
+    if (
+        clip.name != name
+        or attrs.st_size != recorded_size
+        or clip.is_symlink()
+        or (hasattr(os.path, "isjunction") and os.path.isjunction(clip))
+        or getattr(attrs, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        or not stat.S_ISREG(attrs.st_mode)
+        or attrs.st_nlink != 1
+        or clip.resolve(strict=True) != clip
+    ):
+        raise OSError("Video companion is not the declared regular MP4.")
+    recorded_video = str(record["path"])[:-4] + ".mp4"
+    return RecycleTarget(
+        str(record["identity"]),
+        str(clip),
+        attrs.st_size,
+        attrs.st_mtime_ns,
+        attrs.st_ino,
+        attrs.st_dev,
+        recorded_video if keep_recorded else "",
+        mounts,
+        kind="video",
     )
 
 
@@ -288,6 +335,11 @@ def _regular_managed_file(
             if ordinal == 0
             else None
         )
+        video = (
+            _video_companion(expected, metadata, record, keep_recorded=keep_recorded, mounts=mounts)
+            if ordinal == 0
+            else None
+        )
     except OSError:
         return None
     return RecycleTarget(
@@ -300,6 +352,7 @@ def _regular_managed_file(
         record["path"] if keep_recorded else "",
         mounts,
         raw=raw,
+        video=video,
     )
 
 
@@ -325,8 +378,14 @@ def _content_verified(target: RecycleTarget) -> bool:
     """
     if target.raw is not None and not _content_verified(target.raw):
         return False
+    if target.video is not None and not _content_verified(target.video):
+        return False
     source = Path(target.path)
     frozen = (target.size, target.mtime_ns, target.inode, target.device)
+    if target.kind == "video":
+        # The sidecar declaration and frozen fingerprint are checked in
+        # _regular_managed_file and again under the mutation lease.
+        return True
     if target.kind == "raw":
         if not target.digest:
             return False
@@ -438,6 +497,14 @@ def _confirmed_absent_final(
                 pass
             else:
                 return None
+            # A missing poster does not prove a declared video companion is gone.
+            # Never hide the record as absent while any sibling MP4 remains.
+            try:
+                image.with_suffix(".mp4").lstat()
+            except FileNotFoundError:
+                pass
+            else:
+                return None
             verify_managed_sidecar(image, sidecar, record, check_digest=False, check_size=False)
             after = sidecar.stat()
             fingerprint = (info.st_size, info.st_mtime_ns, info.st_ino, info.st_dev)
@@ -544,11 +611,24 @@ def prepare_recycle(
                 if raw_state is not None and raw_state[0] != "failed":
                     ineligible += 1
                     continue
+            video_state = states.get(f"{target.identity}:video")
+            if video_state is not None:
+                if target.video is None:
+                    # An unverified or failed MP4 disposition cannot be silently
+                    # treated as a successful companion removal.
+                    if video_state[0] not in ("recycled", "deleted"):
+                        ineligible += 1
+                        continue
+                elif video_state[0] != "failed":
+                    ineligible += 1
+                    continue
             if not permanent and trash_check is not None:
                 try:
                     trash_check(Path(target.path))
                     if target.raw is not None:
                         trash_check(Path(target.raw.path))
+                    if target.video is not None:
+                        trash_check(Path(target.video.path))
                 except (OSError, RecycleUnavailable):
                     ineligible += 1
                     continue
@@ -565,6 +645,7 @@ def prepare_recycle(
             "requested": plan.requested,
             "eligible": len(plan.targets),
             "raw": plan.raw_count,
+            "video": plan.video_count,
             "absent": len(plan.absent_targets),
             "missing": plan.missing,
             "ineligible": plan.ineligible,
@@ -693,7 +774,7 @@ def _dispose(
             },
         )
         if len(failure_details) < 100:
-            failure_details.append((target.identity, detail if target.kind == "final" else f"raw_{detail}"))
+            failure_details.append((target.identity, detail if target.kind == "final" else f"{target.kind}_{detail}"))
     else:
         state_value = ("deleted" if permanent else "recycled") if not Path(target.path).exists() else "uncertain"
     ledger.record_outcome(state, operation_id, target.ledger_identity, path, state_value, target.size, target.mtime_ns)
@@ -729,10 +810,11 @@ def recycle_outputs(
     operation_id = ("delete-" if permanent else "trash-") + uuid4().hex
     targets = (*plan.targets, *plan.absent_targets)
     raw_disposed: list[str] = []
+    video_disposed: list[str] = []
     started = time.monotonic()
     with recycle_batch_lock(state):
         # Requested counts are physical files, matching the per-file outcomes that complete them.
-        ledger.start_operation(state, operation_id, len(targets) + plan.raw_count)
+        ledger.start_operation(state, operation_id, len(targets) + plan.raw_count + plan.video_count)
         diagnostic_event(
             log,
             "images.recycle.started",
@@ -741,6 +823,7 @@ def recycle_outputs(
                 "operation": operation_id,
                 "images": len(plan.targets),
                 "raw": plan.raw_count,
+                "video": plan.video_count,
                 "absent": len(plan.absent_targets),
             },
         )
@@ -783,10 +866,22 @@ def recycle_outputs(
                         ineligible += 1
                         _refused(target.identity, "ownership_changed")
                     else:
-                        # The raw provider output goes first, so a failed final leaves a retryable image whose
-                        # remaining raw is simply absent next time. Any non-removed raw leaves the final untouched.
+                        # Dispose verified secondary files before the poster, preserving
+                        # the visible result if a companion fails or is uncertain.
+                        video_state = None
+                        if target.video is not None:
+                            video_state = _dispose(
+                                state,
+                                operation_id,
+                                target.video,
+                                permanent=permanent,
+                                recycle_adapter=recycle_adapter,
+                                failure_details=failure_details,
+                            )
+                            if video_state in ("recycled", "deleted"):
+                                video_disposed.append(target.identity)
                         raw_state = None
-                        if target.raw is not None:
+                        if video_state in (None, "recycled", "deleted") and target.raw is not None:
                             raw_state = _dispose(
                                 state,
                                 operation_id,
@@ -797,10 +892,12 @@ def recycle_outputs(
                             )
                             if raw_state in ("recycled", "deleted"):
                                 raw_disposed.append(target.identity)
-                        if raw_state == "review":
+                        if video_state == "review" or raw_state == "review":
                             ineligible += 1
                             if len(failure_details) < 100:
                                 failure_details.append((target.identity, "ledger_requires_review"))
+                        elif video_state in ("failed", "uncertain"):
+                            (failed if video_state == "failed" else uncertain).append(target.identity)
                         elif raw_state in ("failed", "uncertain"):
                             (failed if raw_state == "failed" else uncertain).append(target.identity)
                         else:
@@ -849,6 +946,7 @@ def recycle_outputs(
             "outcome": "canceled" if canceled else "complete",
             "removed": len(recycled) + len(deleted),
             "raw": len(raw_disposed),
+            "video": len(video_disposed),
             "absent": len(absent),
             "failed": len(failed),
             "uncertain": len(uncertain),
@@ -870,4 +968,5 @@ def recycle_outputs(
         tuple(deleted),
         tuple(absent),
         tuple(raw_disposed),
+        tuple(video_disposed),
     )

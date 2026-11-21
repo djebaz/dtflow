@@ -3429,6 +3429,7 @@ class GalleryPage(QObject):
         if image_changed:
             self.video_player.show_for_video(False)  # A poster alone does not establish that its clip is available.
         clip = clip_summary(request)
+        self.detail_check.setText("Select video" if clip else "Select image")
         if clip:
             self.video_player.allow_keyboard_start()
             self.surface_painter.mode = "Fit"

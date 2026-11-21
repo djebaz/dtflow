@@ -101,6 +101,55 @@ def declared_raw_artifact(sidecar: Path, row: dict) -> tuple[str, str] | None:
     return recorded_raw, digest
 
 
+def declared_video_companion(sidecar: Path, row: dict) -> tuple[str, int] | None:
+    """Read the exact MP4 name and recorded byte count from this attempt's sidecar.
+
+    Only a matching video declaration authorizes a sibling clip. A similarly
+    named unrelated file is never considered an artifact of the selected image.
+    """
+    try:
+        with sidecar.open("rb") as stream:
+            data = stream.read(_MAX_METADATA_BYTES + 1)
+        if len(data) > _MAX_METADATA_BYTES:
+            raise ValueError
+        document = json.loads(data)
+        if (
+            not isinstance(document, dict)
+            or document.get("attempt_id") != row["attempt_id"]
+            or type(document.get("schema_version")) is not int
+            or document["schema_version"] not in (1, 2)
+        ):
+            raise ValueError
+        video = document.get("video")
+        if video is None:
+            return None
+        poster = str(row["path"]).replace("\\", "/").rsplit("/", 1)[-1]
+        if not poster.endswith(".png") or int(row["ordinal"]) != 0 or not isinstance(video, dict):
+            raise ValueError
+        clip = poster[:-4] + ".mp4"
+        artifacts = document.get("artifacts")
+        if (
+            video.get("file") != clip
+            or video.get("poster") != poster
+            or type(video.get("bytes")) is not int
+            or video["bytes"] <= 0
+            or not isinstance(artifacts, list)
+            or sum(
+                (
+                    isinstance(artifact, dict)
+                    and artifact.get("designation") == "final"
+                    and artifact.get("path") == row["path"]
+                )
+                for artifact in artifacts
+            )
+            != 1
+        ):
+            raise ValueError
+        return clip, video["bytes"]
+    except (OSError, ValueError, TypeError, KeyError, UnicodeError) as exc:
+        raise OSError("The MP4 is not proven to belong to this saved video.") from exc
+
+
 def verify_managed_sidecar(
     image: Path,
     sidecar: Path,

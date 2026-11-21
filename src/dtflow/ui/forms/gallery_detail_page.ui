@@ -803,8 +803,8 @@
      </item>
      <item>
       <widget class="QCheckBox" name="galleryDetailSelectionCheck">
-       <property name="text"><string>Select image</string></property>
-       <property name="accessibleName"><string>Check the current Detail image for bulk actions</string></property>
+       <property name="text"><string>Select output</string></property>
+       <property name="accessibleName"><string>Check the current Detail output for bulk actions</string></property>
        <property name="toolTip"><string>Check or uncheck the image being previewed, without changing other selections.</string></property>
        <property name="visible"><bool>false</bool></property>
       </widget>
@@ -822,7 +822,7 @@
       <widget class="QPushButton" name="galleryExportButton">
        <property name="text"><string>Export</string></property>
        <property name="accessibleName"><string>Show export panel</string></property>
-       <property name="toolTip"><string>Show export settings beside Images. Check images before starting Export JPEGs.</string></property>
+       <property name="toolTip"><string>Export checked images as JPEGs and videos as unchanged original MP4s.</string></property>
        <property name="role" stdset="0"><string>galleryExportAction</string></property>
        <property name="checkable"><bool>true</bool></property>
        <property name="checked"><bool>false</bool></property>

@@ -1,4 +1,4 @@
-"""JPEG export of committed saved outputs; no Qt, providers or execution writes."""
+"""Copy original saved MP4s or export JPEGs from saved images, without Qt/providers."""
 
 import asyncio
 import hashlib
@@ -6,6 +6,8 @@ import io
 import json
 import os
 import re
+import shutil
+import stat
 import threading
 import unicodedata
 import warnings
@@ -20,6 +22,7 @@ from PIL import Image
 from dtflow.core.export import ExportOptions, ExportResult
 from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.models import ValidationError
+from dtflow.core.video import clip_summary
 from dtflow.core.tasks import settle
 from dtflow.persistence import gallery as storage
 from dtflow.persistence.cache_coordination import cache_access
@@ -34,6 +37,8 @@ from dtflow.persistence.store import PersistenceError
 from dtflow.services.artifact_paths import foreign_windows_path
 from dtflow.services.gallery import item_from_record, load_detail, resolve_item_read, safe_metadata
 from dtflow.services.image_quality import ALGORITHM, assess_rgb
+from dtflow.services.managed_original_provenance import declared_video_companion, ensure_unredirected_path
+from dtflow.services.video_artifacts import video_path_for
 
 MAX_EXPORT_IMAGES = 10_000
 CREATION_TIME_NOTICE = "File creation time is set only on Windows; EXIF retains the recorded saved date."
@@ -45,6 +50,7 @@ MAX_EXIF_BYTES = 65_533
 # Export a reviewed portable subset, not arbitrary provider strings, account identifiers or file paths.
 REQUEST_FIELDS = (
     "model_id",
+    "num_frames",
     "seed",
     "width_px",
     "height_px",
@@ -371,11 +377,11 @@ def _exif(document: dict, sidecar_name: str | None = None) -> bytes:
     return exif.tobytes()
 
 
-def _reserve(destination: Path, stem: str):
+def _reserve(destination: Path, stem: str, *, extension: str = ".jpg"):
     """Exclusively reserve both names. No overwrite, including concurrent exporters."""
     for suffix in range(10_000):
         name = stem if suffix == 0 else f"{stem}_{suffix:02d}"
-        image, sidecar = destination / f"{name}.jpg", destination / f"{name}.json"
+        image, sidecar = destination / f"{name}{extension}", destination / f"{name}.json"
         if sidecar.exists():
             continue
         try:
@@ -394,6 +400,92 @@ def _reserve(destination: Path, stem: str):
             raise
         return image, sidecar, image_handle, sidecar_handle
     raise ValidationError("Too many filename collisions in the export folder.")
+
+
+def _export_video(item: GalleryItem, destination: Path, options: ExportOptions, *, state: Path) -> tuple[str, ...]:
+    """Copy the original declared MP4 without decoding or overwriting an existing export."""
+    try:
+        original, metadata = resolve_item_read(item, state)
+        poster = Path(original)
+        declared = declared_video_companion(
+            Path(metadata),
+            {"path": item.path, "attempt_id": item.attempt_id, "ordinal": 0},
+        )
+    except (OSError, ValueError) as exc:
+        raise ValidationError("Saved video metadata could not verify the original MP4; nothing was exported.") from exc
+    if declared is None:
+        raise ValidationError("Saved video metadata has no matching MP4; the poster was not exported.")
+    name, recorded_size = declared
+    clip = video_path_for(poster)
+    try:
+        ensure_unredirected_path(clip)
+        info = clip.lstat()
+        if (
+            clip.name != name
+            or not stat.S_ISREG(info.st_mode)
+            or info.st_nlink != 1
+            or info.st_size != recorded_size
+            or clip.resolve(strict=True) != clip
+        ):
+            raise ValueError
+    except (OSError, ValueError) as exc:
+        raise ValidationError(
+            "Original video MP4 is missing, changed or unavailable; the poster was not exported."
+        ) from exc
+
+    if destination == clip.parent or destination.is_relative_to(clip.parent):
+        raise ValidationError("Choose an export folder outside the original attempt folder.")
+    before = (info.st_size, info.st_mtime_ns, info.st_ino, info.st_dev)
+    document, notes = _portable(item, options, state=state)
+    document["video"] = {
+        "format": "MP4",
+        "source_bytes": info.st_size,
+        "original_copy": True,
+        "reencoded": False,
+    }
+    document["exported_at_utc"] = datetime.now(UTC).isoformat()
+    target, sidecar, target_handle, sidecar_handle = _reserve(destination, _filename(item, document), extension=".mp4")
+    try:
+        with clip.open("rb") as source:
+            source_info = os.fstat(source.fileno())
+            if (source_info.st_size, source_info.st_mtime_ns, source_info.st_ino, source_info.st_dev) != before:
+                raise ValidationError("Original video changed before export; retry after checking the saved file.")
+            shutil.copyfileobj(source, target_handle, length=1024 * 1024)
+        after = clip.stat()
+        if (after.st_size, after.st_mtime_ns, after.st_ino, after.st_dev) != before:
+            raise ValidationError("Original video changed during export; the incomplete copy was discarded.")
+        target_handle.flush()
+        os.fsync(target_handle.fileno())
+        if options.json_sidecars:
+            sidecar_handle.write(
+                (json.dumps(document, ensure_ascii=False, indent=2, allow_nan=False) + "\n").encode("utf-8")
+            )
+            sidecar_handle.flush()
+            os.fsync(sidecar_handle.fileno())
+        saved = _saved_date(item.saved_at_utc)
+        if saved is None:
+            notes.append("Some export dates were unavailable; file creation time was not changed.")
+        elif os.name == "nt":
+            try:
+                _set_creation_time(target_handle, saved)
+                if options.json_sidecars:
+                    _set_creation_time(sidecar_handle, saved)
+            except (OSError, ValueError, OverflowError):
+                notes.append("Some Windows creation times could not be set; video copies were retained.")
+        else:
+            notes.append(CREATION_TIME_NOTICE)
+    except BaseException:
+        target_handle.close()
+        sidecar_handle.close()
+        target.unlink(missing_ok=True)
+        sidecar.unlink(missing_ok=True)
+        raise
+    else:
+        target_handle.close()
+        sidecar_handle.close()
+        if not options.json_sidecars:
+            sidecar.unlink()
+    return tuple(notes)
 
 
 def _export_one(
@@ -536,12 +628,16 @@ def _run_export(state, destination, options, query, identities, cancel, progress
     else:
         identities = tuple(dict.fromkeys(identities))
     if len(identities) > MAX_EXPORT_IMAGES:
-        raise ValidationError("Export is limited to 10,000 images per operation; narrow the Images filter.")
+        raise ValidationError("Export is limited to 10,000 outputs per operation; narrow the Images filter.")
     total = len(identities)
     if not total or cancel.is_set():
         return ExportResult(str(destination), total, 0, 0, cancel.is_set())
     destination.mkdir(parents=True, exist_ok=True)
     skipped_identities = _existing_exports(destination, cancel)
+    # A legacy JPEG export of a video poster must not suppress the MP4 export.
+    # This read is batched and only examines identities already matched by JPEGs.
+    video_skips = storage.recorded_video_identities(state, tuple(skipped_identities.intersection(identities)))
+    skipped_identities.difference_update(video_skips)
     computations = (
         {}
         if no_cache or all(identity in skipped_identities for identity in identities)
@@ -583,13 +679,12 @@ def _run_export(state, destination, options, query, identities, cancel, progress
                     record = storage.get_record(state, identity)
                     if record is None:
                         raise ValidationError("Saved original is not available.")
-                    item_notes, category = _export_one(
-                        item_from_record(record, state=Path(state)),
-                        destination,
-                        options,
-                        computations,
-                        state=Path(state),
-                    )
+                    item = item_from_record(record, state=Path(state))
+                    if clip_summary(json.loads(item.request_json)) is not None:
+                        item_notes = _export_video(item, destination, options, state=Path(state))
+                        category = "root"
+                    else:
+                        item_notes, category = _export_one(item, destination, options, computations, state=Path(state))
                     notes.update(item_notes)
                     noise += category == "noise"
                     blank += category == "blank"
@@ -672,7 +767,7 @@ async def export_outputs(
     progress: Callable[[int, int], None] | None = None,
     no_cache: bool = False,
 ) -> ExportResult:
-    """Snapshot a filter or explicit committed identities, then export sequentially off-thread.
+    """Export selected outputs sequentially: JPEG for images, original MP4 for videos.
 
     JPGs/optional JSONs are at root, except optional advisory noise/blank routing.
     Cancel cooperatively between images; settle an in-flight file write before shutdown.

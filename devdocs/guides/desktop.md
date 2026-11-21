@@ -150,15 +150,17 @@ The bottom bar carries the same information on every view as a small pill `activ
 
 These are **local estimates from saved final images**, not a DT+ balance, a confirmed 500-image quota or a remaining allowance; the 400/500 thresholds are the owner's working assumption and only visual guidance. Previews, local/fake backends, failed or quota-rejected requests do not count; an image that is later moved to the Trash or deleted still counts because it was produced. Images saved before key tracking cannot be attributed to a key and appear only as a note. If two keys share the same four characters, or the key format cannot be read safely, rows carry a harmless ordinal instead of more key characters. Nothing is blocked by these counters. If the local saved history cannot be read, the Connection card marks counts unavailable or potentially outdated, the bottom-bar pill shows dashes rather than a misleading total, and Logs records a safe failure stage and SQLite error category when available. Returning to Connection or saving another output refreshes the same history without repair, extra provider calls or a separate counter store. The Images grid position field in the status bar is shown only with `-x/--dev`.
 
-## Export saved images
+## Export saved images and videos
 
-In Images, click **Export** to toggle the export panel beside the listing on the right, even if no images are checked. The button is neutral when closed and blue/selected when open; it is always available for opening settings. Before starting **Export JPEGs**, check at least one image. Exports include checks hidden by filters; there is no scope dropdown in Images. Connection retains the scope dropdown. No tab switch or export happens until you click **Export JPEGs**. You can also use **Export saved images** in Connection's middle panel: these are the same controls, settings and running operation. Other scopes are all saved images, the current Images filter across every page, the single image selected in Images, or the selected PNG result in Generate. Selecting Generate's metadata entry is not selecting an image. Export freezes identities when started; new outputs or changed checks afterward do not expand that operation.
+In Images, click **Export** to toggle the export panel beside the listing on the right, even if no images are checked. The button is neutral when closed and blue/selected when open; it is always available for opening settings. Before starting **Export JPEGs / MP4s**, check at least one image or video. Exports include checks hidden by filters; there is no scope dropdown in Images. Connection retains the scope dropdown. No tab switch or export happens until you click **Export JPEGs / MP4s**. You can also use **Export saved images and videos** in Connection's middle panel: these are the same controls, settings and running operation. Other scopes are all saved images, the current Images filter across every page, the single image selected in Images, or the selected PNG result in Generate. Selecting Generate's metadata entry is not selecting an image. Export freezes identities when started; new outputs or changed checks afterward do not expand that operation.
 
 Click **Export** again or **Close export panel** to hide the Images column. Hiding it does not cancel export; use **Cancel export** to stop after the current image. Switching to Connection shows the same progress and controls; returning to Images remembers its open column. Destination/privacy settings and active progress are preserved across navigation.
 
 The export folder is remembered separately for Windows and WSL, so installations that share one state directory keep their own folders; the privacy, JSON and noise/blank choices are common. A folder remembered by the other environment is not shown or converted. You can type an absolute folder path that does not yet exist; export creates it and missing parents before writing. Permission/path failures are reported, not redirected.
 
-Click **Export JPEGs**. Normal images go directly into the chosen folder: **no
+**Video export:** Check one or more video outputs in Images, choose **Export**, select a destination, then click **Export JPEGs / MP4s**. Each video is copied as its original `.mp4` file, including its audio, without re-encoding. Mixed image/video selections export JPEGs for images and MP4s for videos in the same operation. The source poster is not exported instead of the clip; a missing or unverifiable MP4 gives an individual, readable failure. Original sidecars are not copied wholesale. **Also save portable JSON metadata beside each export** writes an optional sanitized `.json` beside the MP4, using the same prompt privacy choice. Video files are never sorted into noise/blank folders. Re-exporting does not overwrite an existing MP4; a new collision suffix is used instead of assuming that an earlier copy is equivalent.
+
+Click **Export JPEGs / MP4s**. Normal images go directly into the chosen folder: **no
 attempt, provider or date subfolders**. Filenames use saved-at UTC time, a short
 prompt label, request seed, full attempt ID marker and output index, for example:
 `20261009-143025Z_red-fox-in-snow_s12345_dtf-0123456789abcdef0123456789abcdef-01.jpg`.
@@ -184,13 +186,13 @@ Prompts are included by default. Uncheck **Include prompts in filenames and
 metadata** before sharing if they are private; this removes prompts from all export
 fields, including JSON. Private paths, server identities, credentials and prepared
 cloud-asset references are never deliberately copied into export metadata.
-**Also save JSON metadata beside each image** is optional; a JSON sidecar becomes
+**Also save portable JSON metadata beside each export** is optional; a JSON sidecar becomes
 mandatory if full portable metadata exceeds EXIF capacity, with a reported warning.
 
 The folder and privacy/sidecar/routing choices are remembered independently of cache.
 **Open folder** opens the last successful destination. **Cancel export** stops after
 the current image and keeps completed exports. The final summary reports exported, skipped,
-failed and unprocessed images; hover over it for the first 100 failure details.
+failed and unprocessed outputs, with the first failure reason visible. Hover over it for up to 100 failure details.
 Missing/corrupt images fail individually rather than hiding other saved outputs.
 A single operation is capped at 10,000 images, 64 MiB encoded input per image and
 32 million decoded pixels; narrow the Images filter to export larger libraries in
@@ -377,6 +379,8 @@ When the Inpaint editor checks saved person models, the worker verifies that eac
 The Images action bar keeps **Select all** visible at every width. It selects matching results across all pages, up to 10,000 checked images in total. When every current matching result is checked, the same button becomes **Unselect all** and clears all checks, including hidden ones. Partial selections at the limit do not show Unselect all. Selection coverage is refreshed after checkbox edits and gallery refresh; owner reports this Select all / Unselect all smoke passed on 2026-10-09 (follow-up to f3bc285).
 
 ### Remove checked originals: Trash or permanent deletion
+
+For a saved video, the existing checked-output **Trash** or **Delete** action includes the MP4 and its poster. The original MP4 is disposed of first; a failed or uncertain MP4 move leaves the poster in place, while a successful clip removal followed by a failed poster removal is reported as a partial result. The source sidecar, saved generation settings, and history remain for diagnostics. The exact MP4 companion must be proven by the sidecar; a similarly named unrelated MP4 is never removed by guesswork. System Trash has no DTFlow restore action: manually restoring files does not automatically re-enable a recycled gallery item. Permanent Delete irreversibly removes the clip as well as the poster.
 
 Use the arrow next to **Trash** / **Delete** to choose the main button's action. Choosing a mode does not remove anything. Trash is the default; Windows and WSL remember separate choices, as does native Linux. A disabled Trash main button leaves the menu usable, and never automatically selects permanent deletion. For an image edit (img2img/inpaint) the attempt's declared `raw-1.png` provider output is removed with it, in the same mode, before the final; if it cannot be removed the final is left in place and the result says so. Only managed originals qualify; custom output roots, exported copies, redirected/hardlinked or multiply referenced files are excluded. Hidden checked images are included in the reported eligible/missing/ineligible counts.
 

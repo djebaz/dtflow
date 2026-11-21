@@ -416,7 +416,7 @@ def _delete(request):
         if identity is None or not state.is_absolute() or str(state).startswith("\\\\"):
             raise ValueError("Invalid managed original")
         kind = request.get("kind", "final")
-        if kind not in ("final", "raw") or (kind == "raw" and identity[2] != "0"):
+        if kind not in ("final", "raw", "video") or (kind in ("raw", "video") and identity[2] != "0"):
             raise ValueError("Invalid managed original kind")  # provider evidence exists only for output 1
         # The run folder and file name come from the request but are proven against the identity here, so the
         # name must be exactly this attempt's file; nothing is ever deleted by a pattern that merely looks similar.
@@ -424,12 +424,17 @@ def _delete(request):
         ordinal = int(identity[2]) + 1
         if not name:  # Layout before issue #296: outputs/<attempt id>/final-N.png | raw-1.png
             name = f"final-{ordinal}.png" if kind == "final" else "raw-1.png"
-        legacy = folder == identity[1] and name == (f"final-{ordinal}.png" if kind == "final" else "raw-1.png")
-        match = re.fullmatch(r"([a-z0-9][a-z0-9-]{0,62})-" + identity[1] + r"-(raw-)?([1-9][0-9]*)\.png", name)
+        legacy = (
+            kind != "video"
+            and folder == identity[1]
+            and name == (f"final-{ordinal}.png" if kind == "final" else "raw-1.png")
+        )
+        match = re.fullmatch(r"([a-z0-9][a-z0-9-]{0,62})-" + identity[1] + r"-(raw-)?([1-9][0-9]*)\.(png|mp4)", name)
         current = (
             match is not None
             and bool(match[2]) == (kind == "raw")
-            and int(match[3]) == (1 if kind == "raw" else ordinal)
+            and match[4] == ("mp4" if kind == "video" else "png")
+            and int(match[3]) == (1 if kind in ("raw", "video") else ordinal)
             and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}", folder) is not None
         )
         if not (legacy or current):
