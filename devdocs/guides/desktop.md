@@ -192,7 +192,7 @@ mandatory if full portable metadata exceeds EXIF capacity, with a reported warni
 The folder and privacy/sidecar/routing choices are remembered independently of cache.
 **Open folder** opens the last successful destination. **Cancel export** stops after
 the current image and keeps completed exports. The final summary reports exported, skipped,
-failed and unprocessed images; hover over it for the first 100 failure details.
+failed and unprocessed outputs, with the first failure reason visible. Hover over it for up to 100 failure details.
 Missing/corrupt images fail individually rather than hiding other saved outputs.
 A single operation is capped at 10,000 images, 64 MiB encoded input per image and
 32 million decoded pixels; narrow the Images filter to export larger libraries in

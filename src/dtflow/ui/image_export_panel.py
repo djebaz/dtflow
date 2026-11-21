@@ -236,6 +236,10 @@ class ImageExportPanel(QObject):
             text = "No saved outputs match this export scope."
         else:
             text = f"{prefix} {result.exported} exported, {result.skipped} skipped (already exported), {result.failed} failed, {result.total - result.exported - result.skipped - result.failed} not processed."
+        if result.failures:
+            # Show the first safe reason without the internal output identity;
+            # the full list remains available in the status tooltip.
+            text += f" First failure: {result.failures[0].split(': ', 1)[-1]}"
         if result.noise or result.blank:
             text += f" Sorted into subfolders: {result.noise} noise, {result.blank} blank (advisory)."
         if result.warnings:
