@@ -329,6 +329,14 @@ decode. The selected Detail image and zoom/pan stay intact when other outputs
 change, except under **Follow** (below). Fully unchanged pages also preserve exact scroll and focus while
 counts/navigation can still update.
 
+### Video playback in Images Detail
+
+Saved video outputs open in the existing Images Detail viewer. Click the **Play** button or anywhere on the video poster to start; click the playing video to pause or resume. A single compact row contains Play/Pause, elapsed/total time, the expanding seek bar, Mute, Restart, **Autoplay**, and Close. The seek bar has a blue playhead-shaped marker; drag it to seek. **Close** returns to the poster, and **Open video in player** is the fallback if in-app decoding fails. Video cards in Grid/List and the Detail filmstrip display duration badges; Detail also shows available saved/probed media facts.
+
+**Keyboard:** `K` or `S` starts from the poster or toggles Play/Pause; `W`/`X` seek backward/forward one second, numeric keypad `4`/`6` seek ten seconds, numeric keypad `0` restarts at 0:00, and `M` toggles mute. Ordinary Left/Right switch gallery outputs, including on the first keypress from video focus; keypad Left/Right remain video seek keys. Plain Space, Return, and keypad Enter retain native focused-control actions, and editable fields keep ordinary typing.
+
+**Autoplay** is off by default and remembered in the existing Images viewer preferences (`viewer.json`). When enabled, opening a video in Detail or selecting another video starts playback at 0:00. Returning to that Detail view or the Images workspace also starts the selected video; owner-confirmed navigation includes slideshow and F5/F6. Passive gallery refresh does not restart a paused video, and **Close** does not immediately replay the same item. When Autoplay is off, playback stays manual. Videos that are missing or unavailable keep their poster and existing failure feedback.
+
 Press **F5** from any workspace to open Images, enable Live + Follow and return to the newest matching image with newest-first sorting. Existing filters and Grid/List/Detail choice stay unchanged. Repeated F5 resumes following rather than toggling it off; it never starts generation or a queue.
 
 **Ctrl+Tab** cycles Generate → Workflows → Queues → Images → Generate. From Connection or Logs it enters at Generate. It uses ordinary workspace navigation, preserving drafts and the current Images Live/Follow mode; unlike F5, it does not enable following or jump to a newer image.
