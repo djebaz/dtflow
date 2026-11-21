@@ -168,7 +168,9 @@ class VideoPlayer(QObject):
             description = (
                 "Pause video (K / Enter)"
                 if active
-                else "Replay video (K / Enter)" if ended else "Play video (K / Enter)"
+                else "Replay video (K / Enter)"
+                if ended
+                else "Play video (K / Enter)"
             )
             toggle.setToolTip(description)
             toggle.setAccessibleName(description)
