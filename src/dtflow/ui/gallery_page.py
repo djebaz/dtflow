@@ -1460,12 +1460,7 @@ class GalleryPage(QObject):
             # Catch up immediately on images added while another tab was open; the cheap
             # metadata check decides whether a read is needed.
             self._auto_refresh_tick()
-        if (
-            returning
-            and self.mode == "Detail"
-            and self.video_player.autoplay
-            and not self.video_player.playing
-        ):
+        if returning and self.mode == "Detail" and self.video_player.autoplay and not self.video_player.playing:
             self._play_video()
         if active and self._pending_page_jump is not None:
             self._pending_jump_timer.start()
