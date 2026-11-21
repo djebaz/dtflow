@@ -166,7 +166,9 @@ class VideoPlayer(QObject):
             ended = player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia
             toggle.setIcon(QIcon(str(ICONS / ("video-pause.svg" if active else "video-play.svg"))))
             description = (
-                "Pause video (K / Enter)" if active else "Replay video (K / Enter)" if ended else "Play video (K / Enter)"
+                "Pause video (K / Enter)"
+                if active
+                else "Replay video (K / Enter)" if ended else "Play video (K / Enter)"
             )
             toggle.setToolTip(description)
             toggle.setAccessibleName(description)
