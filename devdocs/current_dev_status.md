@@ -11,9 +11,9 @@ Updated 2026-11-21 for Queue pose editor PR #522; prior release/feature evidence
 - Slideshow New direction shows arrivals next under Newest first sorting, then resumes forward playback.
 - Downloads runs bounded stale staging/orphan-source cleanup once at startup, off Qt; failed/refused conversion sources remain retained. Civitai documentation now covers tokens, permissions, file retention and recorded acceptance boundaries.
 
-## In review: Queue pose editing (#515, PR #522)
+## Merge preparation: Queue pose editing (#515, PR #522)
 
-- The independent Queue composer exposes exact pose control settings, a worker-prepared read-only map preview and explicit prepared-map replacement for captured poses, templates and recorded Edit as new drafts. Changes retain the existing queue/template validation and persistence paths, without provider work while editing. Source implementation/review and focused static checks are complete; behavioral Must acceptance, Windows/DPI and provider-effective results remain unverified. See the [implementation plan](plans/2026-11-21-queue-pose-editor.md).
+- The independent Queue composer exposes exact pose controls, a local worker-prepared map preview and explicit prepared-map replacement without changing Generate or saved queues/templates. The owner reports **“all works”**; supplied logs record eight succeeded cloud Queue items, and automatic CI/Preview passed on rebased code head `c22d8cd8`. Functional ACs are accepted on owner report plus source review, not exhaustive failure/DPI or independently attested packaged acceptance. Non-blocking source-reviewed UI/UX improvements are separately tracked in [#528](https://github.com/djebaz/dtflow/issues/528); no UI changes are added during merge preparation. See the [implementation/evidence plan](plans/2026-11-21-queue-pose-editor.md).
 
 ## Unreleased: desktop provider selection (#518, PR #519)
 
