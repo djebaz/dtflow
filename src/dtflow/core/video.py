@@ -31,14 +31,22 @@ FAMILIES: tuple[VideoFamily, ...] = (
     VideoFamily("ltx_2.3", "LTX-2.3", 8, 121, 25, 48000, (320, 320)),
     VideoFamily("ltx_2", "LTX-2", 8, 121, 25, 24000, (320, 320)),
     VideoFamily("ltx", "LTX", 8, 121, 25, 24000, (320, 320)),
-    VideoFamily("wan", "Wan", 4, 81, 16, None, (480, 320)),
+    VideoFamily("wan_v2.1", "Wan 2.1", 4, 81, 16, None, (480, 320)),
 )
 
 MAX_FRAMES = 361
 MIN_FRAMES = 9
-# Evidenced on DT+ by the POC (one start frame followed): LTX-2.3 and Wan 2.1 14B i2v. LTX-2 (19B) is not evidenced:
-# a smoke run with it froze on the start image.
-START_IMAGE_FAMILIES = ("ltx_2.3", "wan_v2.1_14b_i2v")
+# Only these exact files are authorized for the initial production LTX slice.
+# #523 established the 1.1 q6p path; the owner supplied two successful q8p Windows runs in PR #527.
+# A new quantization or similarly named checkpoint needs its own evidence before admission.
+SUPPORTED_VIDEO_MODELS = frozenset({
+    "ltx_2.3_22b_distilled_1.1_q6p.ckpt",
+    "ltx_2.3_22b_distilled_q8p.ckpt",
+})
+START_IMAGE_EVIDENCE = {
+    "ltx_2.3_22b_distilled_1.1_q6p.ckpt": "video-poc-523",
+    "ltx_2.3_22b_distilled_q8p.ckpt": "video-windows-527",
+}
 # Real runs took up to 243 s at small sizes; the image default of 600 s is not enough for a bigger clip.
 VIDEO_TOTAL_TIMEOUT = 1800.0
 
@@ -49,12 +57,11 @@ def family_of(model_id: str) -> VideoFamily | None:
 
 
 def is_video_model(model_id: str) -> bool:
-    return family_of(model_id) is not None
+    return model_id in SUPPORTED_VIDEO_MODELS
 
 
 def accepts_start_image(model_id: str) -> bool:
-    name = model_id.lower()
-    return any(name.startswith(prefix) for prefix in START_IMAGE_FAMILIES)
+    return model_id in START_IMAGE_EVIDENCE
 
 
 def snap_side(value: int) -> int:
@@ -123,8 +130,8 @@ def video_shift(model_id: str) -> float | None:
 
 def check_request_fields(model_id: str, frames: int, start_image: str | None) -> None:
     """Request validation shared by the request model: frame rule and start-image support."""
-    if family_of(model_id) is None:
-        raise ValidationError("num_frames needs a known video model.")
+    if not is_video_model(model_id):
+        raise ValidationError("This exact checkpoint is not yet verified for video generation.")
     problem = frame_problem(model_id, frames)
     if problem:
         raise ValidationError(f"num_frames: {problem}")
