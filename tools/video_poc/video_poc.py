@@ -37,7 +37,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 
-VERSION = "1"
+VERSION = "2"
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MODEL = "ltx_2.3_22b_distilled_1.1_q6p.ckpt"
 HEADER_BYTES = 68
@@ -45,7 +45,7 @@ STALL_SECONDS = 90  # a frame writer that makes no progress for this long fails 
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
 
 # Draw Things ModelZoo tables (read in its source; the response carries neither value).
-FPS_BY_FAMILY = {"ltx": 25, "wan": 16, "hunyuan": 30}
+FPS_BY_FAMILY = {"ltx": 25, "wan": 16, "wan_v2.2": 24, "hunyuan": 30, "h3": 24}
 DEFAULT_FPS = 30
 AUDIO_RATE_BY_MODEL = (("ltx_2.3", 48000), ("ltx_2", 24000))
 DEFAULT_AUDIO_RATE = 24000
@@ -209,7 +209,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False
     )
-    parser.add_argument("-m", dest="model", default=DEFAULT_MODEL, help="model file (default %(default)s)")
+    parser.add_argument("-m", dest="model", default=None, help="model file (default LTX-2.3 distilled)")
+    parser.add_argument("-c", dest="configs", type=Path, default=None, help="Draw Things configuration JSON file")
+    parser.add_argument("-n", dest="preset_name", default=None, help="one named configuration in -c (or bundled presets)")
     parser.add_argument("-p", dest="prompt", default="", help="prompt")
     parser.add_argument(
         "-sz",
@@ -240,6 +242,28 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
+def select_preset(args: argparse.Namespace) -> dict | None:
+    """Read one named configuration, without running a sweep or sending a generation request."""
+    if args.configs is not None and not args.preset_name:
+        raise ValueError("-c requires -n to select exactly one preset (one paid request per run).")
+    if not args.preset_name:
+        return None
+    source = args.configs or ROOT / "src/dtflow/resources/presets/draw_things_configs.json"
+    document = json.loads(source.read_text(encoding="utf-8"))
+    if not isinstance(document, list):
+        raise ValueError(f"Expected a list of named Draw Things presets in {source}.")
+    matches = [
+        item["configuration"]
+        for item in document
+        if isinstance(item, dict)
+        and item.get("name") == args.preset_name
+        and isinstance(item.get("configuration"), dict)
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"Expected one preset named {args.preset_name!r} in {source}; found {len(matches)}.")
+    return matches[0]
+
+
 def preset_for(model: str) -> dict | None:
     """The bundled Draw Things preset configuration for this checkpoint (quantization and build tag ignored)."""
     from dtflow.core.model_profiles import model_key
@@ -268,7 +292,11 @@ def preset_for(model: str) -> dict | None:
 def resolve_defaults(args: argparse.Namespace, log: Log) -> None:
     """Fill frames and size the user left out (and log where each value came from); steps, guidance and shift follow
     from the model profile later."""
-    preset = preset_for(args.model)
+    preset = args.preset
+    if args.preset_name:
+        for attribute, key in (("steps", "steps"), ("guidance", "guidanceScale"), ("shift", "shift"), ("seed", "seed")):
+            if getattr(args, attribute) is None and key in preset:
+                setattr(args, attribute, preset[key])
     if args.frames is None:
         native = preset.get("numFrames") if preset else None
         args.frames = int(native) if native else 121
@@ -296,7 +324,12 @@ def resolve_defaults(args: argparse.Namespace, log: Log) -> None:
 
 
 def family_of(model: str) -> str:
+    """Classify POC families without changing the production video-model gate."""
     name = model.lower()
+    if name.startswith(("pika_h3", "fasth3", "minimax_h3")):
+        return "h3"
+    if name.startswith("wan_v2.2"):
+        return "wan_v2.2"
     for family in ("ltx", "wan", "hunyuan"):
         if name.startswith(family):
             return family
@@ -306,7 +339,9 @@ def family_of(model: str) -> str:
 def frame_rule(model: str, frames: int) -> str | None:
     """A warning when the count breaks the family's frame rule (the decode rounds it down), else None."""
     family = family_of(model)
-    step = {"ltx": 8, "wan": 4, "hunyuan": 4}.get(family)
+    step = {"ltx": 8, "wan": 4, "wan_v2.2": 4, "hunyuan": 4}.get(family)
+    if family == "h3" and frames != 1 and (frames - 5) % 17:
+        return f"{frames} frames may break the H3 rule (1 or 17k+5; preset uses 124)"
     if step and (frames - 1) % step:
         return (
             f"{frames} frames breaks the {family.upper()} rule {step}k+1; expect {(frames - 1) // step * step + 1} back"
@@ -511,15 +546,69 @@ class FrameSink:
 # -- request ---------------------------------------------------------------------------------------------------------
 
 
-def patch_configuration(configuration: bytes, frames: int, shift: float | None) -> bytes:
-    """Set ``num_frames`` and the chosen ``shift`` on the serialized configuration (script-local, wire.py untouched)."""
+def patch_configuration(
+    configuration: bytes, frames: int, shift: float | None, preset: dict | None = None
+) -> bytes:
+    """Apply a selected Draw Things video preset to the POC-only FlatBuffer; keep production wire unchanged."""
     import flatbuffers
-    from drawthings_py.generated.dt_grpc.config_generated import GenerationConfiguration, GenerationConfigurationT
+    from drawthings_py.generated.dt_grpc.config_generated import GenerationConfiguration, GenerationConfigurationT, LoRAT
 
     table = GenerationConfigurationT.InitFromObj(GenerationConfiguration.GetRootAs(configuration, 0))
     table.numFrames = frames
     if shift is not None:
         table.shift = shift
+    if preset is not None:
+        if preset.get("controls"):
+            raise ValueError("Video smoke POC does not support ControlNet inputs.")
+        if preset.get("batchSize", 1) != 1 or preset.get("batchCount", 1) != 1:
+            raise ValueError("Video smoke POC submits one generation; batch presets are unsupported.")
+        for source, target in (
+            ("sampler", "sampler"),
+            ("refinerModel", "refinerModel"),
+            ("refinerStart", "refinerStart"),
+            ("shiftForAudio", "shiftForAudio"),
+            ("fps", "fpsId"),
+            ("guidingFrameNoise", "condAug"),
+            ("startFrameGuidance", "startFrameCfg"),
+            ("hiresFix", "hiresFix"),
+            ("hiresFixStrength", "hiresFixStrength"),
+            ("tiledDecoding", "tiledDecoding"),
+            ("stochasticSamplingGamma", "stochasticSamplingGamma"),
+            ("stage2Steps", "stage2Steps"),
+            ("stage2Guidance", "stage2Cfg"),
+            ("stage2Shift", "stage2Shift"),
+            ("t5TextEncoder", "t5TextEncoder"),
+            ("guidanceEmbed", "guidanceEmbed"),
+            ("speedUpWithGuidanceEmbed", "speedUpWithGuidanceEmbed"),
+            ("resolutionDependentShift", "resolutionDependentShift"),
+            ("zeroNegativePrompt", "zeroNegativePrompt"),
+            ("teaCache", "teaCache"),
+            ("teaCacheStart", "teaCacheStart"),
+            ("teaCacheEnd", "teaCacheEnd"),
+            ("teaCacheThreshold", "teaCacheThreshold"),
+            ("teaCacheMaxSkipSteps", "teaCacheMaxSkipSteps"),
+            ("seedMode", "seedMode"),
+            ("clipSkip", "clipSkip"),
+        ):
+            if source in preset and hasattr(table, target):
+                setattr(table, target, preset[source])
+        for source, target in (
+            ("hiresFixWidth", "hiresFixStartWidth"),
+            ("hiresFixHeight", "hiresFixStartHeight"),
+            ("decodingTileWidth", "decodingTileWidth"),
+            ("decodingTileHeight", "decodingTileHeight"),
+            ("decodingTileOverlap", "decodingTileOverlap"),
+        ):
+            if source in preset:
+                setattr(table, target, max(0, int(preset[source]) // 64))
+        modes = {"all": 0, "base": 1, "refiner": 2}
+        loras = preset.get("loras", [])
+        if not isinstance(loras, list):
+            raise ValueError("Preset loras must be a list.")
+        table.loras = [
+            LoRAT(file=item["file"], weight=float(item["weight"]), mode=modes[item.get("mode", "all").lower()])
+            for item in loras
+        ]
     builder = flatbuffers.Builder(0)
     builder.Finish(table.Pack(builder))
     return bytes(builder.Output())
@@ -747,7 +836,7 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
     from drawthings_py.generated.dt_grpc import image_service
     from grpclib.const import Cardinality
 
-    fps = FPS_BY_FAMILY.get(family_of(args.model), DEFAULT_FPS)
+    fps = int(args.preset.get("fps", FPS_BY_FAMILY.get(family_of(args.model), DEFAULT_FPS))) if args.preset_name else FPS_BY_FAMILY.get(family_of(args.model), DEFAULT_FPS)
     encode = not args.no_mp4
 
     # Section 3: profile and request summary.
@@ -761,25 +850,41 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
             break
     if profile is None:
         profile, profile_name = profile_for(args.model, base_version), "family default"
+    from dtflow.backends.drawthings.wire import SAMPLER_NAME, SAMPLER_WIRE_VALUE
+
+    if args.preset_name:
+        numeric_sampler = args.preset.get("sampler")
+        sampler = next(
+            (candidate for candidate, name in SAMPLER_NAME.items()
+             if SAMPLER_WIRE_VALUE[name] == numeric_sampler),
+            None,
+        )
+        if sampler is None:
+            raise ValidationError(f"Unsupported preset sampler number: {numeric_sampler!r}.")
+    elif profile is not None:
+        sampler = profile.sampler
+    else:
+        raise ValidationError(f"No bundled profile for {args.model}; select a named preset with -n.")
+    extras = dict(profile.extras) if profile is not None else {}
     if profile is None:
-        raise ValidationError(f"No bundled profile for {args.model}; cannot pick a sampler.")
-    why = (
-        "its own entry"
-        if profile_name == args.model
-        else "the family default (no entry for this file)"
-        if profile_name == "family default"
-        else f"the entry of {profile_name} (build tag removed)"
-    )
-    log.line(
-        f"profile picked: {profile.name} via {why}; sampler {profile.sampler.value}, "
-        f"profile steps {profile.steps}, guidance {profile.guidance}, extras {dict(profile.extras)}; base family {base_version}",
-        echo=True,
-    )
-    extras = dict(profile.extras)
+        log.line(f"no bundled profile: using selected preset {args.preset_name!r}, sampler {sampler.value}")
+    else:
+        why = (
+            "its own entry"
+            if profile_name == args.model
+            else "the family default (no entry for this file)"
+            if profile_name == "family default"
+            else f"the entry of {profile_name} (build tag removed)"
+        )
+        log.line(
+            f"profile picked: {profile.name} via {why}; sampler {sampler.value}, "
+            f"profile steps {profile.steps}, guidance {profile.guidance}, extras {extras}; base family {base_version}",
+            echo=True,
+        )
     sources = []
     for name, wanted, own in (
-        ("steps", args.steps, profile.steps),
-        ("guidance", args.guidance, profile.guidance),
+        ("steps", args.steps, profile.steps if profile else None),
+        ("guidance", args.guidance, profile.guidance if profile else None),
         ("shift", args.shift, extras.get("shift")),
     ):
         value = own if wanted is None else wanted
@@ -794,9 +899,13 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
         f"({'none' if not count else 'one start frame' if count == 1 else f'multi-frame start of {count} frames'})"
     )
     log.line(f"playback fps assumed from the Draw Things model table: {fps} (the response carries none)")
-    log.line(
-        "hires fix and start-frame strength fields are not sent (defaults); the returned size will show what DT+ did"
-    )
+    if args.preset_name:
+        log.line(f"selected preset: {args.preset_name!r}; refiner {args.preset.get('refinerModel', 'none')}; "
+                 f"LoRAs {[(item['file'], item.get('mode', 'all'), item['weight']) for item in args.preset.get('loras', [])]}")
+        if "shiftForAudio" in args.preset:
+            log.warn("This SDK's generated FlatBuffer has no shiftForAudio field; provider default applies.")
+    else:
+        log.line("hires fix and start-frame strength fields are not sent (defaults)")
     if (warning := frame_rule(args.model, args.frames)) is not None:
         log.warn(warning)
     if count > args.frames:
@@ -814,7 +923,7 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
         height_px=args.height,
         steps=args.steps,
         guidance=args.guidance,
-        sampler_id=profile.sampler,
+        sampler_id=sampler,
     )
 
     # Credentials resolve here only to fail early and to keep the secret out of the log.
@@ -852,9 +961,31 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
             )
             wire = build_generation_message(request, None, base_version, spec)
             message = wire.message
-            message.configuration = patch_configuration(message.configuration, args.frames, args.shift)
+            message.configuration = patch_configuration(
+                message.configuration, args.frames, args.shift, args.preset if args.preset_name else None
+            )
             config = sent_configuration(message.configuration)
             log.line("GenConfig fields sent: " + json.dumps(config, sort_keys=True, default=str))
+            if args.preset_name:
+                from drawthings_py.generated.dt_grpc.config_generated import GenerationConfiguration
+
+                raw = GenerationConfiguration.GetRootAs(message.configuration, 0)
+                if raw.Sampler() != args.preset["sampler"]:
+                    raise ValidationError("Serialized sampler differs from selected Draw Things preset.")
+                if raw.LorasLength() != len(args.preset.get("loras", [])):
+                    raise ValidationError("Serialized LoRA count differs from selected preset.")
+                for index, item in enumerate(args.preset.get("loras", [])):
+                    lora = raw.Loras(index)
+                    modes = {"all": 0, "base": 1, "refiner": 2}
+                    if (lora.File().decode() != item["file"]
+                        or lora.Mode() != modes[item.get("mode", "all").lower()]):
+                        raise ValidationError(f"Serialized LoRA {index} differs from selected preset.")
+                if args.preset.get("refinerModel") and raw.RefinerModel().decode() != args.preset["refinerModel"]:
+                    raise ValidationError("Serialized refiner model differs from selected preset.")
+                log.line(
+                    f"preset wire fields: sampler={raw.Sampler()}, refiner={raw.RefinerModel()}, "
+                    f"refinerStart={raw.RefinerStart()}, loras={raw.LorasLength()}, fpsId={raw.FpsId()}"
+                )
             for key, wanted in (
                 ("num_frames", args.frames),
                 ("steps", args.steps),
@@ -1122,8 +1253,23 @@ def main() -> int:
         tool_versions(log, ffmpeg, ffprobe)
         log.section("2 Resolved arguments")
         for name, value in sorted(vars(args).items()):
-            log.line(f"  {name} = {value}")
+            if name != "preset":
+                log.line(f"  {name} = {value}")
         log.line("defaults resolved:")
+        args.preset = select_preset(args)
+        if args.preset_name:
+            selected_model = args.preset.get("model")
+            if not isinstance(selected_model, str) or not selected_model:
+                raise ValueError("Selected preset is missing its model checkpoint.")
+            if args.model is not None and args.model != selected_model:
+                raise ValueError("-m must match the selected preset's model; use another -n instead.")
+            args.model = selected_model
+        elif args.model is None:
+            args.model = DEFAULT_MODEL
+        if family_of(args.model) == "unknown":
+            raise ValueError(f"Not a recognized video checkpoint: {args.model}.")
+        if args.preset is None:
+            args.preset = preset_for(args.model) or {}
         resolve_defaults(args, log)
         for path in args.images:
             if not path.is_file():
