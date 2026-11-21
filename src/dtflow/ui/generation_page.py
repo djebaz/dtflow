@@ -908,7 +908,7 @@ class GenerationPage:
         dispatching = self._activity.dispatching
         button = self.page.generateButton
         blocked = self._busy or self._generating
-        no_model = self._model_missing()
+        no_model = self._model_missing() or not self._backend()[0]
         button.setEnabled(not blocked and not no_model)
         if hasattr(self, "retryButton"):
             self.retryButton.setEnabled(not blocked)
