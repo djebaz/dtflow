@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import io
+import math
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -107,6 +108,7 @@ class VideoPanel(QObject):
         self._loading = False
         self._choice_problem = ""
         self._locked_tips: dict[str, str] = {}
+        self._catalogue_previous_model = ""
         file = QFile(str(FORM))
         if not file.open(QIODevice.OpenModeFlag.ReadOnly):
             raise OSError("Video controls form could not be opened.")
@@ -149,21 +151,81 @@ class VideoPanel(QObject):
         """The frame count for the entered duration: the one value shown beside it and sent in the request."""
         return rules.frames_for_duration(self.model, self.seconds.value())
 
-    def model_changed(self, text: str) -> None:
-        """Called when the checkpoint changes; fills the video defaults when the page enters video mode."""
-        was = self.active
-        if text.strip() != self.model:
+    def model_changed(self, text: str, *, catalogue_update: bool = False) -> None:
+        """Reset settings on a real checkpoint change, not on transient inventory repopulation."""
+        selected = text.strip()
+        was, previous = self.active, self.model
+        catalogue_gap = catalogue_update and not selected and was
+        if catalogue_gap:
+            self._catalogue_previous_model = previous
+        restoring_same = catalogue_update and selected and selected == self._catalogue_previous_model
+        if selected != previous and not (catalogue_gap or restoring_same):
             self._clear()
-        self.model = text.strip()
+        self.model = selected
         now = self.active
         self.frame.setVisible(now)
-        if now and (not was or rules.family_of(text) is not None):
+        if now and selected != previous and not restoring_same:
             self._apply_defaults()
         if now != was:
             self._lock(now)
-            if not now:
+            if not now and not catalogue_gap:
                 self._clear()
+        if selected:
+            self._catalogue_previous_model = ""
         self._sync()
+
+    def session_document(self) -> dict:
+        """Credential-free video draft values in the existing per-provider last-session document."""
+        return {
+            "duration_seconds": self.seconds.value(),
+            "start_image": str(self._start) if self._start is not None else None,
+            "start_image_sha256": self._sha or None,
+        }
+
+    def restore(self, document: object) -> None:
+        """Restore the draft, rechecking its source image before another paid submission is possible."""
+        if not self.active:
+            return
+        self._clear()
+        if not isinstance(document, dict):
+            return
+        duration = document.get("duration_seconds")
+        low, high = rules.duration_limits(self.model)
+        if type(duration) in (int, float) and math.isfinite(duration) and low <= duration <= high:
+            self.seconds.setValue(float(duration))
+        path, digest = document.get("start_image"), document.get("start_image_sha256")
+        if not (
+            isinstance(path, str)
+            and path
+            and isinstance(digest, str)
+            and len(digest) == 64
+            and all(char in "0123456789abcdef" for char in digest)
+        ):
+            return
+        chosen = Path(path)
+        self._choice_revision += 1
+        token, model, source = self._choice_revision, self.model, self._backend_source()
+        self._start, self._sha, self._start_source = chosen, digest, source
+        self._loading = True
+        self._show_start()
+        self._sync()
+
+        def done(info, failure) -> None:
+            if token != self._choice_revision or model != self.model or self._runner.closed:
+                return
+            self._loading = False
+            if source != self._backend_source():
+                self._choice_problem = "Connection changed; choose the start image again."
+            elif failure is not None:
+                self._choice_problem = "Saved start image is missing or unreadable; choose it again."
+            elif info.digest != digest:
+                self._choice_problem = "Saved start image has changed; choose it again."
+            else:
+                self._start_info = info
+            self._show_start()
+            self._sync()
+
+        self._runner.submit(asyncio.to_thread(_read_start_image, chosen), done)
 
     def _apply_defaults(self) -> None:
         page, family = self.page, rules.family_of(self.model)
