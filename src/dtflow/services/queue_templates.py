@@ -92,6 +92,8 @@ class QueueTemplate:
 def recipe_record(recipe: Recipe) -> dict:
     if not isinstance(recipe, Recipe) or not isinstance(recipe.request, ResolvedGenerationRequest):
         raise ValidationError("Invalid template recipe.")
+    if recipe.request.num_frames is not None:
+        raise ValidationError("Video templates are not supported; save a paused video queue instead.")
     if (
         recipe.request.operation != "txt2img"
         or recipe.request.image_inputs is not None
@@ -147,6 +149,8 @@ def recipe_from_record(record: dict) -> Recipe:
             raise ValidationError("Template base fields are incomplete or contain unsupported evidence.")
         if base.get("image_inputs") is not None or base.get("pose_control") is not None:
             raise ValidationError("Template bases cannot retain image inputs or execution pose references.")
+        if base.get("num_frames") is not None:
+            raise ValidationError("Video templates are not supported; use a paused video queue.")
         if not isinstance(source["form"], dict) or set(source["form"]) != set(asdict(PlanForm())):
             raise ValidationError("Template form fields are incomplete or unsupported.")
         edited = queue_edit_from_source(

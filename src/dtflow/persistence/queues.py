@@ -1756,6 +1756,8 @@ def _item_request_fields(request: dict) -> dict[str, Any]:
         "sampler": text("sampler_id"),
         "width": number("width_px"),
         "height": number("height_px"),
+        "num_frames": number("num_frames"),
+        "has_start_image": isinstance(request.get("start_image"), str) and bool(request.get("start_image")),
         "pose_control": request.get("pose_control") if isinstance(request.get("pose_control"), dict) else None,
     }
 

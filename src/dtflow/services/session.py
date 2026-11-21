@@ -531,27 +531,7 @@ async def generate_once(
         raise ValidationError(
             "Use the explicit permit-scoped image-generation entry; generic dispatch is txt2img-only."
         )
-    video_permits = ()
-    if request.num_frames is not None and request.start_image is not None:
-        from dtflow.core.video import START_IMAGE_EVIDENCE
-
-        evidence = START_IMAGE_EVIDENCE.get(request.model_id)
-        if selection.name != "cloud" or evidence is None:
-            raise ValidationError("Start-image video requires an owner-verified exact DT+ checkpoint.")
-        # Both evidenced quantizations have no *exact* published community description at this revision.
-        # Pin that absence: a later description addition changes the permit identity and fails closed
-        # until the owner reviews it. Never borrow the f16 or another checkpoint's description.
-        video_permits = (
-            ImageOperationPermit(
-                backend_id="drawthings-cloud",
-                endpoint=image_endpoint_label(selection),
-                model_id=request.model_id,
-                operation="img2img",
-                evidence_id=evidence,
-                status="owner_verified",
-                model_description_sha256=None,
-            ),
-        )
+    video_permits = video_start_permits(selection, (request,))
 
     async def run(timeline: GenerationTimeline) -> GenerationOutcome:
         sink = timeline.sink
@@ -571,6 +551,28 @@ async def generate_once(
             return await run_generation(service, bound, prefix=prefix, on_event=sink, timeline=timeline)
 
     return await _timed(selection, on_event, run)
+
+
+def video_start_permits(selection: BackendSelection, requests) -> tuple[ImageOperationPermit, ...]:
+    """Identical exact-file, owner-verified permits for interactive and queued start-image video."""
+    from dtflow.core.video import START_IMAGE_EVIDENCE
+
+    models = {request.model_id for request in requests if request.num_frames is not None and request.start_image}
+    if models and (selection.name != "cloud" or not models <= START_IMAGE_EVIDENCE.keys()):
+        raise ValidationError("Start-image video requires an owner-verified exact DT+ checkpoint.")
+    return tuple(
+        ImageOperationPermit(
+            backend_id="drawthings-cloud",
+            endpoint=image_endpoint_label(selection),
+            model_id=model,
+            operation="img2img",
+            evidence_id=START_IMAGE_EVIDENCE[model],
+            status="owner_verified",
+            # Never borrow a sibling checkpoint's model description.
+            model_description_sha256=None,
+        )
+        for model in sorted(models)
+    )
 
 
 def pose_request(

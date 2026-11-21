@@ -1287,6 +1287,7 @@ class MainWindow:
             action=state.action,
             completed=state.completed,
             total=state.total,
+            fraction=state.fraction,
             detail=" ".join(
                 part for part in (state.detail, " · ".join(p for p in (state.elapsed, state.eta) if p)) if part
             ),
@@ -1528,14 +1529,15 @@ class MainWindow:
             self.progress_strip.rows["run"].setProperty("runIdentity", run_identity)
         self.progress_strip.update(
             "run",
-            state.completed or 0,
-            state.total or 0,
+            round(state.fraction * 1000) if state.fraction is not None else state.completed or 0,
+            1000 if state.fraction is not None else state.total or 0,
             detail=state.detail,
             elapsed=state.elapsed,
             eta=state.eta,
             stage=state.stage,
             wide=state.wide,
             queued=state.queued,
+            count=state.count or None,
         )
 
     def show(self) -> None:

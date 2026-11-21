@@ -89,7 +89,7 @@ def crop_note(source: tuple[int, int], target: tuple[int, int]) -> str:
     return f"Cover-fitted to {size}: the {'sides are' if sw * th > sh * tw else 'top and bottom are'} trimmed."
 
 
-LOCKED = ("inpaintModeButton", "controlnetModeButton", "scriptsModeButton", "imagesSpinBox", "queueGenerateButton")
+LOCKED = ("inpaintModeButton", "controlnetModeButton", "scriptsModeButton", "imagesSpinBox")
 
 
 class VideoPanel(QObject):

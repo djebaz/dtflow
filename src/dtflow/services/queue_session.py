@@ -119,7 +119,7 @@ async def create_script_queue(
         raise ValidationError("Script interactive input policy must be a boolean.")
     if type(require_start) is not bool or (require_start and (answers is not None or not interactive)):
         raise ValidationError("Script Setup requires an interactive run without supplied answer sets.")
-    if base.operation != "txt2img" or base.image_inputs is not None:
+    if base.operation != "txt2img" or base.image_inputs is not None or base.num_frames is not None:
         raise ValidationError("Scripts start from text-to-image settings only.")
     sha = await asyncio.to_thread(store_source, state, source)
     run_id = prepared_run_id or uuid4().hex
@@ -171,8 +171,11 @@ async def create_queue(
     ``up_next`` it is queued last behind that live dispatch owner, which starts it after its current queue. Without a
     live owner there is nothing to wait behind, so the queue is saved paused.
     """
-    if any(request.num_frames is not None for request in requests):
-        raise ValidationError("Video generation is not supported in queues; use Generate directly.")
+    from dtflow.services.video_queue import capture_requests
+
+    requests, composer_source = await settle(
+        asyncio.to_thread(capture_requests, state, backend.get("name"), requests, composer_source)
+    )
     if backend.get("name") == "local" and not backend.get("endpoint"):
         raise ValidationError("The local backend requires --endpoint HOST:PORT.")
     store = SQLiteAttempts(state)
@@ -441,6 +444,10 @@ async def retry_queue_item(state: Path, queue_id: str, position: int) -> str:
             raise ValidationError(
                 f"Item {position}'s staged image or pose inputs are no longer available; nothing was retried."
             ) from None
+    if request.num_frames is not None:
+        from dtflow.services.video_queue import check_source
+
+        await asyncio.to_thread(check_source, request)
     return await asyncio.to_thread(retry_item, Path(state), queue_id, position)
 
 
@@ -638,6 +645,13 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
                 session.owner_probe_permit(selection, model, operation, evidence)
                 for model, operation, evidence in await store.image_scopes(queue_id)
             )
+        video_requests = []
+        if not workflow and queue.get("kind") != "script":
+            _, _, records = await asyncio.to_thread(read_queue_requests, state, queue_id)
+            for _, _, record in records:
+                if isinstance(record, dict) and record.get("num_frames") is not None:
+                    video_requests.append(request_from_record(record))
+            permits += session.video_start_permits(selection, video_requests)
         # Pose is txt2img with an image-input snapshot. It needs the durable loader even though
         # image_scopes contains only img2img/inpaint operations.
         has_pose = not workflow and any(item.get("pose_control") is not None for item in queue["items"])

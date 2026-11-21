@@ -26,6 +26,7 @@ class RunControl(QAbstractButton):
         self._action: str | None = None
         self._completed: int | None = None
         self._total: int | None = None
+        self._fraction: float | None = None
         self._rotation = 0
         self._pulse = 0.0
 
@@ -55,6 +56,7 @@ class RunControl(QAbstractButton):
         action: str | None = None,
         completed: int | None = None,
         total: int | None = None,
+        fraction: float | None = None,
         detail: str = "",
     ) -> None:
         """Apply a plain presentation snapshot supplied by the shared UI activity state."""
@@ -64,6 +66,7 @@ class RunControl(QAbstractButton):
         self._total = total if type(total) is int and total > 0 else None
         if self._completed is not None and self._total is not None:
             self._completed = min(self._completed, self._total)
+        self._fraction = None if fraction is None else min(1.0, max(0.0, fraction))
 
         if self._phase in ("running", "complete"):
             self._timer.setInterval(110 if self._phase == "running" else 40)
@@ -142,10 +145,13 @@ class RunControl(QAbstractButton):
     def _progress_color(self) -> QColor:
         """Running color moves from deep purple to cyan as the queue or generation completes."""
         start, end = self._colors["running"], self._colors["running_end"]
-        if self._completed is None or self._total is None:
+        if self._fraction is not None:
+            mix = self._fraction  # an estimated whole-run fraction (video) replaces the settled-count position
+        elif self._completed is None or self._total is None:
             return QColor(start)
-        # Cyan is reached when the last item starts, i.e. once every other item has settled.
-        mix = min(1.0, max(0.0, self._completed / max(1, self._total - 1)))
+        else:
+            # Cyan is reached when the last item starts, i.e. once every other item has settled.
+            mix = min(1.0, max(0.0, self._completed / max(1, self._total - 1)))
         return QColor(*(round(a + (b - a) * mix) for a, b in zip(start.getRgb()[:3], end.getRgb()[:3], strict=True)))
 
     def paintEvent(self, _event) -> None:

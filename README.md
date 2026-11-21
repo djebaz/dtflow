@@ -17,7 +17,7 @@ and records every request so each image has an inspectable origin.
   LoRAs with explicit weights, and control seed, size, steps, guidance and sampler. Results record
   prompts, seeds, model and LoRA identifiers and effective parameters. An offline DT+ Compute Units
   estimate is shown for supported text-to-image checkpoints.
-- **Durable queues and comparisons.** Save and load reusable text-to-image or DT+ pose queue recipes with a locally retained body map; edit pose controls and replace a prepared body map directly in the independent Queue draft. Compose queues with prompt, seed and parameter variations, start, pause, resume or cancel them, and inspect each item's resolved request, attempts and saved result. Queue state survives restarts without silently replaying uncertain work.
+- **Durable queues and comparisons.** Compose image or supported DT+ video queues with prompt, seed and parameter variations, and inspect each item's request, attempts and saved result. Video queues retain an optional start image and use Connection's concurrency default, up to ten clips, subject to provider and local resource limits; Windows concurrency acceptance remains tracked in [#546](https://github.com/djebaz/dtflow/issues/546). Save/load reusable text-to-image or DT+ pose recipes, edit pose controls and replace prepared maps in the independent Queue draft. Queue state survives restarts without silently replaying uncertain work.
 - **Saved image gallery.** Browse outputs in Grid, List and Detail views with prompt search,
   filters and zoom; reuse or regenerate saved settings; export JPEG copies with readable filenames;
   move originals to Trash or delete them with explicit confirmation.

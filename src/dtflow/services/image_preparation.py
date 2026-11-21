@@ -351,6 +351,25 @@ def source_size(encoded: bytes) -> tuple[int, int]:
     return _decode(encoded, "Source image").size
 
 
+def validate_video_source_bytes(encoded: bytes) -> None:
+    """Validate bounded original video-source bytes without applying EXIF orientation or changing their digest."""
+    if not isinstance(encoded, bytes) or not 0 < len(encoded) <= 32 * 1024 * 1024:
+        raise ValidationError("The video start image is empty or exceeds 32 MiB.")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", Image.DecompressionBombWarning)
+            with Image.open(io.BytesIO(encoded)) as opened:
+                if opened.width * opened.height > 32_000_000:
+                    raise ValidationError("The video start image exceeds 32 million pixels.")
+                if getattr(opened, "n_frames", 1) != 1 and opened.format != "MPO":
+                    raise ValidationError("A video start image must be a single still image.")
+                opened.verify()
+    except ValidationError:
+        raise
+    except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
+        raise ValidationError("The video start image cannot be decoded safely; choose it again.") from exc
+
+
 def _source_rgb(encoded: bytes) -> Image.Image:
     oriented = _decode(encoded, "Source image").convert("RGBA")
     source = Image.new("RGBA", oriented.size, "white")

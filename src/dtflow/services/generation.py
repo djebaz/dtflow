@@ -175,8 +175,42 @@ class GenerationService:
         With ``-time`` every generation, whichever caller starts it (Generate, queues, scripts, workflows), also writes
         one INFO ``generation.attempt_timing`` record: first-seen offsets of the fixed stages since this call began,
         plus short digests telling whether the prompt and the other settings repeated. It only observes."""
+
+        async def run(sink):
+            if request.num_frames is not None:
+                from dtflow.services.video_resources import video_admission
+                from dtflow.services.video_queue import check_source, validate_video
+
+                validate_video(
+                    request, "cloud" if self.backend.capabilities.backend_id == "drawthings-cloud" else "other"
+                )
+                if sink is not None:
+                    sink(
+                        BackendEvent(
+                            request.request_id,
+                            0,
+                            "preparing",
+                            datetime.now(UTC).isoformat(),
+                            stage="waiting_video_resources",
+                        )
+                    )
+                async with video_admission(request, self.output) as lease:
+                    try:
+                        await settle(asyncio.to_thread(check_source, request))
+                    except (OSError, ValueError) as exc:
+                        raise BackendError(
+                            BackendFailure(
+                                ErrorCategory.VALIDATION,
+                                "video_source_unavailable",
+                                "The selected video source is missing, changed or unreadable. Nothing was submitted.",
+                                request.request_id,
+                            )
+                        ) from exc
+                    return await self._generate(request, sink, prepared_inputs, attempt_id, layout, lease)
+            return await self._generate(request, sink, prepared_inputs, attempt_id, layout)
+
         if not timing_enabled():
-            return await self._generate(request, on_event, prepared_inputs, attempt_id, layout)
+            return await run(on_event)
         timeline = GenerationTimeline(
             self.backend.capabilities.backend_id,
             on_event,
@@ -184,7 +218,7 @@ class GenerationService:
             extra=request_fingerprint(request),
         )
         try:
-            saved = await self._generate(request, timeline.sink, prepared_inputs, attempt_id, layout)
+            saved = await run(timeline.sink)
         except BaseException as exc:
             timeline.finish(exc)
             raise
@@ -198,6 +232,7 @@ class GenerationService:
         prepared_inputs: PreparedImageInputs | None,
         attempt_id: str | None,
         layout: OutputLayout | None,
+        video_lease=None,
     ) -> SavedGeneration:
         def preparation(stage: str) -> None:
             if on_event is not None:
@@ -458,6 +493,8 @@ class GenerationService:
                 if snapshot != request.image_inputs:
                     raise ValueError("Committed image inputs differ from the prepared attempt.")
             if request.num_frames is not None:
+                if video_lease is not None:
+                    await settle(asyncio.to_thread(video_lease.recheck))
                 tool_problem = await settle(asyncio.to_thread(video_encode.tools_readiness_problem))
                 if tool_problem is not None:
                     raise BackendError(
@@ -499,7 +536,12 @@ class GenerationService:
                 RemoteOutcome.UNKNOWN,
             )
             state, stage, outcome = "possibly_submitted", SubmissionStage.POSSIBLY_SUBMITTED, RemoteOutcome.UNKNOWN
-            async with asyncio.timeout(self.timeouts.total):
+            from dtflow.core.video import VIDEO_TOTAL_TIMEOUT
+
+            total_timeout = (
+                max(self.timeouts.total, VIDEO_TOTAL_TIMEOUT) if request.num_frames is not None else self.timeouts.total
+            )
+            async with asyncio.timeout(total_timeout):
                 result = await self.backend.generate(request, on_event=receive)
             stage = SubmissionStage.TERMINAL_OBSERVED
             if result.backend_id != caps.backend_id:
