@@ -37,7 +37,7 @@ from dtflow.core.models import (
 from dtflow.core.png import encode_png
 from dtflow.core.tasks import settle
 from dtflow.core.video import START_IMAGE_EVIDENCE, VIDEO_TOTAL_TIMEOUT, audio_rate, playback_fps, video_profile
-from dtflow.diagnostics import event as diagnostic_event
+from dtflow.diagnostics import api_error_data, event as diagnostic_event
 from dtflow.services import video_encode
 
 log = logging.getLogger(__name__)
@@ -142,7 +142,7 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
         profile_available=video_profile(request.model_id) is not None,
         start_image_present=request.start_image is not None,
         start_image_permit="owner_verified" if request.start_image else "not_required",
-        ffmpeg_available=True, ffprobe_available=True, storage_ready=True,
+        ffmpeg_available=True, ffprobe_available=True,
     )
 
     def emit(kind: str, **payload) -> None:
@@ -295,10 +295,19 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
                     )
                 except Exception as exc:  # Retain a usable clip with an explicit silent-audio warning.
                     warnings.append("The sound could not be added; the clip has no audio.")
+                    evidence = (
+                        api_error_data(
+                            message=str(exc),
+                            private=(str(work), str(raw), request.prompt, request.negative_prompt),
+                        )
+                        if isinstance(exc, video_encode.EncodeError) and log.isEnabledFor(logging.DEBUG)
+                        else {}
+                    )
                     trace(
                         "audio_mux_failed", level=logging.WARNING,
                         reason=type(exc).__name__,
                         duration_ms=round((time.monotonic() - mux_started) * 1000),
+                        **evidence,
                     )
             final = work / "video.mp4"
             video.replace(final)
@@ -380,9 +389,18 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
         )
         raise
     except Exception as exc:
+        evidence = (
+            api_error_data(
+                message=str(exc),
+                private=(str(work), str(sink.partial), request.prompt, request.negative_prompt),
+            )
+            if isinstance(exc, video_encode.EncodeError) and log.isEnabledFor(logging.DEBUG)
+            else {}
+        )
         trace(
             "failed", level=logging.WARNING, reason=type(exc).__name__,
             submission_stage=stage.value, elapsed_ms=round((time.monotonic() - started) * 1000),
+            **evidence,
         )
         problem = from_exception(
             exc,
