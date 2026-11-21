@@ -365,12 +365,14 @@ class GenerationService:
                 )
             ) from exc
         if request.num_frames is not None:
-            if await settle(asyncio.to_thread(video_encode.find_tools)) is None:
+            # Real executable/encoder readiness runs on a worker, never in a Qt handler.
+            tool_problem = await settle(asyncio.to_thread(video_encode.tools_readiness_problem))
+            if tool_problem is not None:
                 raise BackendError(
                     BackendFailure(
                         ErrorCategory.VALIDATION,
                         "ffmpeg_missing",
-                        video_encode.tools_problem() or "ffmpeg and ffprobe are unavailable.",
+                        tool_problem,
                         request.request_id,
                     )
                 )
@@ -456,12 +458,13 @@ class GenerationService:
                 if snapshot != request.image_inputs:
                     raise ValueError("Committed image inputs differ from the prepared attempt.")
             if request.num_frames is not None:
-                if await settle(asyncio.to_thread(video_encode.find_tools)) is None:
+                tool_problem = await settle(asyncio.to_thread(video_encode.tools_readiness_problem))
+                if tool_problem is not None:
                     raise BackendError(
                         BackendFailure(
                             ErrorCategory.VALIDATION,
                             "ffmpeg_missing",
-                            "Video tools became unavailable before submission. No video was sent.",
+                            f"{tool_problem} No video was sent.",
                             request.request_id,
                         )
                     )

@@ -4,16 +4,19 @@ Run from the repository root: ``uv run --with pyinstaller python tools/packaging
 It records the full source commit and clean/dirty status in the ignored ``src/dtflow/_buildinfo.py``,
 runs PyInstaller, renames the result in ``dist/`` and always removes the generated module afterwards.
 Windows builds open Qt directly without a console; source CLI execution stays supported.
-It builds only; it does not run the executable, generate images or touch the network.
+It builds only; it does not launch the app or generate images. A Windows build downloads a pinned, checksum-verified FFmpeg archive when it is not already staged.
 """
 
 import argparse
+import os
 import platform
 import shutil
 import subprocess
 import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
+
+from ffmpeg_bundle import prepare as prepare_ffmpeg
 
 ROOT = Path(__file__).resolve().parents[2]
 BUILDINFO = ROOT / "src" / "dtflow" / "_buildinfo.py"
@@ -42,6 +45,12 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--onedir", action="store_true", help="build a folder distribution instead of the default one-file executable"
     )
+    parser.add_argument(
+        "--ffmpeg-provider",
+        choices=("gyan", "tas", "unpins", "imageio", "imageio-mini"),
+        default="gyan",
+        help="Windows FFmpeg: gyan default; tas, unpins, imageio, or imageio-mini (minimal ffprobe) experimental",
+    )
     args = parser.parse_args(argv)
     try:
         version("kmeans1d")
@@ -54,7 +63,20 @@ def main(argv: list[str] | None = None) -> int:
         print(
             "warning: working tree has local modifications; the build will report source status dirty", file=sys.stderr
         )
+    windows = platform.system() == "Windows"
+    ffmpeg_bundle = None
+    if not windows and args.ffmpeg_provider != "gyan":
+        parser.error("--ffmpeg-provider is available only for Windows builds.")
+    if windows:
+        if ARCHES.get(platform.machine().lower()) != "x64":
+            parser.error("Bundled FFmpeg currently supports Windows x64 only.")
+        try:
+            ffmpeg_bundle = prepare_ffmpeg(args.ffmpeg_provider)
+        except (OSError, ValueError, shutil.Error) as exc:
+            parser.error(f"Cannot stage verified Windows FFmpeg: {exc}")
     name = artifact_name(version("dtflow"), commit, platform.system(), platform.machine())
+    if windows and args.ffmpeg_provider != "gyan":
+        name = name.removesuffix(".exe") + f"-ffmpeg-{args.ffmpeg_provider}.exe"
     if args.onedir:
         name = name.removesuffix(".exe")
     out = (ROOT / args.out).resolve()
@@ -68,7 +90,8 @@ def main(argv: list[str] | None = None) -> int:
             "--hidden-import", "PySide6.QtMultimedia", "--hidden-import", "PySide6.QtMultimediaWidgets",
             "--distpath", str(out),
         ]  # fmt: skip
-        if platform.system() == "Windows":
+        if windows:
+            tools_dir = ffmpeg_bundle["tools_dir"]
             command.extend(
                 [
                     "--windowed",
@@ -76,8 +99,12 @@ def main(argv: list[str] | None = None) -> int:
                     str(ROOT / "src/dtflow/resources/images/dtflow.ico"),
                     "--hidden-import",
                     "keyring.backends.Windows",
+                    "--add-data",
+                    f"{ffmpeg_bundle['notices_dir']}{os.pathsep}licenses/FFmpeg",
                 ]
             )
+            for binary_name in ffmpeg_bundle["binary_names"]:
+                command.extend(["--add-binary", f"{tools_dir / binary_name}{os.pathsep}ffmpeg"])
         command.append("tools/packaging/launch_gui.py")
         subprocess.run(command, cwd=ROOT, check=True)
     finally:
@@ -86,6 +113,8 @@ def main(argv: list[str] | None = None) -> int:
     target = out / name
     shutil.move(built, target)
     print(f"built {target}\ncommit {commit} ({status})")
+    if windows:
+        print(f"ffmpeg provider {args.ffmpeg_provider} (verified Windows x64)")
     return 0
 
 

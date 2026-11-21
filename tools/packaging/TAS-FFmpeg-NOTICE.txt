@@ -1,0 +1,34 @@
+TAS-FFMPEG redistribution notice (DTFlow optional Windows build)
+==================================================================
+
+This DTFlow build bundles an explicitly selected third-party FFmpeg distribution:
+  Provider: NevermindNilas/TAS-FFMPEG v8.1.2, Windows x64 shared build
+  Binary tools: ffmpeg.exe, ffprobe.exe and seven accompanying FFmpeg DLLs
+  License: GPL-2.0-or-later (libx264 is enabled; compatible with DTFlow GPLv3)
+
+Pinned binary archive:
+  https://github.com/NevermindNilas/TAS-FFMPEG/releases/download/v8.1.2/tas-ffmpeg-8.1.2-win64.zip
+  SHA-256:
+    1d570273dc8be2b3f386467657591a22045d058a830b1eb1eaa881dafb689bfb
+
+Publisher-supplied complete corresponding-source archive:
+  https://github.com/NevermindNilas/TAS-FFMPEG/releases/download/v8.1.2/tas-ffmpeg-8.1.2-corresponding-source.tar.xz
+  SHA-256:
+    74605032486afbaaf6a489420eb4eea870c20604aace2b993e850a3e7d338ebd
+
+Upstream build scripts, dependency pins and license inventory:
+  https://github.com/NevermindNilas/TAS-FFMPEG/tree/v8.1.2
+
+DTFlow preserves the publisher's entire licenses/ directory, including the
+LICENSING.md source offer, build manifest and build-component license texts.
+The bundled files are separate command-line executables and DLLs in the app's
+private ffmpeg/ directory. DTFlow does not modify the compiled libraries.
+
+IMPORTANT FOR DISTRIBUTORS:
+The publisher's corresponding-source archive is identified above but is not
+itself embedded in DTFlow's executable or attached automatically to a release.
+Before publicly distributing this DTFlow build, verify that the complete
+corresponding source and applicable written offer are available through a
+GPL-compliant method and that license texts/attributions are preserved.
+DTFlow itself remains GPL-3.0-only. This notice describes provenance and
+obligations, not a legal certification.

@@ -1,0 +1,34 @@
+FFmpeg redistribution notice (DTFlow Windows build)
+=====================================================
+
+This DTFlow build bundles third-party command-line executables:
+  ffmpeg.exe and ffprobe.exe
+  FFmpeg 8.1.2 Essentials, Windows x64, GPLv3 static build
+  Build publisher: Gyan Doshi (https://www.gyan.dev/ffmpeg/builds/)
+  Versioned archive:
+    https://github.com/GyanD/codexffmpeg/releases/download/8.1.2/ffmpeg-8.1.2-essentials_build.zip
+  Archive SHA-256:
+    db580001caa24ac104c8cb856cd113a87b0a443f7bdf47d8c12b1d740584a2ec
+
+The selected FFmpeg binary includes libx264 and is published as GPLv3.
+The GPLv3 license text, the publisher's LICENSE and README accompany
+these executables in the packaged licenses/FFmpeg directory. DTFlow
+calls the executables as separate subprocesses; it does not change
+the FFmpeg build or relicense it.
+
+Corresponding source, third-party dependencies and build recipes:
+  https://github.com/FFmpeg/FFmpeg/tree/n8.1.2
+  https://github.com/GyanD/codexffmpeg
+  https://www.gyan.dev/ffmpeg/builds/
+  https://code.videolan.org/videolan/x264
+
+IMPORTANT FOR DISTRIBUTORS:
+A link to upstream source code is NOT automatically enough to satisfy
+the GPL's complete corresponding-source obligations. Before distributing
+a DTFlow binary containing these executables, provide the exact
+corresponding source for this FFmpeg build and its included GPL
+components, including the appropriate build instructions, through a
+GPL-compliant method. Review other external codec/library licenses
+documented in the publisher's README. DTFlow's project license is
+also GPL-3.0-only. This notice records provenance; it is not a legal
+opinion or certification of distribution compliance.

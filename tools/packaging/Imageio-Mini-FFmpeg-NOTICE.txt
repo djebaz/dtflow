@@ -1,0 +1,50 @@
+Imageio + mini FFprobe Windows size experiment (DTFlow)
+======================================================
+
+This experimental DTFlow Windows build combines two independently published
+native executables. It is not a production release or a corresponding-source
+compliance certification.
+
+Video encoder (FFmpeg):
+  imageio-ffmpeg 0.5.1, Windows x64 wheel; FFmpeg 4.2.2.
+  https://pypi.org/project/imageio-ffmpeg/0.5.1/
+  https://files.pythonhosted.org/packages/a9/1c/1b9c72bf839def47626436ea5ebaf643404f7850482c5fafd71a3deeaa94/imageio_ffmpeg-0.5.1-py3-none-win_amd64.whl
+  Archive SHA-256:
+    1521e79e253bedbdd36a547e0cbd94a025ba0b558e17f08fea687d805a0e4698
+  Member: imageio_ffmpeg/binaries/ffmpeg-win64-v4.2.2.exe
+
+Stream inspector (FFprobe):
+  nichiken/ffmpeg-mini-win64 v1.0.1, FFmpeg release/7.1, Windows x64,
+  prebuilt with minimal MP4/H.264/AAC support and no GPU acceleration.
+  https://github.com/nichiken/ffmpeg-mini-win64/releases/tag/v1.0.1
+  https://github.com/nichiken/ffmpeg-mini-win64/releases/download/v1.0.1/ffmpeg-mini-win64.zip
+  Archive SHA-256:
+    f921d628254e824975ff9a60462cc1d48a5e627ed62c9a893c32ca36c55531cb
+  Member: ffprobe.exe (the archive's ffmpeg.exe is NOT used).
+  Build instructions: https://github.com/nichiken/ffmpeg-mini-win64/blob/v1.0.1/.github/workflows/build.yml
+  License: upstream claims LGPL; its LICENSE.LGPL.txt and FFmpeg README
+  are copied directly from the pinned release archive.
+
+DTFlow uses these binaries with its existing encoding and probing commands:
+raw RGB frames and libx264/AAC encoding, MP4 muxing, and ffprobe JSON
+stream/format/frame-count inspection. Both are checksum-pinned inputs.
+Each extracted executable and bundled notice has a separate SHA-256
+recorded in build-manifest.json.
+
+IMPORTANT:
+A successful PyInstaller build does not demonstrate actual frame-count
+accuracy, MP4/audio parsing, encoding, or QtMultimedia playback.
+Only the owner runs the exact Windows executable and paid video smoke.
+FFmpeg 4.2.2 is old and should not be adopted as a supported video stack
+without a security/compatibility decision. The probe's upstream build
+uses the moving FFmpeg release/7.1 branch at build time rather than a
+recorded exact FFmpeg source commit.
+
+IMPORTANT FOR REDISTRIBUTION:
+The LGPL text supplied by the ffmpeg-mini-win64 release and the Python
+wrapper metadata from imageio-ffmpeg do not establish complete licensing
+and source compliance for the independently compiled FFmpeg executables.
+Verify exact corresponding source for FFmpeg 4.2.2, FFprobe 7.1 and linked
+dependencies, their license conditions, and compliant source delivery
+before publishing this variant. Provenance links alone are not enough.
+DTFlow itself remains GPL-3.0-only.

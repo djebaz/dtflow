@@ -12,20 +12,37 @@ from pathlib import Path
 
 from PyInstaller.archive.readers import CArchiveReader
 
+from ffmpeg_bundle import stage_dir, staged_record
+
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def verify(commit: str, tag: str) -> dict:
+def verify(commit: str, tag: str, provider: str = "gyan") -> dict:
     actual_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     if actual_commit != commit:
         raise ValueError("Checkout no longer matches the selected source commit.")
     source_version = version("dtflow")
     if tag and tag != f"v{source_version}":
         raise ValueError("Release tag does not match the installed application version.")
-    artifact = ROOT / "dist" / f"dtflow-{source_version}-g{commit[:7]}-windows-x64.exe"
+    suffix = f"-ffmpeg-{provider}" if provider != "gyan" else ""
+    artifact = ROOT / "dist" / f"dtflow-{source_version}-g{commit[:7]}-windows-x64{suffix}.exe"
     if not artifact.is_file() or artifact.stat().st_size == 0:
         raise ValueError("Expected stamped Windows x64 executable is missing or empty.")
     archive = CArchiveReader(str(artifact))
+    members = {name.replace("\\", "/"): name for name in archive.toc}
+    ffmpeg = staged_record(provider)
+    binary_digests = ffmpeg["tools"] | ffmpeg["dlls"]
+    expected = {f"ffmpeg/{name}" for name in binary_digests}
+    expected.update(f"licenses/FFmpeg/{name}" for name in ffmpeg["notices"])
+    missing = expected.difference(members)
+    if missing:
+        raise ValueError(f"Bundled FFmpeg files are missing: {', '.join(sorted(missing))}.")
+    for name, digest in binary_digests.items():
+        if hashlib.sha256(archive.extract(members[f"ffmpeg/{name}"])).hexdigest() != digest:
+            raise ValueError(f"Bundled {name} does not match its pinned upstream archive.")
+    for name, digest in ffmpeg["notices"].items():
+        if hashlib.sha256(archive.extract(members[f"licenses/FFmpeg/{name}"])).hexdigest() != digest:
+            raise ValueError(f"Bundled FFmpeg license {name} differs from the pinned staging record.")
     if not any(name.replace("\\", "/") == "kmeans1d/version.txt" for name in archive.toc):
         raise ValueError("Bundled kmeans1d/version.txt is missing; rebuild with kmeans1d package data.")
     pyz_name = next(name for name, entry in archive.toc.items() if entry[-1] == "z")
@@ -61,6 +78,7 @@ def verify(commit: str, tag: str) -> dict:
             else None
         ),
         "owner_smoke": "pending",
+        "ffmpeg": ffmpeg,
     }
 
 
@@ -68,10 +86,26 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("-c", "--commit", required=True, help="expected full checkout commit")
     parser.add_argument("-t", "--tag", default="", help="optional release tag matching the application version")
+    parser.add_argument(
+        "--ffmpeg-provider", choices=("gyan", "tas", "unpins", "imageio", "imageio-mini"), default="gyan"
+    )
     args = parser.parse_args()
-    record = verify(args.commit, args.tag)
+    record = verify(args.commit, args.tag, args.ffmpeg_provider)
     out = ROOT / "dist"
-    (out / "SHA256SUMS.txt").write_text(f"{record['sha256']}  {record['artifact']}\n", encoding="utf-8")
+    # Publish human-readable third-party notices alongside the self-contained EXE.
+    source = stage_dir(args.ffmpeg_provider) / "licenses"
+    texts = []
+    for name in sorted(record["ffmpeg"]["notices"]):
+        texts.append(f"\n\n========== {name} ==========\n\n")
+        texts.append((source / name).read_text(encoding="utf-8", errors="replace"))
+    notices = out / "FFmpeg-THIRD-PARTY.txt"
+    notices.write_text("".join(texts), encoding="utf-8")
+    record["ffmpeg"]["notices_file"] = notices.name
+    record["ffmpeg"]["notices_sha256"] = hashlib.sha256(notices.read_bytes()).hexdigest()
+    (out / "SHA256SUMS.txt").write_text(
+        f"{record['sha256']}  {record['artifact']}\n{record['ffmpeg']['notices_sha256']}  {notices.name}\n",
+        encoding="utf-8",
+    )
     (out / "build-manifest.json").write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as outputs:
