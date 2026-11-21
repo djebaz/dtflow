@@ -109,12 +109,14 @@ class Log:
 class Progress:
     """One updating console line while DT+ works (plain lines when stdout is not a terminal); the log keeps the detail.
 
-    Shows seconds since the request was sent, the stage DT+ reports (waiting, text encoded, sampling step n of N,
-    receiving frame k of F, finishing) and the compressed megabytes received once frames flow.
+    Shows elapsed time, DT+ stage signposts (including separately reported Hires Fix passes), received frames
+    and compressed megabytes. DT+ does not advertise a step total for each individual Hires Fix pass.
     """
 
-    def __init__(self, enabled: bool, steps: int, frames: int):
+    def __init__(self, enabled: bool, steps: int, frames: int, *, hires_requested: bool = False):
         self.enabled, self.steps, self.frames = enabled, steps, frames
+        self.hires_requested = hires_requested
+        self.second_pass_seen = False
         self.tty = sys.stdout.isatty()
         self.stage = "waiting for DT+ (queued or starting)"
         self.received = 0
@@ -969,13 +971,30 @@ async def receive(stream, got: Received, sink: FrameSink, log: Log, request_sent
         if response.current_signpost:
             name, value = betterproto.which_one_of(response.current_signpost, "signpost")
             signpost = f"{name}:{getattr(value, 'step', '')}"
+            if name in ("second_pass_image_encoded", "second_pass_sampling", "second_pass_image_decoded"):
+                progress.second_pass_seen = True
             if name == "sampling":
                 got.sampling_steps = max(got.sampling_steps, int(value.step))
-                progress.set(f"sampling step {int(value.step)} of {progress.steps}")
+                stage = f"pass 1/2: sampling step {int(value.step)}" if progress.hires_requested else (
+                    f"sampling step {int(value.step)} of {progress.steps}"
+                )
+                progress.set(stage)
+            elif name == "second_pass_sampling":
+                progress.set(f"pass 2/2: refinement sampling step {int(value.step)}")
             elif name == "text_encoded":
                 progress.set("text encoded")
+            elif name == "image_encoded":
+                progress.set("pass 1/2: image encoded" if progress.hires_requested else "image encoded")
             elif name == "image_decoded":
-                progress.set("start image decoded")
+                progress.set("pass 1/2: image decoded" if progress.hires_requested else "image decoded")
+            elif name == "second_pass_image_encoded":
+                progress.set("pass 2/2: image encoded")
+            elif name == "second_pass_image_decoded":
+                progress.set("pass 2/2: image decoded")
+            elif name == "face_restored":
+                progress.set("face restored")
+            elif name == "image_upscaled":
+                progress.set("image upscaled")
         if signpost:
             parts.append(f"signpost={signpost}")
         if response.signposts:
@@ -1245,7 +1264,9 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
     sink = FrameSink(args.out, ffmpeg if encode else None, fps, log, frame_format)
     log.line(f"frame image output: {frame_format or 'none (MP4 stream only)'}", echo=True)
     got = Received()
-    progress = Progress(not args.quiet, args.steps, args.frames)
+    progress = Progress(
+        not args.quiet, args.steps, args.frames, hires_requested=args.hires_factor > 1
+    )
     log.progress = progress
     progress.log = log
     ticker = None
@@ -1340,6 +1361,14 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
     progress.set("finishing: encoding the MP4, audio mux, ffprobe")
     await backend_close(backend)
     total = time.monotonic() - request_sent
+    if progress.hires_requested:
+        if progress.second_pass_seen:
+            log.line("Hires Fix second-pass progress: reported by DT+ signposts", echo=True)
+        else:
+            log.warn(
+                "Hires Fix was requested but DT+ reported no second-pass signposts; "
+                "a refinement pass cannot be confirmed from this response."
+            )
     log.section("5 Timings")
     log.line(
         f"connect/request sent/first content/last frame/total: first content "
