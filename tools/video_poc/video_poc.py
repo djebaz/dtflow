@@ -268,7 +268,7 @@ def add_drawthings_arguments(parser: argparse.ArgumentParser) -> None:
     from drawthings_py.configs.prop_schema import load_definitions
     from drawthings_py.generated.dt_grpc.config_generated import GenerationConfigurationT
 
-    reserved = {"model", "width", "height", "num_frames", "steps", "guidance", "shift", "seed", "sampler"}
+    reserved = {"model", "width", "height", "num_frames", "steps", "guidance", "shift", "seed", "sampler", "hires_fix"}
     native = GenerationConfigurationT()
     descriptions = load_definitions()
     group = parser.add_argument_group(
@@ -324,8 +324,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         dest="size",
         type=parse_size,
         default=None,
-        help="WIDTHxHEIGHT, auto, WIDTHxauto, or autoxHEIGHT. Sides snap to 64px in 128..2048. "
-        "With -i and no -sz, use the image ratio at approximately the model's default pixel budget.",
+        help="FINAL output WIDTHxHEIGHT, auto, WIDTHxauto, or autoxHEIGHT (also with Hires Fix). "
+        "Sides snap to 64px in 128..2048. With -i and no -sz, use the image ratio "
+        "at approximately the model's default pixel budget.",
     )
     parser.add_argument(
         "-f", dest="frames", type=int, default=None, help="frame count (default: the model preset's, else 121)"
@@ -344,6 +345,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="override a supported SDK field (repeatable); accepts camelCase, snake_case or kebab-case "
         "names, JSON scalars, and JSON arrays for LoRAs/controls. Dedicated flags still own model, sampler, "
         "steps, guidance, shift, size, frames and seed.",
+    )
+    parser.add_argument(
+        "--hires-fix", "--hires_fix", "--hiresFix", dest="hires_factor",
+        type=float, nargs="?", const=2.0, default=None, metavar="FACTOR",
+        help="upscale factor: 1 disables; 2 (default when flag used) to 4. -sz is the final resolution; "
+        "the first pass is derived at multiples of 64, or overridden by --hires-fix-width/height.",
     )
     parser.add_argument("-sd", dest="seed", type=int, default=None, help="seed (default random)")
     parser.add_argument(
@@ -462,6 +469,80 @@ def resolve_defaults(args: argparse.Namespace, log: Log) -> None:
             f"  size adapted to multiples of 64: requested {requested[0]}x{requested[1]}, "
             f"using {args.width}x{args.height}", echo=True,
         )
+    resolve_hires_fix(args, log)
+
+
+def resolve_hires_fix(args: argparse.Namespace, log: Log) -> None:
+    """Derive Hires Fix first-pass dimensions from the final -sz, preserving explicit overrides."""
+    def normalized(name: str) -> str:
+        return re.sub(r"[-_ ]", "", name).lower()
+
+    fields = []
+    legacy = []
+    dimensions = {}
+    for name, value in args.config_fields:
+        field = normalized(name)
+        if field == "hiresfix":
+            legacy.append(value)
+            continue
+        if field in ("hiresfixwidth", "hiresfixstartwidth"):
+            dimensions["width"] = (value, field == "hiresfixstartwidth")
+        elif field in ("hiresfixheight", "hiresfixstartheight"):
+            dimensions["height"] = (value, field == "hiresfixstartheight")
+        fields.append((name, value))
+
+    factor = args.hires_factor
+    if legacy:
+        if factor is not None:
+            raise ValueError("Use either --hires-fix FACTOR or --set hiresFix, not both.")
+        value = legacy[-1]
+        if type(value) is bool:
+            factor = 2.0 if value else 1.0
+        elif type(value) in (int, float):
+            factor = float(value)
+        else:
+            raise ValueError("--set hiresFix expects a boolean or factor from 1 to 4.")
+    factor = 1.0 if factor is None else factor
+    if not math.isfinite(factor) or not 1.0 <= factor <= 4.0:
+        raise ValueError("--hires-fix factor must be between 1 (disabled) and 4.")
+    args.hires_factor = factor
+    if factor == 1.0:
+        if dimensions:
+            raise ValueError("--hires-fix-width/height requires --hires-fix with a factor greater than 1.")
+        if legacy or any(normalized(name) == "hiresfix" for name, _ in args.config_fields):
+            fields.append(("hires_fix", False))
+        log.line("  Hires Fix: disabled (factor 1)", echo=True)
+        args.config_fields = fields
+        return
+
+    first_pass = {}
+    for axis, final in (("width", args.width), ("height", args.height)):
+        explicit = dimensions.get(axis)
+        if explicit is not None:
+            value, is_native_units = explicit
+            if type(value) is not int:
+                raise ValueError(f"--hires-fix-{axis} expects an integer.")
+            size = value * 64 if is_native_units else value
+            if size % 64:
+                raise ValueError(f"--hires-fix-{axis} must be a multiple of 64 pixels.")
+        else:
+            size = (round(final / factor) + 32) // 64 * 64
+            fields.append((f"hires_fix_{axis}", size))
+        if size < 128 or size >= final:
+            raise ValueError(
+                f"Hires Fix first-pass {axis} {size}px must be at least 128px and smaller than "
+                f"final {axis} {final}px. Reduce --hires-fix or increase -sz."
+            )
+        first_pass[axis] = size
+
+    fields.append(("hires_fix", True))
+    args.config_fields = fields
+    log.line(
+        f"  Hires Fix: {factor:g}x, first pass {first_pass['width']}x{first_pass['height']} "
+        f"-> final {args.width}x{args.height}"
+        + (" (explicit first-pass dimension override)" if dimensions else ""),
+        echo=True,
+    )
 
 
 
