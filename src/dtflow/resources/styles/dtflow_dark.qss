@@ -2851,15 +2851,24 @@ QWidget#galleryVideoControls QPushButton#videoPlaybackAutoplay:checked {
   background: ${color.selection}; border-color: ${color.selectionBorder};
   color: ${color.selectionText};
 }
-QLabel#videoPlaybackTime { color: ${color.text}; font-size: ${type.small}; padding: 0 4px; }
-QSlider#videoPlaybackSeek { min-height: 12px; }
-QSlider#videoPlaybackSeek::groove:horizontal { height: 4px; background: ${color.groove}; border-radius: 2px; }
+QLabel#videoPlaybackTime {
+  color: ${color.text}; font-family: ${type.monoFamily}; font-size: ${type.small};
+  padding: 0 2px;
+}
+QSlider#videoPlaybackSeek { min-height: 24px; min-width: 72px; }
+QSlider#videoPlaybackSeek::groove:horizontal {
+  height: 4px; background: ${color.groove}; border-radius: 2px;
+}
 QSlider#videoPlaybackSeek::sub-page:horizontal { background: ${color.accentHover}; border-radius: 2px; }
 QSlider#videoPlaybackSeek::handle:horizontal {
-  width: 11px; margin: -4px 0; background: ${color.text}; border: 1px solid ${color.focus}; border-radius: 6px;
+  width: 16px; margin: -10px 0; border: 0; background: transparent; border-radius: 0;
+  image: url(../images/gallery/video-seek-marker.svg);
 }
 QSlider#videoPlaybackSeek::handle:horizontal:hover,
-QSlider#videoPlaybackSeek::handle:horizontal:focus { background: ${color.focus}; }
+QSlider#videoPlaybackSeek::handle:horizontal:focus,
+QSlider#videoPlaybackSeek::handle:horizontal:pressed {
+  image: url(../images/gallery/video-seek-marker-active.svg);
+}
 QPushButton#galleryPlayVideoButton {
   background: rgba(12, 12, 12, 205); border: 2px solid rgba(242, 246, 248, 165);
   border-radius: 38px; padding: 8px;
