@@ -1,8 +1,8 @@
 """ffmpeg and ffprobe work for video generation: frame sink, audio mux, probe, tool discovery.
 
 Proven by the video POC on DT+ (libx264 high 4.1, yuv420p, faststart, AAC mux). Everything here blocks, so callers run
-it in worker threads. The tools are the ones installed on the machine (``PATH``); how DTFlow ships them is a later
-packaging decision. No console window opens on Windows.
+it in worker threads. Frozen Windows builds use their packaged tools exclusively;
+source development resolves them from ``PATH``. No console window opens on Windows.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import os
 import queue
 import shutil
 import subprocess
+import sys
 import threading
 from collections import deque
 from dataclasses import dataclass
@@ -22,14 +23,41 @@ STALL_SECONDS = 90  # a frame writer that makes no progress for this long fails 
 
 
 def find_tools() -> tuple[str, str] | None:
-    """``(ffmpeg, ffprobe)`` from PATH, or None when either is missing."""
+    """Use bundled frozen executables, or ordinary PATH tools in source development."""
+    if getattr(sys, "frozen", False):
+        base = getattr(sys, "_MEIPASS", None)
+        if base is None:
+            return None
+        folder = Path(base) / "ffmpeg"
+        ffmpeg, ffprobe = folder / "ffmpeg.exe", folder / "ffprobe.exe"
+        return (str(ffmpeg), str(ffprobe)) if ffmpeg.is_file() and ffprobe.is_file() else None
     ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
     return (ffmpeg, ffprobe) if ffmpeg and ffprobe else None
 
 
 def tools_problem() -> str | None:
-    if find_tools() is None:
-        return "ffmpeg and ffprobe were not found on PATH; install them before generating video."
+    """A cheap path check for UI presentation (never starts a subprocess on Qt)."""
+    if find_tools() is not None:
+        return None
+    if getattr(sys, "frozen", False):
+        return "This DTFlow build is missing its bundled FFmpeg tools. Reinstall a complete Windows build."
+    return "ffmpeg and ffprobe were not found on PATH; install them before generating video."
+
+
+def tools_readiness_problem() -> str | None:
+    """Verify usable H.264/AAC encoding and probing on the generation worker before submission."""
+    if (problem := tools_problem()) is not None:
+        return problem
+    ffmpeg, ffprobe = find_tools()
+    try:
+        encoders = run_tool([ffmpeg, "-hide_banner", "-encoders"], timeout=15)
+        probe_version = run_tool([ffprobe, "-version"], timeout=15)
+    except (OSError, subprocess.SubprocessError) as exc:
+        return f"Video tools cannot run ({type(exc).__name__}); generation was not submitted."
+    if encoders.returncode != 0 or probe_version.returncode != 0:
+        return "FFmpeg or ffprobe could not start; generation was not submitted."
+    if " libx264 " not in encoders.stdout or " aac " not in encoders.stdout:
+        return "FFmpeg lacks the H.264 (libx264) or AAC encoder required for video generation."
     return None
 
 

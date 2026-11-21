@@ -15,6 +15,12 @@ on:
         type: string
         required: false
         default: ""
+      ffmpeg_provider:
+        description: "Windows FFmpeg: imageio-mini default (owner-smoked); Gyan, TAS, Unpins or imageio optional."
+        type: choice
+        options: [gyan, tas, unpins, imageio, imageio-mini]
+        required: true
+        default: imageio-mini
 
 permissions:
   contents: read
@@ -147,8 +153,10 @@ jobs:
           }
 
       - name: Build through the canonical GUI builder
+        env:
+          FFMPEG_PROVIDER: ${{ inputs.ffmpeg_provider }}
         run: |
-          uv run --no-dev --group quantization --with pyinstaller==6.22.3 python tools/packaging/build_exe.py
+          uv run --no-dev --group quantization --with pyinstaller==6.22.3 python tools/packaging/build_exe.py --ffmpeg-provider $env:FFMPEG_PROVIDER
           if ($LASTEXITCODE) { throw "GUI build failed." }
 
       - name: Verify bundled identity and write checksums/manifest
@@ -158,8 +166,9 @@ jobs:
           DTFLOW_SOURCE_PR: ${{ inputs.pr }}
           DTFLOW_SOURCE_REF: ${{ steps.select.outputs.source_ref }}
           RELEASE_TAG: ${{ inputs.release_tag }}
+          FFMPEG_PROVIDER: ${{ inputs.ffmpeg_provider }}
         run: |
-          uv run --no-dev --with pyinstaller==6.22.3 python tools/packaging/release_artifact.py --commit $env:SOURCE_COMMIT --tag "$env:RELEASE_TAG"
+          uv run --no-dev --with pyinstaller==6.22.3 python tools/packaging/release_artifact.py --commit $env:SOURCE_COMMIT --tag "$env:RELEASE_TAG" --ffmpeg-provider $env:FFMPEG_PROVIDER
           if ($LASTEXITCODE) { throw "Artifact verification failed." }
           if (git status --porcelain --untracked-files=no) { throw "Build changed tracked files." }
           $manifest = Get-Content dist/build-manifest.json -Raw | ConvertFrom-Json
@@ -167,6 +176,11 @@ jobs:
             "Artifact: $($manifest.artifact)"
             "SHA256: $($manifest.sha256)"
             "Size: $($manifest.size_bytes) bytes"
+            "Bundled FFmpeg: $($manifest.ffmpeg.provider) $($manifest.ffmpeg.version) ($($manifest.ffmpeg.license))"
+            "Bundled FFprobe: $($manifest.ffmpeg.ffprobe_version)"
+            "Bundled FFmpeg DLLs: $($manifest.ffmpeg.dlls.PSObject.Properties.Count)"
+            "FFmpeg archive SHA256: $($manifest.ffmpeg.archive_sha256)"
+            "FFmpeg third-party notices: FFmpeg-THIRD-PARTY.txt"
             "uv dependency cache hit: ${{ steps.uv.outputs.cache-hit }}"
             "Python cache hit: ${{ steps.uv.outputs.python-cache-hit }}"
             "Owner Windows smoke: pending. Build success is not runtime acceptance."
@@ -180,6 +194,7 @@ jobs:
             dist/${{ steps.verify.outputs.artifact }}
             dist/SHA256SUMS.txt
             dist/build-manifest.json
+            dist/FFmpeg-THIRD-PARTY.txt
           if-no-files-found: error
           compression-level: 0
           retention-days: 1
@@ -190,7 +205,7 @@ jobs:
         run: |
           @(
             "## Build downloads"
-            "Download the verified EXE, SHA256SUMS.txt and build-manifest.json together from the run's Artifacts section."
+            "Download the verified EXE, SHA256SUMS.txt, build-manifest.json and FFmpeg-THIRD-PARTY.txt together from the run's Artifacts section."
             "Artifact: $env:ARTIFACT_NAME (24-hour retention)."
           ) | Add-Content $env:GITHUB_STEP_SUMMARY -Encoding utf8
 
@@ -224,6 +239,7 @@ jobs:
           SOURCE_COMMIT: ${{ needs.build.outputs.commit }}
           EXPECTED_ARTIFACT: ${{ needs.build.outputs.artifact }}
           EXPECTED_VERSION: ${{ needs.build.outputs.version }}
+          FFMPEG_PROVIDER: ${{ inputs.ffmpeg_provider }}
         run: |
           $m = Get-Content release-artifact/build-manifest.json -Raw | ConvertFrom-Json
           if ($m.source_pr) { throw "PR artifacts must never be attached to a release." }
@@ -235,8 +251,18 @@ jobs:
           if ($hash -ne $m.sha256 -or (Get-Item $exe).Length -ne $m.size_bytes) {
             throw "Artifact checksum/size mismatch."
           }
-          $sums = (Get-Content release-artifact/SHA256SUMS.txt -Raw).Trim()
-          if ($sums -ne "$hash  $env:EXPECTED_ARTIFACT") { throw "Checksum file mismatch." }
+          $noticeFile = 'release-artifact/FFmpeg-THIRD-PARTY.txt'
+          if (-not (Test-Path $noticeFile)) { throw "FFmpeg legal notices are missing." }
+          $noticeHash = (Get-FileHash $noticeFile -Algorithm SHA256).Hash.ToLowerInvariant()
+          $expectedFfmpegVersion = if ($env:FFMPEG_PROVIDER -in @('imageio', 'imageio-mini')) { '4.2.2' } else { '8.1.2' }
+          $expectedProbeVersion = if ($env:FFMPEG_PROVIDER -eq 'imageio-mini') { '7.1' } else { '8.1.2' }
+          if ($m.ffmpeg.version -ne $expectedFfmpegVersion -or $m.ffmpeg.ffprobe_version -ne $expectedProbeVersion -or
+              $m.ffmpeg.provider -ne $env:FFMPEG_PROVIDER -or
+              $m.ffmpeg.notices_file -ne 'FFmpeg-THIRD-PARTY.txt' -or
+              $noticeHash -ne $m.ffmpeg.notices_sha256) { throw "FFmpeg notice/provenance mismatch." }
+          $sums = @(Get-Content release-artifact/SHA256SUMS.txt)
+          if ($sums.Count -ne 2 -or $sums[0] -ne "$hash  $env:EXPECTED_ARTIFACT" -or
+              $sums[1] -ne "$noticeHash  FFmpeg-THIRD-PARTY.txt") { throw "Checksum file mismatch." }
           # Recheck the remote tag and release immediately before any writes.
           $ref = gh api "repos/$env:GITHUB_REPOSITORY/git/ref/tags/$env:RELEASE_TAG" | ConvertFrom-Json
           if ($LASTEXITCODE) { throw "Cannot inspect remote tag." }
@@ -258,7 +284,7 @@ jobs:
               }
             }
           )
-          $files = @($exe, 'release-artifact/SHA256SUMS.txt', 'release-artifact/build-manifest.json')
+          $files = @($exe, 'release-artifact/SHA256SUMS.txt', 'release-artifact/build-manifest.json', $noticeFile)
           if ($existing.Count -gt 1) { throw "Unexpected duplicate release." }
           if ($existing.Count -eq 1) {
             if (-not $existing[0].draft) { throw "Refusing to modify a published release." }
@@ -277,7 +303,7 @@ jobs:
               if ($target -match '^[a-zA-Z][a-zA-Z0-9+.-]*:' -or $target.StartsWith('#')) { return $match.Value }
               return "[$($match.Groups[1].Value)]($([Uri]::new($base, $target).AbsoluteUri))"
             })
-            $notes += "`n`n## CI build awaiting owner acceptance`nSource: $env:SOURCE_COMMIT (clean).`nArtifact: $env:EXPECTED_ARTIFACT`nSHA256: $hash`n`nDownload and smoke-test this exact executable before publishing. See build-manifest.json for toolchain and run provenance.`n"
+            $notes += "`n`n## CI build awaiting owner acceptance`nSource: $env:SOURCE_COMMIT (clean).`nArtifact: $env:EXPECTED_ARTIFACT`nSHA256: $hash`n`nDownload and smoke-test this exact executable before publishing. See build-manifest.json for toolchain and run provenance, and FFmpeg-THIRD-PARTY.txt for license/source obligations.`n"
             New-Item -ItemType Directory -Path tmp -Force | Out-Null
             Set-Content tmp/draft-release-notes.md $notes -NoNewline -Encoding utf8
             gh release create $env:RELEASE_TAG @files --verify-tag --draft --title "DTFlow $($m.version)" --notes-file tmp/draft-release-notes.md
@@ -286,7 +312,7 @@ jobs:
           $uploaded = gh release view $env:RELEASE_TAG --json isDraft,assets,url | ConvertFrom-Json
           if ($LASTEXITCODE -or -not $uploaded.isDraft) { throw "Release must remain a draft." }
           New-Item -ItemType Directory -Path tmp/download-check -Force | Out-Null
-          gh release download $env:RELEASE_TAG --pattern $env:EXPECTED_ARTIFACT --pattern SHA256SUMS.txt --pattern build-manifest.json --dir tmp/download-check
+          gh release download $env:RELEASE_TAG --pattern $env:EXPECTED_ARTIFACT --pattern SHA256SUMS.txt --pattern build-manifest.json --pattern FFmpeg-THIRD-PARTY.txt --dir tmp/download-check
           if ($LASTEXITCODE) { throw "Uploaded assets are not downloadable." }
           foreach ($file in $files) {
             $downloaded = Join-Path tmp/download-check ([IO.Path]::GetFileName($file))
@@ -294,6 +320,6 @@ jobs:
               throw "Uploaded/downloaded asset mismatch."
             }
           }
-          @("Draft prepared: $($uploaded.url)", "All three downloaded assets verified.",
+          @("Draft prepared: $($uploaded.url)", "All four downloaded assets verified.",
             "Owner smoke and explicit publication remain pending. No release was published.") |
             Add-Content $env:GITHUB_STEP_SUMMARY -Encoding utf8

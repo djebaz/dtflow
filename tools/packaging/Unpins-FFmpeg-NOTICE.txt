@@ -1,0 +1,43 @@
+Unpins FFmpeg redistribution notice (DTFlow experimental Windows build)
+=========================================================================
+
+This optional DTFlow build packages an upstream native Windows x64 FFmpeg
+8.1.2 executable published by unpins (release v8.1.2-1).
+
+Upstream distribution:
+  https://github.com/unpins/ffmpeg/releases/tag/v8.1.2-1
+  https://github.com/unpins/ffmpeg/releases/download/v8.1.2-1/ffmpeg-8.1.2-1-x86_64-windows.exe.zst
+  SHA-256 (.zst asset):
+    abb78672e21721e7eadd84450616bd954f6b067d9355a27ef5d2b80f65a6f842
+
+Upstream reproducible build recipe and pinned dependencies:
+  https://github.com/unpins/ffmpeg/tree/v8.1.2-1
+  https://github.com/unpins/ffmpeg/blob/v8.1.2-1/flake.nix
+  https://github.com/unpins/ffmpeg/blob/v8.1.2-1/flake.lock
+  https://github.com/unpins/nix-lib
+
+License: GPL-3.0-or-later, as declared by the upstream flake. The upstream
+binary enables libx264 and GPLv3. The GPLv3 license text is included in
+DTFlow's licenses/FFmpeg directory.
+
+The publisher builds one multicall Windows executable: it selects its
+ffmpeg or ffprobe command from the invoked filename (argv[0]). DTFlow
+bundles two byte-identical copies under the standard ffmpeg.exe and
+ffprobe.exe names. This requires no runtime launcher and does NOT
+modify upstream executable contents. It duplicates binary bytes inside
+the PyInstaller package; size savings are not assumed.
+
+This unpins release deliberately excludes GPU hardware acceleration
+(NVENC, VDPAU, VAAPI, VideoToolbox, Vulkan); libx264 CPU SIMD support
+is preserved. Use of this build changes NO DTFlow backend, codec
+selection or account/credit behavior.
+
+IMPORTANT FOR DISTRIBUTORS:
+This release does not provide a separately identified, complete
+corresponding-source archive verified by DTFlow. Links to upstream
+source and Nix build scripts are provenance, not a guarantee of
+complete GPL corresponding-source compliance. Before publishing a
+DTFlow executable with this build, verify and provide the full exact
+corresponding source, including included dependencies and required
+license notices, through a GPL-compliant distribution method.
+DTFlow is GPL-3.0-only. This file is not a legal certification.
