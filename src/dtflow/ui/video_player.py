@@ -104,6 +104,7 @@ class VideoPlayer(QObject):
         restart = bar.findChild(QPushButton, "videoPlaybackRestart")
         close = bar.findChild(QPushButton, "videoPlaybackClose")
         slider.setRange(0, SLIDER_SCALE)
+        slider.setEnabled(False)
         slider.setToolTip("Seek video. W/X: 1 second, Numpad 4/6: 10 seconds.")
         for button, name in (
             (toggle, "video-pause.svg"),
@@ -131,6 +132,7 @@ class VideoPlayer(QObject):
         def duration_changed(value: int) -> None:
             if self._player is player:
                 self._duration = max(0, value)
+                slider.setEnabled(self._duration > 0)
                 update_time(player.position())
 
         def state_changed(_value=None) -> None:

@@ -4542,6 +4542,8 @@ class GalleryPage(QObject):
                 or generation != self._detail_generation
                 or self.runner.closed
                 or not self._active
+                or self.mode != "Detail"
+                or self._recycle_busy
             ):
                 return
             if error is not None or not result:
