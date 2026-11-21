@@ -195,17 +195,40 @@ def run_tool(command: list[str], timeout: float = 60) -> subprocess.CompletedPro
 # -- arguments and small helpers -------------------------------------------------------------------------------------
 
 
-def parse_size(text: str) -> tuple[int, int]:
-    """``WIDTHxHEIGHT`` (width first) as typed; the values are adapted later by ``snap_side``."""
-    match = re.fullmatch(r"(\d+)[xX](\d+)", text.strip())
-    if not match or not int(match[1]) or not int(match[2]):
-        raise argparse.ArgumentTypeError(f"-sz must look like WIDTHxHEIGHT, for example 320x640 (got {text!r})")
-    return int(match[1]), int(match[2])
+def parse_size(text: str) -> tuple[int | None, int | None]:
+    """Parse WIDTHxHEIGHT, auto, WIDTHxauto or autoxHEIGHT (width first)."""
+    value = text.strip().lower()
+    if value == "auto":
+        return None, None
+    match = re.fullmatch(r"(auto|\d+)x(auto|\d+)", value)
+    if not match:
+        raise argparse.ArgumentTypeError(f"-sz expects WIDTHxHEIGHT, auto, WIDTHxauto or autoxHEIGHT (got {text!r})")
+    sides = tuple(None if side == "auto" else int(side) for side in match.groups())
+    if 0 in sides:
+        raise argparse.ArgumentTypeError("-sz dimensions must be positive.")
+    return sides
 
 
 def snap_side(value: int) -> int:
     """Nearest multiple of 64 (ties go up), kept inside 128..2048."""
     return min(2048, max(128, (value + 32) // 64 * 64))
+
+
+def match_image_ratio(image_size: tuple[int, int], budget_size: tuple[int, int]) -> tuple[int, int]:
+    """Approximate the first reference image ratio without materially changing the default pixel budget."""
+    aspect = image_size[0] / image_size[1]
+    pixels = budget_size[0] * budget_size[1]
+    width = math.sqrt(pixels * aspect)
+    height = math.sqrt(pixels / aspect)
+    widths = {snap_side(round(width) + offset) for offset in (-64, 0, 64)}
+    heights = {snap_side(round(height) + offset) for offset in (-64, 0, 64)}
+    return min(
+        ((w, h) for w in widths for h in heights),
+        key=lambda size: (
+            abs(math.log((size[0] / size[1]) / aspect))
+            + 0.35 * abs(math.log((size[0] * size[1]) / pixels))
+        ),
+    )
 
 
 def parse_config_field(text: str) -> tuple[str, bool | int | float | str]:
@@ -240,8 +263,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         dest="size",
         type=parse_size,
         default=None,
-        help="WIDTHxHEIGHT, e.g. 320x640; adapted to the nearest multiple of 64 in 128..2048 "
-        "(default: 320x320 for LTX, the model preset's native size for other families)",
+        help="WIDTHxHEIGHT, auto, WIDTHxauto, or autoxHEIGHT. Sides snap to 64px in 128..2048. "
+        "With -i and no -sz, use the image ratio at approximately the model's default pixel budget.",
     )
     parser.add_argument(
         "-f", dest="frames", type=int, default=None, help="frame count (default: the model preset's, else 121)"
@@ -302,8 +325,9 @@ def preset_for(model: str) -> dict | None:
 
 
 def resolve_defaults(args: argparse.Namespace, log: Log) -> None:
-    """Fill frames and size the user left out (and log where each value came from); steps, guidance and shift follow
-    from the model profile later."""
+    """Resolve the video frame count and an image-aware output size before any paid request."""
+    from PIL import Image, ImageOps
+
     preset = preset_for(args.model)
     if args.frames is None:
         native = preset.get("numFrames") if preset else None
@@ -316,28 +340,57 @@ def resolve_defaults(args: argparse.Namespace, log: Log) -> None:
         log.line(f"  frames {args.frames} ({source})", echo=True)
     else:
         log.line(f"  frames {args.frames} (argument)")
-    if args.size is None:
-        if args.model == PIKA_MODEL:
-            args.requested_size, source = (768, 512), "Pika Ref2VA smoke default"
-        elif args.model == MINIMAX_H3_MODEL:
-            args.requested_size, source = (256, 384), "MiniMax H3 Ref2VA iOS baseline"
-        elif family_of(args.model) == "ltx":
-            args.requested_size, source = (320, 320), "POC default for LTX (small first run)"
-        elif preset and preset.get("width") and preset.get("height"):
-            args.requested_size, source = (int(preset["width"]), int(preset["height"])), "model preset (native size)"
-        else:
-            args.requested_size, source = (320, 320), "POC fallback, no preset found"
+
+    if args.model == PIKA_MODEL:
+        baseline, baseline_source = (768, 512), "Pika Ref2VA smoke default"
+    elif args.model == MINIMAX_H3_MODEL:
+        baseline, baseline_source = (256, 384), "MiniMax H3 Ref2VA iOS baseline"
+    elif family_of(args.model) == "ltx":
+        baseline, baseline_source = (320, 320), "POC default for LTX (small first run)"
+    elif preset and preset.get("width") and preset.get("height"):
+        baseline, baseline_source = (int(preset["width"]), int(preset["height"])), "model preset (native size)"
     else:
-        source = "argument"
-    args.width, args.height = snap_side(args.requested_size[0]), snap_side(args.requested_size[1])
+        baseline, baseline_source = (320, 320), "POC fallback, no preset found"
+
+    image_size = None
+    if args.images:
+        with Image.open(args.images[0]) as image:
+            image_size = ImageOps.exif_transpose(image).size
+        if 0 in image_size:
+            raise ValueError(f"First reference image has invalid dimensions: {image_size!r}")
+        log.line(f"  first reference image size {image_size[0]}x{image_size[1]}", echo=True)
+
+    specified = args.size
+    if specified is None:
+        if image_size:
+            requested = match_image_ratio(image_size, baseline)
+            source = f"reference image aspect ratio, near {baseline[0]}x{baseline[1]} pixel budget"
+        else:
+            requested, source = baseline, baseline_source
+    elif specified == (None, None):
+        if not image_size:
+            raise ValueError("-sz auto needs at least one -i reference image.")
+        requested, source = image_size, "reference image native size (-sz auto)"
+    elif None in specified:
+        if not image_size:
+            raise ValueError("-sz WIDTHxauto or autoxHEIGHT needs at least one -i reference image.")
+        aspect = image_size[0] / image_size[1]
+        width, height = specified
+        requested = (width, round(width / aspect)) if width is not None else (round(height * aspect), height)
+        source = "explicit side, reference image aspect ratio"
+    else:
+        requested, source = specified, "explicit dimensions"
+
+    args.requested_size = requested
+    args.width, args.height = snap_side(requested[0]), snap_side(requested[1])
     args.size = (args.width, args.height)
-    log.line(f"  size {args.width}x{args.height} ({source})", echo=source != "argument")
-    if args.requested_size != args.size:
+    log.line(f"  size {args.width}x{args.height} ({source})", echo=True)
+    if requested != args.size:
         log.line(
-            f"  size adapted to multiples of 64: requested {args.requested_size[0]}x{args.requested_size[1]}, "
-            f"using {args.width}x{args.height}",
-            echo=True,
+            f"  size adapted to multiples of 64: requested {requested[0]}x{requested[1]}, "
+            f"using {args.width}x{args.height}", echo=True,
         )
+
 
 
 def family_of(model: str) -> str:
@@ -388,8 +441,9 @@ def load_images(paths: list[Path], width: int, height: int, log: Log):
     for path in paths:
         data = path.read_bytes()
         with Image.open(path) as image:
-            size = image.size
-            frames.append(np.asarray(ImageOps.fit(image.convert("RGB"), (width, height), Image.Resampling.LANCZOS)))
+            oriented = ImageOps.exif_transpose(image)
+            size = oriented.size
+            frames.append(np.asarray(ImageOps.fit(oriented.convert("RGB"), (width, height), Image.Resampling.LANCZOS)))
         log.line(f"  image {path}: {size[0]}x{size[1]} px, sha256 {hashlib.sha256(data).hexdigest()[:12]}")
     return np.stack(frames)
 
