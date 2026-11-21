@@ -5,6 +5,7 @@ Usage (from the repository root, PAID DT+ generation on every call):
     uv run python tools/video_poc/video_poc.py -p "..." -i start.png
     uv run python tools/video_poc/video_poc.py -p "..." -i a.png b.png c.png
     uv run python tools/video_poc/video_poc.py -p "..." -sz 1280x768
+    uv run python tools/video_poc/video_poc.py -p "..." -sz 1280x768 --hires-fix 2
 
 Exactly one generation per call. The request goes through ``build_generation_message`` (text-to-video config plus
 ``num_frames``); the response is read by this script's own receiver (no single-output rule, no PNG check, no size cap,
@@ -492,6 +493,7 @@ def resolve_hires_fix(args: argparse.Namespace, log: Log) -> None:
         fields.append((name, value))
 
     factor = args.hires_factor
+    factor_explicit = factor is not None
     if legacy:
         if factor is not None:
             raise ValueError("Use either --hires-fix FACTOR or --set hiresFix, not both.")
@@ -509,7 +511,7 @@ def resolve_hires_fix(args: argparse.Namespace, log: Log) -> None:
     if factor == 1.0:
         if dimensions:
             raise ValueError("--hires-fix-width/height requires --hires-fix with a factor greater than 1.")
-        if legacy or any(normalized(name) == "hiresfix" for name, _ in args.config_fields):
+        if factor_explicit or legacy:
             fields.append(("hires_fix", False))
         log.line("  Hires Fix: disabled (factor 1)", echo=True)
         args.config_fields = fields
