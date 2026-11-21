@@ -265,10 +265,12 @@ class ConfigOptionAction(argparse.Action):
 def add_drawthings_arguments(parser: argparse.ArgumentParser) -> None:
     """Register every serializable SDK configuration field not already owned by a dedicated CLI flag."""
     from drawthings_py.configs.gen_config import CONFIG_PROPS
+    from drawthings_py.configs.prop_schema import load_definitions
     from drawthings_py.generated.dt_grpc.config_generated import GenerationConfigurationT
 
     reserved = {"model", "width", "height", "num_frames", "steps", "guidance", "shift", "seed", "sampler"}
     native = GenerationConfigurationT()
+    descriptions = load_definitions()
     group = parser.add_argument_group("Draw Things configuration (advanced; effective support is model/provider-specific)")
     for field_name, prop in sorted(CONFIG_PROPS.items()):
         if field_name in reserved or not hasattr(native, prop.config_t_name):
@@ -277,11 +279,28 @@ def add_drawthings_arguments(parser: argparse.ArgumentParser) -> None:
         if prop.json_name not in options:
             options.append("--" + prop.json_name)
         is_bool = type(getattr(native, prop.config_t_name)) is bool
+        detail = descriptions.get(field_name, {}).get("description", "Draw Things setting")
+        if field_name == "fps":
+            detail += "; does not change the POC MP4 playback rate"
+        elif field_name in ("loras", "controls"):
+            detail += "; pass a JSON array of model objects (no automatic cloud asset upload)"
+        elif field_name in ("hires_fix_width", "hires_fix_height", "decoding_tile_width", "decoding_tile_height",
+                            "decoding_tile_overlap", "diffusion_tile_width", "diffusion_tile_height",
+                            "diffusion_tile_overlap"):
+            detail += "; pixel value must be a multiple of 64"
+        elif field_name == "compression_artifacts":
+            detail += "; values: Disabled, H264, H265, Jpeg (not the MP4 encoder)"
+        elif field_name == "seed_mode":
+            detail += "; values: Legacy, TorchCpuCompatible, ScaleAlike, NvidiaGpuCompatible"
+        elif field_name == "face_restoration":
+            detail += "; expects a model identifier, not a boolean"
+        if is_bool:
+            detail += "; omit VALUE for true or pass true/false"
         group.add_argument(
             *dict.fromkeys(options), dest="config_fields", action=ConfigOptionAction,
             field_name=field_name, default=argparse.SUPPRESS, metavar="VALUE",
             **({"nargs": "?", "const": "true"} if is_bool else {}),
-            help="Draw Things setting (JSON scalar or list); boolean flags default to true if value is omitted",
+            help=detail,
         )
 
 
@@ -1089,7 +1108,8 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
     )
     log.line(f"playback fps assumed from the Draw Things model table: {fps} (the response carries none)")
     log.line(
-        "hires fix and start-frame strength fields are not sent (defaults); the returned size will show what DT+ did"
+        "advanced settings use SDK defaults unless overridden; sent FlatBuffer values are recorded below "
+        "(model/DT+ support is not guaranteed)"
     )
     if (warning := frame_rule(args.model, args.frames)) is not None:
         log.warn(warning)
