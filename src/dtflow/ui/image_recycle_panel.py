@@ -405,7 +405,11 @@ class ImageRecyclePanel(QObject):
         if result.canceled:
             summary += "\nStopped after the current image; completed removals remain."
         state = (
-            "partial" if result.failed or result.uncertain or stranded or stranded_video else "stopped" if result.canceled else "success"
+            "partial"
+            if result.failed or result.uncertain or stranded or stranded_video
+            else "stopped"
+            if result.canceled
+            else "success"
         )
         activity_strip(self.parent_widget).complete("trash", f"{label} result", summary, state)
 

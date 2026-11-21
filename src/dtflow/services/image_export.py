@@ -429,7 +429,9 @@ def _export_video(item: GalleryItem, destination: Path, options: ExportOptions, 
         ):
             raise ValueError
     except (OSError, ValueError) as exc:
-        raise ValidationError("Original video MP4 is missing, changed or unavailable; the poster was not exported.") from exc
+        raise ValidationError(
+            "Original video MP4 is missing, changed or unavailable; the poster was not exported."
+        ) from exc
 
     if destination == clip.parent or destination.is_relative_to(clip.parent):
         raise ValidationError("Choose an export folder outside the original attempt folder.")
