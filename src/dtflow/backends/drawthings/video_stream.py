@@ -186,7 +186,7 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
             emit("preparing", stage="encoding_request")
             secret = await backend._secret()
             trace("credentials_resolved", elapsed_ms=round((time.monotonic() - started) * 1000))
-            wire = await settle(asyncio.to_thread(build_generation_message, request, secret, base_version, spec))
+            wire = await settle(video_encode.run_worker(build_generation_message, request, secret, base_version, spec))
             emit("preparing", stage="wire_validated")
             emit("preparing", stage="waiting_execution_lane")
             async with backend._lane:
@@ -252,12 +252,12 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
                                 continue
                             tensor = bytes(pending)
                             pending.clear()
-                            width, height, rgb = await settle(asyncio.to_thread(_frame_rgb, tensor))
+                            width, height, rgb = await settle(video_encode.run_worker(_frame_rgb, tensor))
                             if (width, height) != (request.width_px, request.height_px):
                                 raise _reject(request, "tensor_dimensions_mismatch", stage)
                             if poster is None:
-                                poster = await settle(asyncio.to_thread(encode_png, rgb, width, height, 3))
-                            await settle(asyncio.to_thread(sink.put, width, height, rgb))
+                                poster = await settle(video_encode.run_worker(encode_png, rgb, width, height, 3))
+                            await settle(video_encode.run_worker(sink.put, width, height, rgb))
                             frames += 1
                             received += len(tensor)
                             last_stage = "receiving_frames"
@@ -310,7 +310,7 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
             emit("progress", stage="encoding_video")
             encode_started = time.monotonic()
             trace("encode_started", received_frames=frames, playback_fps=playback_fps(request.model_id))
-            await settle(asyncio.to_thread(sink.finish))
+            await settle(video_encode.run_worker(sink.finish))
             trace(
                 "encode_finished",
                 duration_ms=round((time.monotonic() - encode_started) * 1000),
@@ -322,7 +322,7 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
                 raw = work / "audio.f32"
                 mux_started = time.monotonic()
                 try:
-                    audio_samples = await settle(asyncio.to_thread(_audio_raw, bytes(audio), raw))
+                    audio_samples = await settle(video_encode.run_worker(_audio_raw, bytes(audio), raw))
                     seconds = frames / playback_fps(request.model_id)
                     inferred_audio_rate = round(audio_samples / seconds)
                     selected_audio_rate = (
@@ -337,7 +337,7 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
                     )
                     muxed = work / "muxed.mp4.partial"
                     await settle(
-                        asyncio.to_thread(video_encode.mux_audio, ffmpeg, video, raw, selected_audio_rate, muxed)
+                        video_encode.run_worker(video_encode.mux_audio, ffmpeg, video, raw, selected_audio_rate, muxed)
                     )
                     video = muxed
                     trace(
@@ -345,6 +345,8 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
                         duration_ms=round((time.monotonic() - mux_started) * 1000),
                         exit_code=0,
                     )
+                except video_encode.VideoSizeLimitError:
+                    raise
                 except Exception as exc:  # Retain a usable clip with an explicit silent-audio warning.
                     warnings.append("The sound could not be added; the clip has no audio.")
                     evidence = (
@@ -366,7 +368,9 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
             video.replace(final)
             probe_started = time.monotonic()
             trace("probe_started")
-            facts = await settle(asyncio.to_thread(video_encode.probe, ffprobe, final))
+            facts = await settle(video_encode.run_worker(video_encode.probe, ffprobe, final))
+            if facts.size_bytes >= MP4_LIMIT:
+                raise video_encode.VideoSizeLimitError("Video reached its local MP4 size limit.")
             trace(
                 "probe_finished",
                 duration_ms=round((time.monotonic() - probe_started) * 1000),
@@ -381,8 +385,7 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
             )
             expected_duration = request.num_frames / playback_fps(request.model_id)
             mismatch = (
-                facts.size_bytes > MP4_LIMIT
-                or facts.frames != frames
+                facts.frames != frames
                 or facts.frames != request.num_frames
                 or (facts.width, facts.height) != (request.width_px, request.height_px)
                 or abs(facts.fps - playback_fps(request.model_id)) > 0.1
@@ -463,6 +466,15 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
             elapsed_ms=round((time.monotonic() - started) * 1000),
         )
         raise
+    except video_encode.VideoSizeLimitError:
+        trace("failed", level=logging.WARNING, code="video_size_limit", submission_stage=stage.value)
+        raise _reject(
+            request,
+            "video_size_limit",
+            stage,
+            category=ErrorCategory.RESOURCE_LIMIT,
+            message="Video reached the local MP4 size limit and was not saved. Provider work may already have been charged.",
+        ) from None
     except Exception as exc:
         evidence = (
             api_error_data(
@@ -515,15 +527,18 @@ def _now() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _reject(request: ResolvedGenerationRequest, code: str, stage) -> BackendError:
+def _reject(
+    request: ResolvedGenerationRequest, code: str, stage, *, category=ErrorCategory.PROTOCOL,
+    message="Received video output was rejected.",
+) -> BackendError:
     from dtflow.backends.drawthings.errors import api_failure, diagnostics
     from dtflow.core.models import RemoteOutcome
 
     return BackendError(
         api_failure(
-            ErrorCategory.PROTOCOL,
+            category,
             code,
-            "Received video output was rejected.",
+            message,
             request.request_id,
             stage,
             RemoteOutcome.UNKNOWN,

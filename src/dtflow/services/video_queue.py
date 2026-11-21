@@ -15,7 +15,7 @@ def validate_video(request: ResolvedGenerationRequest, backend: str) -> None:
             raise ValidationError("Capture video Duration from Generate before creating a video queue.")
         return
     if backend != "cloud":
-        raise ValidationError("Video queues require DT+ Cloud; no provider was changed.")
+        raise ValidationError("Video requires DT+ Cloud; no provider was changed.")
     if request.prepared_assets or request.image_inputs is not None:
         raise ValidationError("Video requests cannot carry LoRA receipts or image-edit/pose snapshots.")
     request_from_record(asdict(request))

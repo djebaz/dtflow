@@ -898,7 +898,17 @@ class QueuePage:
                         if (queue_id, item["item_id"]) in self._video_progress
                     ]
                     if phases:
-                        wide += " · " + "; ".join(phases)
+                        phase_names = {
+                            "preparing": "preparing", "waiting": "waiting", "sampling": "sampling",
+                            "second_pass": "second pass", "receiving": "receiving", "encoding": "finalizing", "saving": "saving",
+                        }
+                        counts = {}
+                        for item in running_items:
+                            video = self._video_progress.get((queue_id, item["item_id"]))
+                            if video is not None:
+                                label = phase_names.get(video.phase, "preparing")
+                                counts[label] = counts.get(label, 0) + 1
+                        wide += " · " + " · ".join(f"{count} {label}" for label, count in counts.items())
                         detail += " " + "; ".join(phases)
             if view.get("kind") == "script":
                 # A script is one item whose step count is known only as it runs: show steps, never "0/1 items".

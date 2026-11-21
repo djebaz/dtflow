@@ -8,6 +8,10 @@ source development resolves them from ``PATH``. No console window opens on Windo
 from __future__ import annotations
 
 import json
+import asyncio
+import contextvars
+from functools import partial
+from concurrent.futures import ThreadPoolExecutor
 import os
 import queue
 import shutil
@@ -19,9 +23,20 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from dtflow.services.video_resources import MP4_LIMIT
+from dtflow.core.models import MAX_QUEUE_CONCURRENCY
+
+_VIDEO_WORKERS = ThreadPoolExecutor(max_workers=MAX_QUEUE_CONCURRENCY, thread_name_prefix="dtflow-video")
 
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
 STALL_SECONDS = 90  # a frame writer that makes no progress for this long fails the run
+
+
+async def run_worker(function, *args, **kwargs):
+    """Bound video conversion/encoding work separately from the runner's DB/control executor."""
+    context = contextvars.copy_context()
+    return await asyncio.get_running_loop().run_in_executor(
+        _VIDEO_WORKERS, context.run, partial(function, *args, **kwargs)
+    )
 
 
 def find_tools() -> tuple[str, str] | None:
@@ -93,6 +108,17 @@ class EncodeError(RuntimeError):
     """ffmpeg or ffprobe failed; the message carries the tail of its own output."""
 
 
+class VideoSizeLimitError(EncodeError):
+    """The encoder/mux safety stop was reached; never present its truncated output as a finished clip."""
+
+
+def _size_limit_reached(path: Path) -> bool:
+    try:
+        return path.stat().st_size >= MP4_LIMIT
+    except FileNotFoundError:
+        return False
+
+
 class FrameSink:
     """Frames leave memory at once: a writer thread feeds ffmpeg's stdin through a small queue.
 
@@ -161,10 +187,14 @@ class FrameSink:
         elif (width, height) != self.size:
             raise EncodeError(f"A frame is {width}x{height}, the first was {self.size}.")
         if self._failed:
+            if _size_limit_reached(self.partial):
+                raise VideoSizeLimitError("Video reached its local MP4 size limit.")
             raise EncodeError("The frame writer failed: " + self._failed)
         try:
             self.queue.put(rgb, timeout=STALL_SECONDS)
         except queue.Full:
+            if _size_limit_reached(self.partial):
+                raise VideoSizeLimitError("Video reached its local MP4 size limit.") from None
             raise EncodeError(f"The frame writer made no progress for {STALL_SECONDS} s.") from None
 
     def finish(self, *, abort: bool = False) -> None:
@@ -213,10 +243,13 @@ class FrameSink:
             if self._drain is not None:
                 self._drain.join(timeout=5)
         error = error or self._failed
-        if abort or error or returncode != 0:
+        size_limited = not requested_abort and _size_limit_reached(self.partial)
+        if abort or error or returncode != 0 or size_limited:
             self.partial.unlink(missing_ok=True)
             if requested_abort:
                 return
+            if size_limited:
+                raise VideoSizeLimitError("Video reached its local MP4 size limit.")
             raise EncodeError(error or f"ffmpeg exit {returncode}: {tail(chr(10).join(self._stderr))}")
 
 
@@ -228,8 +261,11 @@ def mux_audio(ffmpeg: str, video: Path, audio_raw: Path, rate: int, target: Path
         "-movflags", "+faststart", "-threads", "2", "-fs", str(MP4_LIMIT), "-f", "mp4", str(target),
     ]  # fmt: skip
     result = run_tool(command, timeout=300)
-    if result.returncode != 0:
+    size_limited = _size_limit_reached(target)
+    if result.returncode != 0 or size_limited:
         target.unlink(missing_ok=True)
+        if size_limited:
+            raise VideoSizeLimitError("Video with audio reached its local MP4 size limit.")
         raise EncodeError(f"Audio mux failed (exit {result.returncode}): {tail(result.stderr)}")
 
 

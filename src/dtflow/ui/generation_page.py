@@ -1162,7 +1162,7 @@ class GenerationPage:
             if self._activity.dispatching:
                 self._status(
                     Presentation(
-                        "warning", "A queue is running", "A video cannot wait behind a queue. Try again later."
+                        "warning", "A queue is running", "Generate runs one video directly. Use Queue to add this video behind the running queue."
                     )
                 )
                 return False
@@ -1251,7 +1251,7 @@ class GenerationPage:
             if retried.num_frames is not None:
                 self._status(
                     Presentation(
-                        "warning", "Retry not started", "A video cannot be queued. Retry after the queue stops."
+                        "warning", "Retry not started", "Generate's Retry waits until the queue stops. Use Queue for a separate queued video."
                     )
                 )
                 return False
