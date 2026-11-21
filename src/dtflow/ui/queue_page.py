@@ -855,10 +855,13 @@ class QueuePage:
         if phase == "running":
             # The ring counts settled items, which is meaningful however many items run at once.
             completed, total = summary.settled, summary.total
+            # Observed clips of this queue, even when it is not the one shown on screen (then no item list is read);
+            # when the list is read, only items it still shows as running count.
+            running_ids = {item["item_id"] for item in running_items} if shown is not None else None
             video_fractions = [
-                self._video_progress[(queue_id, item["item_id"])].fraction()
-                for item in running_items
-                if (queue_id, item["item_id"]) in self._video_progress
+                video.fraction()
+                for (owner, item_id), video in self._video_progress.items()
+                if owner == queue_id and (running_ids is None or item_id in running_ids)
             ]
             if video_fractions:
                 # Running clips add their estimated share (hundredths) to the settled items; the count stays settled/total.
@@ -979,7 +982,7 @@ class QueuePage:
             remaining = self._countdown.remaining(view, monotonic())
             elapsed, eta = elapsed_text(view), eta_text(view, remaining=remaining)
             stage_timed = len(running_items) == 1 and (queue_id, running_items[0]["item_id"]) in self._run_stage_started
-            video_live = any((queue_id, item["item_id"]) in self._video_progress for item in running_items)
+            video_live = any(owner == queue_id for owner, _ in self._video_progress)
             if elapsed or eta or stage_timed or video_live:
                 if not self._timing_timer.isActive() and not self._runner.closed:
                     self._timing_timer.start()
