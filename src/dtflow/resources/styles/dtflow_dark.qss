@@ -665,6 +665,26 @@ QToolButton#checkpointDetailsButton:disabled {
   background: transparent;
   border-color: transparent;
 }
+/* Video source thumbnail: prominent, reachable destructive clear action, without a separate button row. */
+QToolButton#videoClearStartButton {
+  background: ${color.dangerSurface};
+  border: 1px solid ${color.dangerBorder};
+  border-radius: ${size.radiusSm};
+  color: ${color.dangerText};
+  font-size: 17px;
+  font-weight: ${type.weightStrong};
+  padding: 0;
+}
+QToolButton#videoClearStartButton:hover {
+  background: ${color.dangerBorder};
+  color: ${color.onAccent};
+}
+QToolButton#videoClearStartButton:focus {
+  border-color: ${color.focus};
+}
+QToolButton#videoClearStartButton:pressed {
+  background: ${color.dangerSurface};
+}
 /* Compute Units meter: slim, muted fill (0 to 40000). Blue below the limit, red at or above it. */
 QProgressBar#computeUnitsMeter {
   background-color: ${color.input};
