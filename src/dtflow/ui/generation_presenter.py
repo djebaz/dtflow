@@ -191,6 +191,14 @@ def describe_request(request: ResolvedGenerationRequest, backend: str, endpoint:
     lines = [f"backend: {backend}" + (f" ({shown})" if shown else ""), f"model: {request.model_id}"]
     lines += [f"seed: {request.seed}", f"size: {request.width_px}x{request.height_px}", f"steps: {request.steps}"]
     lines += [f"guidance: {request.guidance}", f"sampler: {request.sampler_id.value}"]
+    if request.num_frames is not None:
+        from dtflow.core.video import duration_seconds, duration_text, playback_fps
+
+        seconds = duration_seconds(request.model_id, request.num_frames)
+        lines.append(
+            f"video: {request.num_frames} frames, {duration_text(seconds)} at {playback_fps(request.model_id)} fps"
+            + (", one start image" if request.start_image else ", text to video")
+        )
     receipts = {item.identifier: item.receipt_id[:8] for item in request.prepared_assets}
     lines += [
         f"lora: {item.identifier}"

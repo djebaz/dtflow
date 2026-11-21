@@ -35,6 +35,7 @@ from dtflow.core.models import (
     CredentialProvider,
     Designation,
     InventorySnapshot,
+    TimeoutPolicy,
     ValidationError,
     eligible_model_ids,
 )
@@ -84,7 +85,10 @@ from dtflow.ui.generation_presenter import (
     snap_dimension,
     values_from_request,
 )
-from dtflow.ui.inline_feedback import InlineNotice, edit_text
+from dtflow.ui.inline_feedback import InlineNotice, confirm_action, edit_text
+from dtflow.ui.video_panel import IMAGE_ONLY_REASON, VideoPanel
+from dtflow.core.video import VIDEO_TOTAL_TIMEOUT
+from dtflow.services.video_artifacts import video_path_for
 from dtflow.ui.controlnet_editor import ControlnetEditor, PoseJob
 from dtflow.ui.inpaint_editor import EditJob, InpaintEditor
 from dtflow.ui.lora_panel import LoraAssetPanel
@@ -323,6 +327,7 @@ class GenerationPage:
         self._submitted_endpoint: str | None = None  # the running request's snapshot, not the form's current value
         self._run_edit = False
         self._run_pose = False
+        self._run_video = False
         # The last submission exactly as sent (request, backend, endpoint, receipts, prefix, simulation, edit), for
         # Retry: it resends the recorded request with the same seed, never the form's current values (#240).
         self._last_submission: tuple | None = None
@@ -449,6 +454,10 @@ class GenerationPage:
         self.controlnet = ControlnetEditor(page, runner)
         self.controlnet.attach(self)
         startup.mark("generate: controlnet editor")
+        self.video = VideoPanel(page, self._state)
+        page.modelCombo.currentTextChanged.connect(self._video_model_changed)
+        self._video_model_changed(page.modelCombo.currentText())
+        startup.mark("generate: video panel")
         page.textToImageModeButton.toggled.connect(self._sync_activity)
         page.inpaintModeButton.toggled.connect(self._sync_activity)
         self._update_compute_units()
@@ -915,6 +924,14 @@ class GenerationPage:
         # The Queue dropdown stays open during a generation: its Add to queue waits behind it (#135).
         self.page.queueGenerateButton.setEnabled(not self._busy and not no_model)
         self.page.queueGenerateButton.setToolTip(NO_MODEL_REASON if no_model else "")
+        video = getattr(self, "video", None)
+        if video is not None and video.active:
+            reason = video.blocker()
+            button.setEnabled(not blocked and not no_model and not reason)
+            button.setToolTip(reason)
+            self.page.queueGenerateButton.setEnabled(False)
+            self.page.queueGenerateButton.setToolTip(IMAGE_ONLY_REASON)
+            return
         if hasattr(self, "inpaint"):
             self.inpaint.set_busy(blocked)  # Inpaint keeps its editor open and only gates Edit image
         if hasattr(self, "controlnet"):
@@ -927,6 +944,10 @@ class GenerationPage:
             button.setToolTip(DISPATCH_REASON)
         elif button.toolTip() in (DISPATCH_REASON, NO_MODEL_REASON):
             button.setToolTip("")
+
+    def _video_model_changed(self, text: str) -> None:
+        self.video.model_changed(text)
+        self._sync_generate()
 
     def _unlisten_activity(self) -> None:
         """Detach before Qt destroys the page and its generation controls."""
@@ -992,6 +1013,8 @@ class GenerationPage:
         A random seed (form seed 0) is drawn once and kept until a queue is created (``queue_created``) or a seed is
         chosen, so repeated previews and the creation use the seeds the dry-run table shows, even after a rejection.
         """
+        if self.video.active:
+            raise FormError("A video cannot be queued yet; Generate runs it directly.", None)
         if self.inpaint.active and self.inpaint.queue_job() is None:
             raise FormError("Choose a source image and paint or select the area to change first.", None)
         if self.controlnet.active and self.controlnet.job() is None:
@@ -1079,7 +1102,25 @@ class GenerationPage:
                     Presentation("warning", "Controlnet is not ready", self.controlnet.blocker() or "Nothing to send.")
                 )
                 return False
-        images = self.page.imagesSpinBox.value()
+        if self.video.active:
+            if self._activity.dispatching:
+                self._status(
+                    Presentation(
+                        "warning", "A queue is running", "A video cannot wait behind a queue. Try again later."
+                    )
+                )
+                return False
+            if self.video.notice_needed():
+                confirm_action(
+                    self.page,
+                    self.page.generateButton,
+                    "Video takes minutes",
+                    self.video.notice_text(),
+                    self._notice_confirmed,
+                    confirm_text="Generate video",
+                )
+                return False
+        images = 1 if self.video.active else self.page.imagesSpinBox.value()
         if (edit is None or isinstance(edit, PoseJob)) and images > 1 and self.queue_images is not None:
             # One total: every picture is its own single-image queue item (Repeat expansion), so it has a row,
             # thumbnail, seed, status and Retry in Queues. The queue's creation validates the form.
@@ -1095,7 +1136,10 @@ class GenerationPage:
             request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
             request = self._with_reuse_lineage(self._allow_local_bridge_model(request))
             request = self._with_relink_evidence(request)
-        except FormError as exc:
+            if self.video.active:
+                request = self.video.apply(request)
+        except (FormError, ValidationError) as exc:
+            exc = exc if isinstance(exc, FormError) else FormError(str(exc), None)
             self._mark(exc.widget)
             diagnostic_event(
                 log,
@@ -1131,6 +1175,10 @@ class GenerationPage:
             note,
         )
         return True
+
+    def _notice_confirmed(self) -> None:
+        self.video.notice_seen()
+        self.generate()
 
     def retry(self) -> bool:
         """Retry: resend the last request as recorded (same settings, same seed, same provider) under a new identity.
@@ -1168,6 +1216,7 @@ class GenerationPage:
         self._request = request
         self._run_edit = isinstance(edit, EditJob)
         self._run_pose = isinstance(edit, PoseJob)
+        self._run_video = request.num_frames is not None
         self._last_submission = (request, name, endpoint, tuple(asset_ids), prefix, simulation, edit)
         self._offer_retry(False)
         diagnostic_event(
@@ -1176,7 +1225,13 @@ class GenerationPage:
             level=logging.INFO,
             data={
                 "backend": name,
-                "operation": "inpaint" if self._run_edit else "pose" if self._run_pose else "txt2img",
+                "operation": "inpaint"
+                if self._run_edit
+                else "pose"
+                if self._run_pose
+                else "video"
+                if self._run_video
+                else "txt2img",
             },
         )
         diagnostic_event(
@@ -1214,7 +1269,15 @@ class GenerationPage:
             ),
         )
         self._sync_generate()
-        run = self._generate_pose if self._run_pose else self._generate_edit if edit is not None else self._generate
+        run = (
+            self._generate_video
+            if self._run_video
+            else self._generate_pose
+            if self._run_pose
+            else self._generate_edit
+            if edit is not None
+            else self._generate
+        )
         extra = (edit,) if edit is not None else ()
         self._future = self._runner.submit(
             run(name, endpoint, request, self._saved(), asset_ids, prefix, simulation, *extra),
@@ -1250,6 +1313,20 @@ class GenerationPage:
         selection = await asyncio.to_thread(selection_for, name, endpoint, self._state, **simulation)
         return await generate_once(
             selection, self._state, request, prefix=prefix, saved=saved, on_event=self._relay, asset_ids=asset_ids
+        )
+
+    async def _generate_video(self, name, endpoint, request, saved, asset_ids, prefix, simulation):
+        """One video: the clip takes minutes, so the image deadline does not apply (it ran up to 243 s at small sizes)."""
+        selection = await asyncio.to_thread(selection_for, name, endpoint, self._state, **simulation)
+        return await generate_once(
+            selection,
+            self._state,
+            request,
+            prefix=prefix,
+            saved=saved,
+            on_event=self._relay,
+            asset_ids=asset_ids,
+            timeouts=TimeoutPolicy(total=VIDEO_TOTAL_TIMEOUT),
         )
 
     async def _generate_pose(self, name, endpoint, request, saved, asset_ids, prefix, simulation, job):
@@ -1323,7 +1400,20 @@ class GenerationPage:
         label = event.stage if event.kind == "progress" else {"preview": "first preview"}.get(event.kind, event.kind)
         if label:
             self._stage_seen.setdefault(label, time.monotonic() - self._stage_started)
-        if event.kind == "progress":
+        if event.kind == "progress" and self._run_video and event.stage in ("receiving_frames", "encoding_video"):
+            frames = event.stage == "receiving_frames"
+            self._activity.present_run(
+                RunState(
+                    owner="generation",
+                    phase="running",
+                    completed=event.completed if frames else None,
+                    total=event.total if frames else None,
+                    detail=f"Receiving frame {event.completed} of {event.total}"
+                    if frames
+                    else "Encoding the MP4 and checking the file",
+                )
+            )
+        elif event.kind == "progress":
             from dtflow.ui.progress_stages import event_stage
 
             self._present_progress(event_stage(event), event.completed, event.total)
@@ -1394,7 +1484,17 @@ class GenerationPage:
             + self._timing_text()
             + self._quality_text(outcome)
         )
-        for label, path in (*(("Output", p) for p in outcome.output_paths), ("Metadata", outcome.metadata_path)):
+        videos = (
+            (("Video", str(video_path_for(outcome.output_paths[0]))),)
+            if outcome.request is not None and outcome.request.num_frames is not None and outcome.output_paths
+            else ()
+        )
+        poster = "Poster" if videos else "Output"
+        for label, path in (
+            *videos,
+            *((poster, p) for p in outcome.output_paths),
+            ("Metadata", outcome.metadata_path),
+        ):
             item = QListWidgetItem(f"{label}: {path}")
             item.setData(RESULT_PATH_ROLE, str(path))
             self.page.resultList.addItem(item)
