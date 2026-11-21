@@ -1469,6 +1469,10 @@ class GenerationPage:
             },
         )
         presentation = present_outcome(outcome)
+        if self._run_video:
+            presentation = replace(
+                presentation, detail=presentation.detail.replace("1 image", "1 video clip and its poster")
+            )
         self._status(presentation)
         activity_strip(self.page).complete(
             "generation-result",

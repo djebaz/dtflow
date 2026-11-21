@@ -128,3 +128,13 @@ def check_request_fields(model_id: str, frames: int, start_image: str | None) ->
         raise ValidationError(f"num_frames: {problem}")
     if start_image is not None and not accepts_start_image(model_id):
         raise ValidationError("This video model is not verified for a start image; use text-to-video.")
+
+
+def clip_summary(request: dict) -> tuple[str, str] | None:
+    """``(duration, details)`` for a recorded request dict that is a video, else None (images stay unchanged)."""
+    frames, model = request.get("num_frames"), request.get("model_id")
+    if type(frames) is not int or not isinstance(model, str):
+        return None
+    seconds = duration_seconds(model, frames)
+    sound = "with sound" if audio_rate(model) else "no sound"
+    return duration_text(seconds), f"{duration_text(seconds)} · {playback_fps(model)} fps · {frames} frames · {sound}"

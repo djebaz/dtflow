@@ -64,6 +64,8 @@ from dtflow import gallery_limits
 from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.gallery_selection import MAX_CHECKED_IMAGES, GallerySelection
 from dtflow.core.models import ValidationError
+from dtflow.core.video import clip_summary
+from dtflow.services.video_artifacts import video_path_for
 from dtflow.services.lora_naming import display_label
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.diagnostics import measurement
@@ -2972,6 +2974,18 @@ class GalleryPage(QObject):
         check.raise_()
         painter = CoverPainter(button, "", ("", ""))
         painter.mode = "Fit"
+        clip = clip_summary(self._request(item))
+        if clip is not None:
+            over = QVBoxLayout(button)
+            over.setContentsMargins(8, 8, 8, 8)
+            badge = QLabel(f"▶ Video · {clip[0]}", button)
+            badge.setObjectName("galleryVideoBadge")
+            badge.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+            badge.setStyleSheet(
+                "background: rgba(0, 0, 0, 170); color: white; border-radius: 4px; padding: 2px 6px; font-weight: 600;"
+            )
+            over.addWidget(badge, 0, Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignRight)
+            over.addStretch()
         layout.addWidget(button)
         caption = QLabel(f"{_filename(item.path)}  ·  {_human_size(item.file_size)}", card)
         caption.setProperty("role", "galleryCardCaption")
@@ -3385,7 +3399,10 @@ class GalleryPage(QObject):
         )
         self._presented_item = item
         request = self._request(item)
-        self._widget("galleryDimensionsOverlay", QLabel).setText(self._dimensions(item))
+        clip = clip_summary(request)
+        self._widget("galleryDimensionsOverlay", QLabel).setText(
+            self._dimensions(item) + (f"  ·  Video {clip[1]}" if clip else "")
+        )
         self._widget("galleryModelValue", QLabel).setText(item.model or "Not recorded")
         self._widget("galleryModelIdentifier", QLabel).hide()
         self._present_loras(item)
@@ -3400,8 +3417,12 @@ class GalleryPage(QObject):
         self._widget("galleryAdditionalSeedValue", QLabel).setText(self._value(request.get("seed")))
         operation = request.get("operation")
         self._widget("galleryAdditionalOperationValue", QLabel).setText(
-            {"txt2img": "Text to image", "img2img": "Image to image", "inpaint": "Inpaint"}.get(
-                operation, self._value(operation)
+            (
+                ("Image to video" if request.get("start_image") else "Text to video")
+                if clip
+                else {"txt2img": "Text to image", "img2img": "Image to image", "inpaint": "Inpaint"}.get(
+                    operation, self._value(operation)
+                )
             )
         )
         self._widget("galleryAdditionalStrengthValue", QLabel).setText(self._value(request.get("strength")))
@@ -3416,7 +3437,7 @@ class GalleryPage(QObject):
         # Use settings and Regenerate need only the recorded request, never the original file, so where it was
         # saved does not matter; Regenerate keeps its confirmation and dispatch-time readiness checks.
         recorded = bool(request.get("model_id"))
-        reusable = recorded and not edited and not self._snapshot_at
+        reusable = recorded and not edited and not self._snapshot_at and clip is None
         self.use_settings_button.setEnabled(reusable and self._reuse_callback is not None)
         posed = request.get("pose_control") is not None
         self.regenerate_button.setEnabled(reusable and not posed and self._regenerate_callback is not None)
@@ -3425,7 +3446,9 @@ class GalleryPage(QObject):
             (self.regenerate_button, self._REGENERATE_TIP),
         ):
             button.setToolTip(
-                "Not available for edited images: the source and mask are not restored here. Use Edit image instead."
+                "Not available for video yet."
+                if clip
+                else "Not available for edited images: the source and mask are not restored here. Use Edit image instead."
                 if edited
                 else "Regenerate is not available for a pose image. Use settings restores the pose into Controlnet mode."
                 if posed and button is self.regenerate_button
@@ -3434,7 +3457,11 @@ class GalleryPage(QObject):
                 else "Not available: this output has no recorded model."
             )
         self.edit_button.setEnabled(
-            not self._snapshot_at and not item.issue and bool(item.path) and self._edit_callback is not None
+            not self._snapshot_at
+            and not item.issue
+            and bool(item.path)
+            and self._edit_callback is not None
+            and clip is None
         )
         self.edit_button.setToolTip(
             "The editor will verify this Windows-recorded image under the shared original-file lock before "
@@ -3446,6 +3473,8 @@ class GalleryPage(QObject):
             for button in (self.edit_button, self.use_settings_button, self.regenerate_button):
                 button.setToolTip("Browsing a snapshot; wait for live state before using this action.")
         self.copy_button.setEnabled(bool(item.path))
+        self.copy_button.setText("Copy video path" if clip else "Copy path")
+        self.external_button.setText("Open video in player" if clip else "Open in external viewer")
         available = not item.issue
         self.folder_button.setEnabled(available)
         if image_changed:
@@ -4332,9 +4361,17 @@ class GalleryPage(QObject):
         if item is None:
             return
 
+        video = action in ("copy", "external") and clip_summary(self._request(item)) is not None
+
         def read():
             with original_images_lock(self.state_dir, timeout=12):
-                return resolve_item_read(item, self.state_dir)[0]
+                path = resolve_item_read(item, self.state_dir)[0]
+            if video:  # the clip is the poster's companion; a missing clip never falls back to the poster
+                clip = video_path_for(path)
+                if not clip.is_file():
+                    raise FileNotFoundError("the video file is missing; only its poster remains.")
+                return str(clip)
+            return path
 
         self.runner.submit(
             asyncio.to_thread(read),
