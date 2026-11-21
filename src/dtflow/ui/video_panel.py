@@ -1,4 +1,4 @@
-"""Video mode of the Generate page: frames, duration, one start image and the cost note.
+"""Video mode of the Generate page: duration, one start image and the cost note.
 
 Selecting a video checkpoint switches the page to video mode (``model_changed``): the model's own profile fills steps,
 guidance and sampler, frames and size get video defaults, image-only controls are disabled with the reason, and this
@@ -10,12 +10,14 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-from dataclasses import replace
+import io
+from dataclasses import dataclass, replace
 from pathlib import Path
 
-from PySide6.QtCore import QFile, QIODevice, QObject
+from PySide6.QtCore import QFile, QIODevice, QObject, Qt
+from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QLabel, QPushButton, QSpinBox
+from PySide6.QtWidgets import QDoubleSpinBox, QLabel, QPushButton
 
 from dtflow.core import video as rules
 from dtflow.core.models import ResolvedGenerationRequest
@@ -32,15 +34,57 @@ MAX_START_IMAGE_BYTES = 32 * 1024 * 1024
 FORM = Path(__file__).parent / "forms" / "video_panel.ui"
 
 
-def _read_start_image(path: Path) -> str:
-    """Read and hash a bounded file away from Qt; keep only its digest in the controller."""
+THUMB_BOX = (128, 96)  # twice the 64 x 48 label, so the preview stays sharp on a scaled display
+
+
+@dataclass(frozen=True, slots=True)
+class StartImageInfo:
+    """What the controller keeps of the start image: its digest, its own size and a small PNG preview."""
+
+    digest: str
+    width: int
+    height: int
+    thumbnail_png: bytes
+
+
+def _read_start_image(path: Path) -> StartImageInfo:
+    """Read, hash and decode a bounded file away from Qt; only the digest, size and a small preview are kept."""
+    from PIL import Image
+
     if path.stat().st_size > MAX_START_IMAGE_BYTES:
         raise ValueError("The start image is larger than 32 MiB.")
     with path.open("rb") as source:
         data = source.read(MAX_START_IMAGE_BYTES + 1)
     if not data or len(data) > MAX_START_IMAGE_BYTES:
         raise ValueError("The start image is empty or larger than 32 MiB.")
-    return hashlib.sha256(data).hexdigest()
+    # The request path (``video_wire.start_image_tensor``) decodes the same bytes without an EXIF turn, so the size
+    # and the preview shown here are the ones that will be submitted.
+    with Image.open(io.BytesIO(data)) as image:
+        width, height = image.size
+        image.draft("RGB", THUMB_BOX)
+        preview = image.convert("RGB")
+        preview.thumbnail(THUMB_BOX, Image.Resampling.LANCZOS)
+        out = io.BytesIO()
+        preview.save(out, format="PNG")
+    return StartImageInfo(hashlib.sha256(data).hexdigest(), width, height, out.getvalue())
+
+
+def _short_name(name: str, limit: int = 48) -> str:
+    """A long file name cut in the middle (the extension stays) so the Choose and Clear buttons keep their room."""
+    if len(name) <= limit:
+        return name
+    keep = limit - 1
+    return name[: keep // 2] + "…" + name[len(name) - (keep - keep // 2) :]
+
+
+def crop_note(source: tuple[int, int], target: tuple[int, int]) -> str:
+    """How the start image is cover-fitted to the clip size (``ImageOps.fit`` in ``video_wire``): the part that does
+    not fit the clip's shape is trimmed, nothing is stretched."""
+    (sw, sh), (tw, th) = source, target
+    size = f"{tw} × {th}"
+    if abs(sw * th - sh * tw) * 100 <= sh * tw:  # within 1 % of the same shape
+        return f"Fits {size} without cropping."
+    return f"Cover-fitted to {size}: the {'sides are' if sw * th > sh * tw else 'top and bottom are'} trimmed."
 
 
 LOCKED = ("inpaintModeButton", "controlnetModeButton", "scriptsModeButton", "imagesSpinBox", "queueGenerateButton")
@@ -54,6 +98,7 @@ class VideoPanel(QObject):
         self.model = ""
         self._start: Path | None = None
         self._sha = ""
+        self._start_info: StartImageInfo | None = None
         self._start_source: tuple | None = None
         self._choice_revision = 0
         self._loading = False
@@ -68,17 +113,19 @@ class VideoPanel(QObject):
             file.close()
         if self.frame is None:
             raise RuntimeError("Video controls form could not be loaded.")
-        self.frames = self.frame.findChild(QSpinBox, "videoFramesSpinBox")
-        self.duration = self.frame.findChild(QLabel, "videoDurationLabel")
+        self.seconds = self.frame.findChild(QDoubleSpinBox, "videoDurationSpinBox")
+        self.summary = self.frame.findChild(QLabel, "videoDurationLabel")
         self.choose = self.frame.findChild(QPushButton, "videoChooseStartButton")
         self.clear = self.frame.findChild(QPushButton, "videoClearStartButton")
+        self.thumb = self.frame.findChild(QLabel, "videoStartThumb")
         self.start_label = self.frame.findChild(QLabel, "videoStartLabel")
+        self.start_note = self.frame.findChild(QLabel, "videoStartNote")
         self.note = self.frame.findChild(QLabel, "videoCostNote")
         self.problem = self.frame.findChild(QLabel, "videoProblemLabel")
         self.note.setText(COST_NOTE)
-        self.frames.setRange(rules.MIN_FRAMES, rules.MAX_FRAMES)
-        self.frames.editingFinished.connect(self._snap_frames)
-        self.frames.valueChanged.connect(self._sync)
+        self.seconds.valueChanged.connect(self._sync)
+        page.widthSpinBox.valueChanged.connect(self._sync)
+        page.heightSpinBox.valueChanged.connect(self._sync)
         self.choose.clicked.connect(self._choose)
         self.clear.clicked.connect(self._clear)
         page.generationWorkspaceLayout.insertWidget(3, self.frame)
@@ -89,6 +136,11 @@ class VideoPanel(QObject):
     @property
     def active(self) -> bool:
         return rules.is_video_model(self.model)
+
+    @property
+    def frame_count(self) -> int:
+        """The frame count for the entered duration: the one value shown beside it and sent in the request."""
+        return rules.frames_for_duration(self.model, self.seconds.value())
 
     def model_changed(self, text: str) -> None:
         """Called when the checkpoint changes; fills the video defaults when the page enters video mode."""
@@ -115,8 +167,9 @@ class VideoPanel(QObject):
             index = page.samplerCombo.findText(profile.sampler.value)
             if index >= 0:
                 page.samplerCombo.setCurrentIndex(index)
-        self.frames.setSingleStep(family.frame_step)
-        self.frames.setValue(family.default_frames)
+        low, high = rules.duration_limits(self.model)
+        self.seconds.setRange(round(low, 2), round(high, 2))
+        self.seconds.setValue(round(family.default_frames / family.fps, 2))
         page.widthSpinBox.setValue(family.default_size[0])
         page.heightSpinBox.setValue(family.default_size[1])
         if not rules.accepts_start_image(self.model):
@@ -140,19 +193,20 @@ class VideoPanel(QObject):
             page.generateButton.setText("Generate image")
 
     # -- values ----------------------------------------------------------------------------------------------------
-    def _snap_frames(self) -> None:
-        if self.active:
-            self.frames.setValue(rules.valid_frames(self.model, self.frames.value()))
-
     def _sync(self, *_args) -> None:
         if not self.active:
             return
-        seconds = rules.duration_seconds(self.model, self.frames.value())
         audio = rules.audio_rate(self.model)
-        self.duration.setText(
-            f"{rules.duration_text(seconds)} at {rules.playback_fps(self.model)} fps"
-            + (" · with sound" if audio else " · no sound")
+        self.summary.setText(
+            rules.effective_text(self.model, self.seconds.value()) + (" · with sound" if audio else " · no sound")
         )
+        if self._start_info is not None:
+            self.start_note.setText(
+                crop_note(
+                    (self._start_info.width, self._start_info.height),
+                    (self.page.widthSpinBox.value(), self.page.heightSpinBox.value()),
+                )
+            )
         accepts = rules.accepts_start_image(self.model)
         self.choose.setEnabled(accepts)
         self.choose.setToolTip(
@@ -174,7 +228,7 @@ class VideoPanel(QObject):
                 else ""
             )
             or video_encode.tools_problem()
-            or rules.frame_problem(self.model, self.frames.value())
+            or rules.frame_problem(self.model, self.frame_count)
             or ""
         )
         self.problem.setText(problem)
@@ -192,7 +246,7 @@ class VideoPanel(QObject):
             return self._choice_problem
         if self._start is not None and self._start_source != self._backend_source():
             return "Connection changed; choose the start image again."
-        return video_encode.tools_problem() or rules.frame_problem(self.model, self.frames.value()) or ""
+        return video_encode.tools_problem() or rules.frame_problem(self.model, self.frame_count) or ""
 
     def _choose(self) -> None:
         path = QFileDialog.getOpenFileName(self.page, "Choose start image", "", IMAGE_FILTER)[0]
@@ -206,7 +260,7 @@ class VideoPanel(QObject):
         self.start_label.setText("Checking start image…")
         self._sync()
 
-        def done(digest, failure) -> None:
+        def done(info, failure) -> None:
             if token != self._choice_revision or model != self.model or self._runner.closed:
                 return
             if source != self._backend_source():
@@ -218,22 +272,45 @@ class VideoPanel(QObject):
                 self._choice_problem = (
                     str(failure) if isinstance(failure, ValueError) else "The start image could not be read."
                 )
-                self.start_label.setText("None (text to video)")
+                self._show_start()
             else:
-                self._start, self._sha, self._start_source = chosen, digest, source
-                self.start_label.setText(chosen.name)
+                self._start, self._sha, self._start_source = chosen, info.digest, source
+                self._start_info = info
+                self._show_start()
             self._sync()
 
         self._runner.submit(asyncio.to_thread(_read_start_image, chosen), done)
 
     def _clear(self) -> None:
         self._choice_revision += 1
-        self._start, self._sha, self._start_source = None, "", None
+        self._start, self._sha, self._start_source, self._start_info = None, "", None, None
         self._loading = False
         self._choice_problem = ""
-        self.start_label.setText("None (text to video)")
+        self._show_start()
         self.clear.setEnabled(False)
         self._sync()
+
+    def _show_start(self) -> None:
+        """The start-image row: a small preview, the file name with the image's own size, or the text-to-video default."""
+        info = self._start_info
+        if self._start is None or info is None:
+            self.thumb.clear()
+            self.thumb.hide()
+            self.start_label.setText("Checking start image…" if self._loading else "None (text to video)")
+            self.start_label.setToolTip("")
+            self.start_note.clear()
+            return
+        picture = QImage.fromData(info.thumbnail_png)
+        self.thumb.setPixmap(
+            QPixmap.fromImage(picture).scaled(
+                self.thumb.size(),
+                aspectMode=Qt.AspectRatioMode.KeepAspectRatio,
+                mode=Qt.TransformationMode.SmoothTransformation,
+            )
+        )
+        self.thumb.show()
+        self.start_label.setText(f"{_short_name(self._start.name)} · {info.width}×{info.height}")
+        self.start_label.setToolTip(str(self._start))
 
     def apply(self, request: ResolvedGenerationRequest) -> ResolvedGenerationRequest:
         """The resolved image request plus the video fields; the request model checks the frame rule and the image."""
@@ -251,7 +328,7 @@ class VideoPanel(QObject):
             raise ValidationError("Connection changed; choose the start image again.")
         return replace(
             request,
-            num_frames=self.frames.value(),
+            num_frames=self.frame_count,
             start_image=str(self._start) if self._start else None,
             start_image_sha256=self._sha or None,
             resolution_evidence=(

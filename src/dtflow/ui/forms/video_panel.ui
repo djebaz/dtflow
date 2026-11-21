@@ -9,18 +9,26 @@
    <property name="rightMargin"><number>10</number></property>
    <property name="bottomMargin"><number>8</number></property>
    <item>
-    <layout class="QHBoxLayout" name="videoFramesRow">
-     <item><widget class="QLabel" name="videoFramesLabel"><property name="text"><string>Frames</string></property><property name="buddy"><cstring>videoFramesSpinBox</cstring></property></widget></item>
-     <item><widget class="QSpinBox" name="videoFramesSpinBox"><property name="accessibleName"><string>Number of video frames</string></property><property name="minimum"><number>9</number></property><property name="maximum"><number>361</number></property></widget></item>
-     <item><widget class="QLabel" name="videoDurationLabel"><property name="role" stdset="0"><string>secondary</string></property><property name="text"><string /></property></widget></item>
+    <layout class="QHBoxLayout" name="videoDurationRow">
+     <item><widget class="QLabel" name="videoDurationTitle"><property name="text"><string>Duration</string></property><property name="buddy"><cstring>videoDurationSpinBox</cstring></property></widget></item>
+     <item><widget class="QDoubleSpinBox" name="videoDurationSpinBox"><property name="accessibleName"><string>Clip duration in seconds</string></property><property name="toolTip"><string>How long the clip should be. The frame count follows from the model's playback rate and frame rule.</string></property><property name="suffix"><string> s</string></property><property name="decimals"><number>2</number></property><property name="singleStep"><double>0.5</double></property><property name="minimum"><double>0.36</double></property><property name="maximum"><double>60.0</double></property></widget></item>
+     <item><widget class="QLabel" name="videoDurationLabel"><property name="accessibleName"><string>Effective clip length</string></property><property name="role" stdset="0"><string>secondary</string></property><property name="text"><string /></property><property name="wordWrap"><bool>true</bool></property></widget></item>
     </layout>
    </item>
    <item>
     <layout class="QHBoxLayout" name="videoStartRow">
      <item><widget class="QLabel" name="videoStartTitle"><property name="text"><string>Start image</string></property></widget></item>
+     <item><widget class="QLabel" name="videoStartThumb"><property name="accessibleName"><string>Start image preview</string></property><property name="minimumSize"><size><width>64</width><height>48</height></size></property><property name="maximumSize"><size><width>64</width><height>48</height></size></property><property name="frameShape"><enum>QFrame::StyledPanel</enum></property><property name="alignment"><set>Qt::AlignCenter</set></property></widget></item>
+     <item>
+      <layout class="QVBoxLayout" name="videoStartTextLayout">
+       <property name="spacing"><number>2</number></property>
+       <item><widget class="QLabel" name="videoStartLabel"><property name="text"><string>None (text to video)</string></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+       <item><widget class="QLabel" name="videoStartNote"><property name="text"><string /></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+      </layout>
+     </item>
+     <item><spacer name="videoStartSpacer"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="sizeHint" stdset="0"><size><width>20</width><height>20</height></size></property></spacer></item>
      <item><widget class="QPushButton" name="videoChooseStartButton"><property name="text"><string>Choose…</string></property><property name="toolTip"><string>Choose one optional start image. Leave empty for text to video.</string></property></widget></item>
      <item><widget class="QPushButton" name="videoClearStartButton"><property name="text"><string>Clear</string></property></widget></item>
-     <item><widget class="QLabel" name="videoStartLabel"><property name="text"><string>None (text to video)</string></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
     </layout>
    </item>
    <item><widget class="QLabel" name="videoCostNote"><property name="text"><string>A video takes minutes and can use a large part of the monthly allowance. DT+ does not report what a run costs, so no cost is shown.</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
