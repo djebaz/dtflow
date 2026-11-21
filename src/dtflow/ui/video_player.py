@@ -39,11 +39,15 @@ def clock(milliseconds: int) -> str:
 
 
 class VideoPlayer(QObject):
-    def __init__(self, surface: QWidget, on_problem, on_playback_changed=None) -> None:
+    def __init__(
+        self, surface: QWidget, on_problem, on_playback_changed=None, *, on_navigate=None, navigation_allowed=None
+    ) -> None:
         super().__init__(surface)
         self.surface = surface
         self._on_problem = on_problem
         self._on_playback_changed = on_playback_changed
+        self._on_navigate = on_navigate
+        self._navigation_allowed = navigation_allowed
         self._panel: QWidget | None = None
         self._player = None
         self._audio = None
@@ -309,7 +313,7 @@ class VideoPlayer(QObject):
 
         if kind not in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress):
             return False
-        if not self.surface.isVisible() or (self._panel is None and not self.play_button.isVisible()):
+        if not self.surface.isVisible() or not self._play_shortcut.isEnabled():
             return False
         if QApplication.activeModalWidget() is not None:
             return False
@@ -334,6 +338,21 @@ class VideoPlayer(QObject):
             return False
         key = event.key()
         keypad = bool(modifiers & Qt.KeyboardModifier.KeypadModifier)
+        if (
+            not modifiers
+            and key in (Qt.Key.Key_Left, Qt.Key.Key_Right)
+            and self._on_navigate is not None
+            and self._navigation_allowed is not None
+            and self._navigation_allowed()
+        ):
+            # Focused media controls may consume the page's arrow QShortcut.
+            # Handle its override and key press here, exactly once per press.
+            if kind == QEvent.Type.KeyPress:
+                self._on_navigate(-1 if key == Qt.Key.Key_Left else 1)
+            event.accept()
+            return True
+        if self._panel is None:
+            return False
         action = None
         if keypad and key in (Qt.Key.Key_4, Qt.Key.Key_Left):
 

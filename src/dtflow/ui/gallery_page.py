@@ -585,6 +585,8 @@ class GalleryPage(QObject):
             self.surface,
             lambda text: self._selection_notice(text),
             self._video_playback_changed,
+            on_navigate=self.step,
+            navigation_allowed=lambda: self._active and self.mode == "Detail" and not self.slideshow.active,
         )
         self.video_player.play_button.clicked.connect(self._play_video)
         self.hover_card = GalleryHoverCard(self.surface)
