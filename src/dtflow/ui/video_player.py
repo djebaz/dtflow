@@ -9,7 +9,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSize, Qt, QUrl
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
@@ -49,6 +49,16 @@ class VideoPlayer(QObject):
         self._audio = None
         self._duration = 0
         self._muted = False
+        self._video = None
+        # Window-scoped shortcuts work regardless of which non-editing widget has focus.
+        self._play_shortcuts = []
+        for key in ("Space", "K"):
+            shortcut = QShortcut(QKeySequence(key), surface)
+            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+            shortcut.setAutoRepeat(False)
+            shortcut.setEnabled(False)
+            shortcut.activated.connect(self.toggle_play)
+            self._play_shortcuts.append(shortcut)
         self.play_button = QPushButton(surface)
         self.play_button.setObjectName("galleryPlayVideoButton")
         self.play_button.setIcon(QIcon(str(ICONS / "video-play.svg")))
@@ -84,6 +94,8 @@ class VideoPlayer(QObject):
         column.setSpacing(0)
         video = QVideoWidget(panel)
         video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
+        video.setCursor(Qt.CursorShape.PointingHandCursor)
+        video.installEventFilter(self)
         column.addWidget(video, 1)
 
         file = QFile(str(CONTROLS_FORM))
@@ -122,7 +134,10 @@ class VideoPlayer(QObject):
         player.setVideoOutput(video)
         audio.setMuted(self._muted)
         self._panel, self._player, self._audio, self._duration = panel, player, audio, 0
+        self._video = video
         self.play_button.hide()
+        for shortcut in self._play_shortcuts:
+            shortcut.setEnabled(True)
 
         def update_time(position: int) -> None:
             if not slider.isSliderDown() and self._duration:
@@ -227,7 +242,9 @@ class VideoPlayer(QObject):
     def release(self, *, show_play: bool = False) -> None:
         """Stop, detach video/audio, clear the source and free the media handle."""
         panel, player = self._panel, self._player
-        self._panel = self._player = self._audio = None
+        self._panel = self._player = self._audio = self._video = None
+        for shortcut in self._play_shortcuts:
+            shortcut.setEnabled(False)
         app = QApplication.instance()
         if app is not None:
             app.removeEventFilter(self)
@@ -249,17 +266,43 @@ class VideoPlayer(QObject):
             self._place()
 
     def eventFilter(self, watched, event) -> bool:
-        if watched is self.surface and event.type() == QEvent.Type.Resize:
-            self._place()
-            return False
-        if self._panel is None or event.type() not in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress):
+        kind = event.type()
+        if watched is self.surface:
+            if kind == QEvent.Type.Resize:
+                self._place()
+                return False
+            # The poster's painter normally pans on click. For video posters, click
+            # anywhere on the image to use the same lazy Play action as the icon.
+            if self._panel is None and self.play_button.isVisible() and kind in (
+                QEvent.Type.MouseButtonPress,
+                QEvent.Type.MouseButtonRelease,
+            ) and event.button() == Qt.MouseButton.LeftButton:
+                if kind == QEvent.Type.MouseButtonRelease:
+                    self.play_button.click()
+                return True
+        if watched is self._video and kind in (
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.MouseButtonRelease,
+        ) and event.button() == Qt.MouseButton.LeftButton:
+            if kind == QEvent.Type.MouseButtonRelease:
+                self.toggle_play()
+            return True
+
+        if self._panel is None or kind not in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress):
             return False
         if QApplication.activeModalWidget() is not None or QApplication.activeWindow() is not self.surface.window():
             return False
         focus = QApplication.focusWidget()
-        if isinstance(focus, (QLineEdit, QPlainTextEdit, QTextEdit, QAbstractSpinBox)):
-            return False
-        if isinstance(focus, QComboBox) and focus.isEditable():
+        editing = (
+            (isinstance(focus, QLineEdit) and not focus.isReadOnly())
+            or (isinstance(focus, (QPlainTextEdit, QTextEdit)) and not focus.isReadOnly())
+            or isinstance(focus, QAbstractSpinBox)
+            or (isinstance(focus, QComboBox) and focus.isEditable())
+        )
+        if editing:
+            # Let text inputs use ordinary letters and Space even with a video open.
+            if kind == QEvent.Type.ShortcutOverride and event.key() in (Qt.Key.Key_Space, Qt.Key.Key_K):
+                event.accept()
             return False
         modifiers = event.modifiers()
         if modifiers & (
@@ -279,8 +322,6 @@ class VideoPlayer(QObject):
                 return self.seek_delta(10000)
         elif keypad and key in (Qt.Key.Key_0, Qt.Key.Key_Insert):
             action = self.restart
-        elif not keypad and key in (Qt.Key.Key_Space, Qt.Key.Key_K):
-            action = self.toggle_play
         elif not keypad and key == Qt.Key.Key_W:
 
             def action():
@@ -291,9 +332,11 @@ class VideoPlayer(QObject):
                 return self.seek_delta(1000)
         elif not keypad and key == Qt.Key.Key_M:
             action = self.toggle_mute
+        # Space/K use WindowShortcut instead: unlike KeyPress on the video
+        # surface, the shortcut works when another non-editing control has focus.
         if action is None:
             return False
-        if event.type() == QEvent.Type.KeyPress and (
+        if kind == QEvent.Type.KeyPress and (
             not event.isAutoRepeat()
             or key in (Qt.Key.Key_4, Qt.Key.Key_6, Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_W, Qt.Key.Key_X)
         ):
