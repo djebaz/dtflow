@@ -1287,7 +1287,6 @@ class MainWindow:
             action=state.action,
             completed=state.completed,
             total=state.total,
-            fraction=state.fraction,
             detail=" ".join(
                 part for part in (state.detail, " · ".join(p for p in (state.elapsed, state.eta) if p)) if part
             ),
