@@ -241,7 +241,8 @@ class ImageRecyclePanel(QObject):
         raw_note = f" + {plan.raw_count} raw provider files" if plan.raw_count else ""
         video_note = f" + {plan.video_count} video MP4s" if plan.video_count else ""
         message = (
-            f"{len(plan.targets)} originals{raw_note}{video_note} · {len(plan.absent_targets)} confirmed missing cards · "
+            f"{len(plan.targets)} originals{raw_note}{video_note} · "
+            f"{len(plan.absent_targets)} confirmed missing cards · "
             f"{plan.hidden} checked images hidden by filters included · "
             + ("" if permanent else f"{plan.missing} missing · ")
             + f"{plan.ineligible} ineligible (untouched). "
@@ -262,9 +263,9 @@ class ImageRecyclePanel(QObject):
         confirm_action(
             self.parent_widget,
             self.gallery.delete_button,
-            f"Delete {eligible} selected gallery images?"
+            f"Delete {eligible} selected gallery outputs?"
             if permanent
-            else f"Move {eligible} selected originals to {TRASH_NAME}?",
+            else f"Move {eligible} selected saved outputs to {TRASH_NAME}?",
             message,
             lambda: self._execute(plan),
             self._cancel_confirmation,

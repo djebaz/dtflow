@@ -56,10 +56,10 @@ class ImageExportPanel(QObject):
             form.imageExportSeparateCheck,
         )
         for label, value in (
-            ("All saved images", "all"),
+            ("All saved outputs", "all"),
             ("Current Images filter (all pages)", "filter"),
-            ("Checked images in Images", "checked"),
-            ("Selected image in Images", "selected"),
+            ("Checked outputs in Images", "checked"),
+            ("Selected output in Images", "selected"),
             ("Selected Generate result", "generate"),
         ):
             form.imageExportScopeCombo.addItem(label, value)
@@ -110,13 +110,13 @@ class ImageExportPanel(QObject):
         if index >= 0:
             self.form.imageExportScopeCombo.setCurrentIndex(index)
             self.form.imageExportStatusLabel.setText(
-                "Check the images to export, then choose a destination and start export."
+                "Check the outputs to export, then choose a destination and start export."
             )
 
     def browse(self) -> None:
         folder = QFileDialog.getExistingDirectory(
             self.form,
-            "Choose image export folder",
+            "Choose saved media export folder",
             self.form.imageExportFolderEdit.text() or str(Path.home()),
             remember=False,  # the destination is itself a remembered setting (export preferences)
         )
@@ -147,7 +147,7 @@ class ImageExportPanel(QObject):
         self._stop = threading.Event()
         self._set_running(True)
         self.form.imageExportProgress.setRange(0, 0)
-        self.form.imageExportStatusLabel.setText("Collecting saved image identities…")
+        self.form.imageExportStatusLabel.setText("Collecting saved output identities…")
         self.form.imageExportStatusLabel.setToolTip("")
         self.runner.submit(self._export(destination, options, selection, self._stop), self._done)
 
@@ -189,7 +189,7 @@ class ImageExportPanel(QObject):
         if strip is not None:
             if value:
                 strip.start(
-                    "export", "Exporting saved images", self.cancel, detail="Collecting saved image identities…"
+                    "export", "Exporting saved media", self.cancel, detail="Collecting saved output identities…"
                 )
             else:
                 strip.finish("export")
@@ -203,13 +203,13 @@ class ImageExportPanel(QObject):
             if strip is not None:
                 strip.update("export", completed, total)
             if not self._stop.is_set():
-                self.form.imageExportStatusLabel.setText(f"Processed {completed} of {total} images…")
+                self.form.imageExportStatusLabel.setText(f"Processed {completed} of {total} outputs…")
 
     def cancel(self) -> None:
         if self._running:
             self._stop.set()
             self.form.imageExportCancelButton.setEnabled(False)
-            self.form.imageExportStatusLabel.setText("Stopping after the current image; completed exports will remain…")
+            self.form.imageExportStatusLabel.setText("Stopping after the current output; completed exports will remain…")
 
     def _done(self, result, failure) -> None:
         self._set_running(False)
@@ -233,7 +233,7 @@ class ImageExportPanel(QObject):
             return
         prefix = "Export cancelled." if result.cancelled else "Export finished."
         if result.total == 0:
-            text = "No saved images match this export scope."
+            text = "No saved outputs match this export scope."
         else:
             text = f"{prefix} {result.exported} exported, {result.skipped} skipped (already exported), {result.failed} failed, {result.total - result.exported - result.skipped - result.failed} not processed."
         if result.noise or result.blank:

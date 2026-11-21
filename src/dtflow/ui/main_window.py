@@ -3441,7 +3441,7 @@ class MainWindow:
         button.setToolTip(
             "Hide the export panel without cancelling an active export."
             if inline
-            else "Show export settings beside Images. Check images before starting Export JPEGs."
+            else "Show export settings for checked outputs: JPEG images and original MP4 videos."
         )
 
     def _export_selection(self, scope: str) -> GalleryQuery | tuple[str, ...]:
@@ -3455,11 +3455,11 @@ class MainWindow:
         if scope == "checked":
             identities = self.gallery.export_checked()
             if not identities:
-                raise ValidationError("Check at least one saved image in Images first.")
+                raise ValidationError("Check at least one saved image or video in Images first.")
             return identities
         identity = self.gallery.export_identity() if scope == "selected" else self.generation.export_identity()
         if identity is None:
-            raise ValidationError("Select a saved image in Images or a PNG output in Generate first.")
+            raise ValidationError("Select a saved output in Images or a PNG output in Generate first.")
         return (identity,)
 
     def about(self) -> None:
