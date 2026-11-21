@@ -15,6 +15,10 @@ Updated 2026-11-20 for PR #513 review repairs, 6.4.1 preparation and in-review P
 
 - Connection and Generate no longer offer Fake as a desktop provider. A saved Fake session restores without an active provider, requiring an explicit Local Draw Things or DT+ Cloud selection before generation. Fake remains supported by the CLI, tests and offline previews; saved results and backend registration are retained. Owner-reported manual acceptance and successful CI/Preview on PR #519 are not packaged Windows release acceptance.
 
+## Unreleased: video generation POC (#521, PR #523)
+
+- Throwaway CLI `tools/video_poc/video_poc.py` sends one paid DT+ video generation per call (LTX-2.3 and Wan 2.1 verified through it) and records response shape, timings and the MP4 check in `tmp/`. Owner-reported Windows runs: LTX with sound works, one start image is followed, several start images use only the first frame; storage option B (MP4 plus poster image) accepted. No product video support yet and no acceptance of deliberate error cases or larger sizes. See [the POC findings](research/2026-11-21-video-generation-poc.md).
+
 ## Unreleased: Controlnet mode (#503, PR #504)
 
 - Generate Controlnet mode: pose guidance from a photograph (local YOLO26n-pose ONNX) or a body map with Union Pro 1.0 on DT+ Cloud; control force, apply from / to, person pick, Gallery Use settings restore. Verified only for `flux_1_dev_q5p` with Union Pro 1.0 q5p at 0.7; other FLUX.1 checkpoints are "not verified". Queueing a pose is implemented in PR #513 (#505), pending owner smoke and review.
