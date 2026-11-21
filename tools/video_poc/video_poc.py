@@ -50,7 +50,7 @@ NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
 # Draw Things ModelZoo tables (read in its source; the response carries neither value).
 FPS_BY_FAMILY = {"ltx": 25, "wan": 16, "hunyuan": 30, "h3": 24}
 DEFAULT_FPS = 30
-AUDIO_RATE_BY_MODEL = (("ltx_2.3", 48000), ("ltx_2", 24000))
+AUDIO_RATE_BY_MODEL = (("ltx_2.3", 48000), ("ltx_2", 24000), ("minimax_h3_", 32000), ("pika_h3_", 32000))
 DEFAULT_AUDIO_RATE = 24000
 
 EXIT_OK, EXIT_FAILED, EXIT_INVALID, EXIT_TOOL = 0, 1, 2, 3
@@ -324,8 +324,6 @@ def family_of(model: str) -> str:
 def frame_rule(model: str, frames: int) -> str | None:
     """A warning when the count breaks the family's frame rule (the decode rounds it down), else None."""
     family = family_of(model)
-    if family == "h3" and frames != 1 and (frames - 5) % 17:
-        return f"{frames} frames does not follow H3's 1 or 17k+5 frame rule"
     step = {"ltx": 8, "wan": 4, "hunyuan": 4}.get(family)
     if step and (frames - 1) % step:
         return (
