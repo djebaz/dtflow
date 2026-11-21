@@ -14,6 +14,8 @@ A request that carries custom LoRAs gets one extra try for that DT+ INTERNAL cas
 check and restore runs between the tries. In Workflows and Scripts the extra try is also bounded by the run's own
 allowance and generation limit.
 
+A video request (``num_frames`` set) is never retried automatically (#540); its manual Retry is unchanged.
+
 Never retried automatically: any other unknown outcome (lost connection, timeout after sending, no terminal status),
 credentials/authentication/permission, quota/resource limit, validation, remote rejections, a result that was generated
 but not saved, and a user stop. Those keep the manual Retry. Each runner adds ``AUTO_RETRIES`` per planned submission to
@@ -70,9 +72,12 @@ def auto_retryable(failure: BackendFailure) -> bool:
 
 
 def auto_retry_limit(request: ResolvedGenerationRequest, failure: BackendFailure) -> int:
-    """Automatic retries for this failure: one more when DT+ ended a request that carries custom LoRAs without a result
+    """Automatic retries for this failure. A video request gets none (#540): a repeated paid clip is expensive and the
+    manual Retry stays available. Otherwise one more when DT+ ended a request that carries custom LoRAs without a result
     (#361). The LoRA check and restore (``AssetService.recover_missing``) runs between the tries, and one try is not
     always enough while DT+ starts serving a LoRA it has just been told about."""
+    if request.num_frames is not None:
+        return 0
     if request.prepared_assets and server_ended_without_result(failure):
         return AUTO_RETRIES + LORA_EXTRA_RETRIES
     return AUTO_RETRIES

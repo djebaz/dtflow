@@ -30,6 +30,7 @@ class ImagePreview(QAbstractScrollArea):
         self.setAccessibleName("Image preview. Mouse wheel zooms; drag to pan.")
         self.viewport().setMouseTracking(True)
         self._pixmap = QPixmap()
+        self._temporary_crop: tuple[QPixmap, tuple[int, int]] | None = None
         self._scale = 1.0
         self._fit = True
         self._drag = None
@@ -40,6 +41,9 @@ class ImagePreview(QAbstractScrollArea):
         tokens = load_tokens()
         self._canvas_color = QColor(tokens["color.canvas"])
         self._secondary_color = QColor(tokens["color.secondary"])
+        self._crop_shade = QColor(tokens["color.canvas"])
+        self._crop_shade.setAlpha(145)
+        self._crop_outline = QColor(tokens["color.focus"])
         self._top = QFrame(self.viewport())
         self._top.setObjectName("previewToolbar")
         row = QHBoxLayout(self._top)
@@ -110,6 +114,19 @@ class ImagePreview(QAbstractScrollArea):
         self._pixmap = pixmap
         self.fit()
 
+    def show_temporary_crop(self, pixmap: QPixmap, output_size: tuple[int, int]) -> None:
+        """Temporarily show the start image and its centered output crop without replacing the saved result."""
+        if pixmap.isNull() or min(output_size) <= 0:
+            return
+        self._temporary_crop = (pixmap, output_size)
+        self._sync()
+
+    def clear_temporary_crop(self) -> None:
+        """Restore the current result, including one that arrived while the pointer was over the source."""
+        if self._temporary_crop is not None:
+            self._temporary_crop = None
+            self._sync()
+
     def set_designation(self, designation, *, fixture=False):
         self.setProperty("designation", designation)
         kind = "Fixture · no inference" if fixture else designation.title()
@@ -172,7 +189,7 @@ class ImagePreview(QAbstractScrollArea):
         self.zoomSlider.setToolTip(f"{round(self._scale * 100)}%")
         for control in (self.fitButton, self.actualButton, self.minusButton, self.plusButton, self.zoomSlider):
             control.setEnabled(available)
-        self._badge.setVisible(available)
+        self._badge.setVisible(available and self._temporary_crop is None)
         self._show_controls()
         self._position_controls()
         self.viewport().update()
@@ -202,6 +219,11 @@ class ImagePreview(QAbstractScrollArea):
         self._badge.move(12, max(10, badge_y))
 
     def _show_controls(self):
+        if self._temporary_crop is not None:
+            self._top.hide()
+            self._files.hide()
+            self._expand.hide()
+            return
         self._top.show()
         self._files.show()
         self._expand.show()
@@ -221,6 +243,9 @@ class ImagePreview(QAbstractScrollArea):
     def paintEvent(self, event):
         painter = QPainter(self.viewport())
         painter.fillRect(self.viewport().rect(), self._canvas_color)
+        if self._temporary_crop is not None:
+            self._paint_temporary_crop(painter)
+            return
         if self._pixmap.isNull():
             if not self._brand_mark.isNull():
                 painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
@@ -239,6 +264,45 @@ class ImagePreview(QAbstractScrollArea):
             # Smooth when shrinking; at 100% and above pixels stay crisp so detail can be inspected.
             painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, self._scale < 1.0)
             painter.drawPixmap(self.image_rect(), self._pixmap, QRectF(self._pixmap.rect()))
+
+    def _paint_temporary_crop(self, painter: QPainter) -> None:
+        """The shaded areas are exactly the centered cover-fit cut used for the submitted start frame."""
+        pixmap, (target_w, target_h) = self._temporary_crop
+        source_w, source_h = pixmap.width(), pixmap.height()
+        area = self.viewport().rect()
+        factor = min(max(1, area.width() - 24) / source_w, max(1, area.height() - 24) / source_h)
+        shown = QRectF(
+            (area.width() - source_w * factor) / 2,
+            (area.height() - source_h * factor) / 2,
+            source_w * factor,
+            source_h * factor,
+        )
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
+        painter.drawPixmap(shown, pixmap, QRectF(pixmap.rect()))
+        # PIL ImageOps.fit uses centering=(0.5, 0.5). No separate crop controls or saved offsets.
+        if source_w * target_h > source_h * target_w:
+            kept_width = source_h * target_w / target_h
+            kept = QRectF(
+                shown.x() + (source_w - kept_width) * factor / 2,
+                shown.y(),
+                kept_width * factor,
+                shown.height(),
+            )
+        else:
+            kept_height = source_w * target_h / target_w
+            kept = QRectF(
+                shown.x(),
+                shown.y() + (source_h - kept_height) * factor / 2,
+                shown.width(),
+                kept_height * factor,
+            )
+        shade = self._crop_shade
+        painter.fillRect(QRectF(shown.left(), shown.top(), shown.width(), kept.top() - shown.top()), shade)
+        painter.fillRect(QRectF(shown.left(), kept.bottom(), shown.width(), shown.bottom() - kept.bottom()), shade)
+        painter.fillRect(QRectF(shown.left(), kept.top(), kept.left() - shown.left(), kept.height()), shade)
+        painter.fillRect(QRectF(kept.right(), kept.top(), shown.right() - kept.right(), kept.height()), shade)
+        painter.setPen(self._crop_outline)
+        painter.drawRect(kept)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

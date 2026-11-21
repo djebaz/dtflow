@@ -36,8 +36,19 @@ FAMILIES: tuple[VideoFamily, ...] = (
     VideoFamily("wan", "Wan", 4, 81, 16, None, (480, 320)),
 )
 
-MAX_FRAMES = 361
 MIN_FRAMES = 9
+# Safety ceiling for an exact admitted checkpoint, not a recommended or tested length: it only stops a mistyped
+# duration from sending an enormous paid request. DT+ LTX-2.3 clips of 297 and 401 frames are confirmed by owner logs
+# (low resolution, #538) and the owner has made clips of more than 700 frames. The ceiling is 60 s at the 25 FPS
+# playback rate.
+# Checkpoints without an entry keep the conservative default.
+DEFAULT_MAX_FRAMES = 361
+MAX_FRAMES_BY_MODEL = {
+    "ltx_2.3_22b_distilled_1.1_q6p.ckpt": 1500,
+    "ltx_2.3_22b_distilled_q8p.ckpt": 1500,
+}
+# Longest length with a confirmed owner log; shown nowhere as a limit.
+VERIFIED_FRAMES = 401
 # Only these exact files are authorized for the initial production LTX slice.
 # #523 established the 1.1 q6p path; the owner supplied two successful q8p Windows runs in PR #527.
 # A new quantization or similarly named checkpoint needs its own evidence before admission.
@@ -78,21 +89,46 @@ def snap_side(value: int) -> int:
     return min(2048, max(128, (value + 32) // 64 * 64))
 
 
+def max_frames(model_id: str) -> int:
+    """The largest frame count accepted for this exact checkpoint (a safety ceiling, see ``MAX_FRAMES_BY_MODEL``)."""
+    return MAX_FRAMES_BY_MODEL.get(model_id, DEFAULT_MAX_FRAMES)
+
+
 def valid_frames(model_id: str, frames: int) -> int:
     """The nearest count the family's rule allows (rounded down, never below the minimum); unknown families keep it."""
     family = family_of(model_id)
     if family is None:
         return frames
-    frames = max(MIN_FRAMES, min(MAX_FRAMES, frames))
+    frames = max(MIN_FRAMES, min(max_frames(model_id), frames))
     return (frames - 1) // family.frame_step * family.frame_step + 1
+
+
+def frames_for_duration(model_id: str, seconds: float) -> int:
+    """The valid frame count for a requested duration: the playback rate times the seconds, rounded down to the
+    family's frame rule. The same function feeds the displayed value and the submitted request."""
+    return valid_frames(model_id, int(seconds * playback_fps(model_id) + 1e-6))
+
+
+def duration_limits(model_id: str) -> tuple[float, float]:
+    """The shortest and longest duration (seconds) the frame bounds allow at the model's playback rate."""
+    fps = playback_fps(model_id)
+    return MIN_FRAMES / fps, max_frames(model_id) / fps
+
+
+def effective_text(model_id: str, seconds: float) -> str:
+    """``10.00 s requested → 9.96 s · 249 frames · 25 FPS``; the requested part only when the value is adjusted."""
+    frames = frames_for_duration(model_id, seconds)
+    effective = duration_seconds(model_id, frames)
+    shown = f"{effective:.2f} s · {frames} frames · {playback_fps(model_id)} FPS"
+    return shown if abs(effective - seconds) < 0.005 else f"{seconds:.2f} s requested → {shown}"
 
 
 def frame_problem(model_id: str, frames: int) -> str | None:
     family = family_of(model_id)
     if family is None:
         return None
-    if not MIN_FRAMES <= frames <= MAX_FRAMES:
-        return f"frames must be in {MIN_FRAMES}..{MAX_FRAMES}."
+    if not MIN_FRAMES <= frames <= max_frames(model_id):
+        return f"frames must be in {MIN_FRAMES}..{max_frames(model_id)}."
     if (frames - 1) % family.frame_step:
         return f"{family.label} needs {family.frame_step}k+1 frames (for example {valid_frames(model_id, frames)})."
     return None

@@ -665,6 +665,39 @@ QToolButton#checkpointDetailsButton:disabled {
   background: transparent;
   border-color: transparent;
 }
+/* Source photo fills the button; the overlay badge only clears the draft input. */
+QPushButton#videoChooseStartButton {
+  padding: 0;
+  min-width: 0;
+  min-height: 0;
+}
+QLabel#videoDurationLabel {
+  color: ${color.selectionText};
+  font-size: ${type.small};
+  font-weight: ${type.weightLabel};
+}
+QToolButton#videoClearStartButton {
+  background: ${color.dangerBorder};
+  color: ${color.onAccent};
+  border: 1px solid ${color.dangerBorder};
+  border-radius: ${size.radiusSm};
+  font-size: ${type.body};
+  font-weight: ${type.weightStrong};
+  padding: 0;
+  min-width: 0;
+  min-height: 0;
+}
+QToolButton#videoClearStartButton:hover,
+QToolButton#videoClearStartButton:pressed {
+  background: ${color.dangerSurface};
+  color: ${color.dangerText};
+}
+QToolButton#videoClearStartButton:focus { border-color: ${color.focus}; }
+QToolButton#videoClearStartButton:disabled {
+  background: ${color.buttonPressed};
+  border-color: ${color.disabledEdge};
+  color: ${color.disabled};
+}
 /* Compute Units meter: slim, muted fill (0 to 40000). Blue below the limit, red at or above it. */
 QProgressBar#computeUnitsMeter {
   background-color: ${color.input};
@@ -1646,6 +1679,7 @@ QLabel[iconKey="file-image"] { image: url(../images/gallery/file-image.svg); }
 QLabel[iconKey="hard-drive"] { image: url(../images/gallery/hard-drive.svg); }
 QLabel[iconKey="weight"] { image: url(../images/gallery/weight.svg); }
 QLabel[iconKey="timer"] { image: url(../images/gallery/timer.svg); }
+QLabel[iconKey="video"] { image: url(../images/gallery/video-play.svg); }
 QGroupBox[role="sectionCard"]:disabled,
 QGroupBox[role="sectionCard"]:disabled QFrame[role="sectionHeader"] {
   border-color: ${color.disabledBorder};

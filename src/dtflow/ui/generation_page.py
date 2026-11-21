@@ -88,6 +88,7 @@ from dtflow.ui.generation_presenter import (
 from dtflow.ui.inline_feedback import InlineNotice, edit_text
 from dtflow.ui.video_progress import VideoProgress
 from dtflow.ui.video_panel import IMAGE_ONLY_REASON, VideoPanel
+from dtflow.core import video as rules
 from dtflow.core.video import VIDEO_TOTAL_TIMEOUT
 from dtflow.services.video_artifacts import video_path_for
 from dtflow.ui.controlnet_editor import ControlnetEditor, PoseJob
@@ -461,6 +462,7 @@ class GenerationPage:
         self.controlnet.attach(self)
         startup.mark("generate: controlnet editor")
         self.video = VideoPanel(page, self._state, runner, self._backend)
+        self.video.state_changed.connect(self._sync_generate)
         page.modelCombo.currentTextChanged.connect(self._video_model_changed)
         self._video_model_changed(page.modelCombo.currentText())
         startup.mark("generate: video panel")
@@ -604,9 +606,9 @@ class GenerationPage:
     def _filter_samplers(self, keep: str | None = None) -> None:
         """Offer every sampler in every mode; the selected model's profile only steers the choice.
 
-        When the model changes and the current sampler is not one the model's profile suits, the profile's recommended
-        sampler is selected, but the user can still pick any other one. ``keep`` is a sampler the caller restores on
-        purpose (a loaded configuration) and is never replaced.
+        Image checkpoints retain their existing profile recommendation when it differs from the current choice.
+        Video checkpoint and family browsing never changes the sampler. ``keep`` is an explicit value restored
+        from a loaded configuration and is never replaced.
         """
         page = self.page
         combo = page.samplerCombo
@@ -615,7 +617,12 @@ class GenerationPage:
         profile = profile_for(model, entry.base_model if entry else None) if model else None
         allowed = sorted(SAMPLERS)
         wanted = keep or combo.currentText()
-        if not keep and profile and wanted not in [item.value for item in profile.samplers]:
+        if (
+            not keep
+            and profile
+            and not rules.is_video_model(model)
+            and wanted not in [item.value for item in profile.samplers]
+        ):
             wanted = profile.sampler.value
         if [combo.itemText(i) for i in range(combo.count())] != allowed:
             combo.blockSignals(True)
@@ -672,6 +679,10 @@ class GenerationPage:
         document = form_to_document(self._values())
         form = {name: document[name] for name in self.PROVIDER_FIELDS}
         form["receipts"] = self.lora.receipts()
+        video = getattr(self, "video", None)
+        if video is not None:
+            # Keep the video draft even if the user temporarily browses image checkpoints.
+            form["video"] = video.session_document()
         form["catalogue"] = {
             "domain": self.page.generationDomainCombo.currentData() or "all",
             "base_model": self.page.baseModelCombo.currentData() or self._pending_family,
@@ -680,11 +691,16 @@ class GenerationPage:
         }
         return form
 
-    def _apply_provider_form(self, document: object) -> None:
-        """Show a provider's remembered fields (defaults for one never used); prompts stay as typed."""
+    def _apply_provider_form(self, document: object, *, restoring_session: bool = False) -> None:
+        """Restore a provider without overwriting an in-progress video draft."""
         current = self._values()
         values = replace(form_from_document(document), prompt=current.prompt, negative_prompt=current.negative_prompt)
+        video = getattr(self, "video", None)
+        if not restoring_session and video is not None and (video.active or rules.is_video_model(values.model)):
+            values = replace(values, width=current.width, height=current.height)
         self._apply(values)
+        if restoring_session and video is not None:
+            video.restore(document.get("video") if isinstance(document, dict) else None)
         receipts = document.get("receipts") if isinstance(document, dict) else None
         valid = (
             {k: v for k, v in receipts.items() if type(k) is str and type(v) is str}
@@ -751,7 +767,7 @@ class GenerationPage:
         self._forms = {k: v for k, v in forms.items() if isinstance(v, dict)} if isinstance(forms, dict) else {}
         self._provider = self._backend()[0] or None
         if self._provider in self._forms:
-            self._apply_provider_form(self._forms[self._provider])
+            self._apply_provider_form(self._forms[self._provider], restoring_session=True)
         elif forms is None and self._provider is not None:
             self._forms[self._provider] = self._provider_form()  # a pre-per-provider file belongs to its provider
 
@@ -952,7 +968,8 @@ class GenerationPage:
             button.setToolTip("")
 
     def _video_model_changed(self, text: str) -> None:
-        self.video.model_changed(text)
+        # Inventory rebuilds briefly clear and reselect checkpoints; this is not an explicit model change.
+        self.video.model_changed(text, catalogue_update=self._updating_catalogue)
         self._sync_generate()
 
     def _unlisten_activity(self) -> None:
@@ -1469,8 +1486,14 @@ class GenerationPage:
         )
         presentation = present_outcome(outcome)
         if self._run_video:
+            request = outcome.request
+            length = ""
+            if request is not None and request.num_frames is not None:
+                seconds = rules.duration_seconds(request.model_id, request.num_frames)
+                length = f" ({seconds:.2f} s · {request.num_frames} frames)"
             presentation = replace(
-                presentation, detail=presentation.detail.replace("1 image", "1 video clip and its poster")
+                presentation,
+                detail=presentation.detail.replace("1 image", f"1 video clip{length} and its poster"),
             )
         self._status(presentation)
         activity_strip(self.page).complete(

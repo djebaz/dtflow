@@ -27,6 +27,8 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 
 ## Fixed
 
+- Generate's Video controls now use the shared section-card structure and token-backed button/crop states, with explicit 12 px body padding, one control row (Duration/readout left, cover-filled source thumbnail/red × badge right) and no reserved blank warning height. Crop inspection also follows hover, keyboard focus and edits on Width/Height. Video draft validation refreshes Generate availability, and second-pass progress no longer retains first-pass counts (PR #545, refs #540; static validation only, Windows interaction and provider acceptance pending).
+
 - The desktop Connection and Generate provider selectors no longer offer the internal Fake backend. Previously saved Fake selections require an explicit choice of Local Draw Things or DT+ Cloud before generation; existing Fake data and CLI/test/preview support are preserved (PR #519, refs #518; owner-reported manual testing and CI/Preview passed on the preceding code commit).
 - Documentation examples no longer embed owner-specific workstation paths. The WSL X11 helper derives the current Windows application-data directory, selected WSL user's home and its own checkout path instead of hard-coding an account; this does not remove older Git history or Action logs. Static validation only; the helper was not executed.
 - Repository path/PII scanning now supports the Action's existing check presets and extension selection using the newer shared scanner; scanner failures are no longer summarized as a clean scan. These are heuristic findings, not proof of private-data exposure; the updated Action has not been rerun by the agent.
@@ -47,5 +49,5 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 
 ## Release audit
 
-- PRs: #499, #504, #510, #511, #513, #522.
-- Scope: Version bump 6.4.1 and release-note consolidation; Controlnet generation, pose queues and local map-owning templates; queue composer corrections and direct pose editing/map replacement; local LoRA cleanup and startup/navigation corrections; pose queue-behind repair.
+- PRs: #499, #504, #510, #511, #513, #522, #545.
+- Scope: Version bump 6.4.1 and release-note consolidation; Controlnet generation, pose queues and local map-owning templates; queue composer corrections and direct pose editing/map replacement; local LoRA cleanup and startup/navigation corrections; pose queue-behind repair; video-control design alignment, crop inspection and availability/progress corrections.
