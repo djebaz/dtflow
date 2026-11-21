@@ -12,7 +12,7 @@
 - [x] Decode previews and prepare replacement maps on workers; reject invalid input and stale deliveries without losing the previous map.
 - [x] Preserve exact edited controls across queue creation and explicit template Save/Update, retaining current validation, size limits and consent boundaries (source implementation; behavioral acceptance pending).
 - [x] Update design/user/developer guidance and release notes; source-review the complete change and report static evidence separately from owner/CI acceptance.
-- [ ] Commit/push coherent checkpoints and prepare the feature PR for review without manually dispatching CI.
+- [x] Commit/push coherent checkpoints and prepare the feature PR for review without manually dispatching CI.
 
 ## Decisions
 
@@ -31,3 +31,4 @@
 - Final focused Ruff lint/format checks, `pyside6-uic` form compilation into ignored scratch Python (not imported/executed), and `git diff --check` passed. No test or fixture files changed.
 - Source review traced captured/template controls through PoseJob into create_pose_queue and recorded controls through the request into create_saved_pose_queue, with the retained template control projection updated alongside it. Replacement loads/fits only via existing body-map services, drops prior execution/map evidence and snapshots its target before the picker and worker; existing template serialization and limits remain authoritative.
 - The canonical packaging script collects dtflow package data, covering the new tracked `.ui` form; no packaging command or executable acceptance was performed. New feature behavior and visual fit still require owner/CI evidence; AC-5's structural reuse is supported by source inspection, while behavioral ACs remain unchecked.
+- Implementation `585d120b` was pushed to draft PR #522. Final handoff records the structural AC-5 evidence and leaves AC-1/2/3/4/6/7/8 unchecked; in particular Must AC-1/2/6/8 still block merge until suitable execution evidence or explicit owner waiver. Ready for review requests ordinary eligible CI automatically; no manual Action or Preview dispatch is authorized.
