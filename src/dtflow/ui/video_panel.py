@@ -16,7 +16,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, Signal
 from PySide6.QtGui import QIcon, QImage, QPixmap
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QDoubleSpinBox, QLabel, QPushButton
+from PySide6.QtWidgets import QDoubleSpinBox, QLabel, QPushButton, QToolButton
 
 from dtflow.core import video as rules
 from dtflow.core.models import ResolvedGenerationRequest
@@ -122,10 +122,11 @@ class VideoPanel(QObject):
             raise RuntimeError("Video controls form could not be loaded.")
         self.seconds = self.frame.findChild(QDoubleSpinBox, "videoDurationSpinBox")
         self.summary = self.frame.findChild(QLabel, "videoDurationLabel")
-        self.clear = self.frame.findChild(QPushButton, "videoClearStartButton")
+        self.clear = self.frame.findChild(QToolButton, "videoClearStartButton")
         self.thumb = self.frame.findChild(QPushButton, "videoChooseStartButton")
         self._preview_targets = (
             self.thumb,
+            self.clear,
             page.widthSpinBox,
             page.widthSpinBox.lineEdit(),
             page.heightSpinBox,
@@ -256,7 +257,8 @@ class VideoPanel(QObject):
                     (self._start_info.width, self._start_info.height),
                     (self.page.widthSpinBox.value(), self.page.heightSpinBox.value()),
                 )
-                + "\nHover or focus this image, Width or Height to preview the crop. Click to replace."
+                + "\nThumbnail is cropped to fill its tile. Hover or focus this image, Width or Height "
+                "to inspect the full source and output crop. Click to replace."
             )
             if self._start is not None and self._start_info is not None
             else "Click to choose a start image; leave empty for text to video."
@@ -264,6 +266,7 @@ class VideoPanel(QObject):
             else "A start image is only verified with LTX-2.3 (LTX-2 froze on it)."
         )
         self._sync_crop_preview()
+        self.clear.setVisible(self._start is not None or self._loading)
         self.clear.setEnabled(self._start is not None or self._loading)
         problem = (
             (_unverified(self.model) if not rules.supported_video_model(self.model) else "")
@@ -397,17 +400,24 @@ class VideoPanel(QObject):
         self.page.resultPreviewLabel.clear_temporary_crop()
 
     def _render_thumbnail(self) -> None:
-        """Fit the entire selected image within the fixed thumbnail, without cropping."""
+        """Cover the photo button without letterboxing; the central viewer retains the full source/crop inspection."""
         info = self._start_info
         if info is None or self.thumb.width() <= 0 or self.thumb.height() <= 0:
             return
         picture = QPixmap.fromImage(QImage.fromData(info.thumbnail_png))
+        size = self.thumb.iconSize()
+        covered = picture.scaled(
+            size,
+            aspectMode=Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+            mode=Qt.TransformationMode.SmoothTransformation,
+        )
         self.thumb.setIcon(
             QIcon(
-                picture.scaled(
-                    self.thumb.iconSize(),
-                    aspectMode=Qt.AspectRatioMode.KeepAspectRatio,
-                    mode=Qt.TransformationMode.SmoothTransformation,
+                covered.copy(
+                    (covered.width() - size.width()) // 2,
+                    (covered.height() - size.height()) // 2,
+                    size.width(),
+                    size.height(),
                 )
             )
         )
