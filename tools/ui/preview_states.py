@@ -1946,7 +1946,7 @@ def render_queue_template_states(shell, out):
         save(shell.form, out, name)
 
     recipe = Recipe(
-        ResolvedGenerationRequest("fixture-draft", "a {cat|dog}", "fake-fixture", 123), PlanForm("Repeat"), 3, "fake", 2
+        ResolvedGenerationRequest("fixture-draft", "a {cat|dog}", "fake-fixture", 123), PlanForm("Repeat"), 3, "fake", False
     )
     template = QueueTemplate("fixture-template", "My reusable queue recipe", 1, recipe)
     with patch.object(shell.runner, "submit", side_effect=hold):
