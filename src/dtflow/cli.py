@@ -27,7 +27,7 @@ from dtflow.core.models import (
 from dtflow.diagnostics import event as diagnostic_event, set_perf, set_timing
 from dtflow.gallery_limits import add_arguments as add_gallery_limit_arguments
 from dtflow.gallery_limits import resolve as resolve_gallery_limits
-from dtflow.logging_setup import LoggingSetupError, configure_logging
+from dtflow.logging_setup import LoggingSetupError, configure_logging, install_qt_multimedia_logging
 from dtflow.persistence.assets import AssetRegistry
 from dtflow.persistence.queues import post_control, read_queues
 from dtflow.persistence.settings import load_dtplus_concurrency
@@ -1120,6 +1120,8 @@ def run_gui_command(
 ) -> int:
     """Qt is imported only here, so every other command runs without it."""
     try:
+        # Install before QtMultimedia's FFmpeg plugin initializes; never capture global stderr.
+        install_qt_multimedia_logging()
         from dtflow.ui.splash import GuiUnavailable, run_gui_with_splash
 
         startup.mark("qt imports")
