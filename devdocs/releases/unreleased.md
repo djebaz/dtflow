@@ -6,6 +6,7 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 
 ## Added
 
+- Pose-enabled Queue drafts expose ControlNet checkpoint/quantization, strength, control force and Apply from/to, with a read-only map preview and explicit replacement by another prepared body map. Edits remain local to the draft; template Save/Update remains explicit, and photo extraction stays in Generate (PR #522, refs #515; owner-reported functional acceptance and automatic CI/Preview passed on `c22d8cd8`; UI/UX polish is tracked separately in #528, not broad DPI/packaged acceptance).
 - Controlnet pose generations can be queued with **Images N**, **Repeat**, and **New queue plan** (DT+ Cloud only): each item gets a separate seed and shares one staged pose map and Union control. Queue creation stays local; Start sends the map and may consume credits (PR #513, refs #505; owner-reported Windows smoke completed).
 - Local pose templates retain a bounded body map and exact control settings from a captured Controlnet or recorded queue draft, without execution-file dependencies or upload consent. Loading changes only the composer; creating/starting the queue keeps the existing DT+ checks and consent (PR #513; owner-reported template Save/Load smoke completed).
 - Generate has a Controlnet mode: generate from a photograph or a body map with a Union Pro 1.0 pose control on DT+ Cloud, with control force and apply from / to, a person pick for photographs, omitted joints named under the map and a Source / Pose / Result canvas. Only `flux_1_dev_q5p` with Union Pro 1.0 q5p at 0.7 is verified; other FLUX.1 checkpoints show "not verified". Gallery Use settings restores the pose.
@@ -41,5 +42,5 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 
 ## Release audit
 
-- PRs: #499, #504, #510, #511, #513.
-- Scope: Version bump 6.4.1 and release-note consolidation; Controlnet generation, pose queues and local map-owning templates; queue composer corrections; local LoRA cleanup and startup/navigation corrections; pose queue-behind repair.
+- PRs: #499, #504, #510, #511, #513, #522.
+- Scope: Version bump 6.4.1 and release-note consolidation; Controlnet generation, pose queues and local map-owning templates; queue composer corrections and direct pose editing/map replacement; local LoRA cleanup and startup/navigation corrections; pose queue-behind repair.

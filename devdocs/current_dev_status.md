@@ -1,6 +1,6 @@
 # Current development status
 
-Updated 2026-11-20 for PR #513 review repairs, 6.4.1 preparation and in-review PR #510; the merged-main baseline remains `81d68eb7` through PR #498. [6.4.0](https://github.com/djebaz/dtflow/releases/tag/v6.4.0) is published. See [6.4.1 notes](releases/v6.4.1.md) and its [release audit](plans/2026-11-16-release-6.4.1.md) for the next release scope and build gates.
+Updated 2026-11-21 for Queue pose editor PR #522; prior release/feature evidence below retains its recorded scope. [6.4.0](https://github.com/djebaz/dtflow/releases/tag/v6.4.0) is published. See [6.4.1 notes](releases/v6.4.1.md) and its [release audit](plans/2026-11-16-release-6.4.1.md) for the next release scope and build gates.
 
 ## Delivered since 6.4.0
 
@@ -10,6 +10,10 @@ Updated 2026-11-20 for PR #513 review repairs, 6.4.1 preparation and in-review P
 - Queue concurrency follows Connection's DT+ default at each start; separate queue controls and stored queue/recipe limits no longer govern dispatch.
 - Slideshow New direction shows arrivals next under Newest first sorting, then resumes forward playback.
 - Downloads runs bounded stale staging/orphan-source cleanup once at startup, off Qt; failed/refused conversion sources remain retained. Civitai documentation now covers tokens, permissions, file retention and recorded acceptance boundaries.
+
+## Merge preparation: Queue pose editing (#515, PR #522)
+
+- The independent Queue composer exposes exact pose controls, a local worker-prepared map preview and explicit prepared-map replacement without changing Generate or saved queues/templates. The owner reports **“all works”**; supplied logs record eight succeeded cloud Queue items, and automatic CI/Preview passed on rebased code head `c22d8cd8`. Functional ACs are accepted on owner report plus source review, not exhaustive failure/DPI or independently attested packaged acceptance. Non-blocking source-reviewed UI/UX improvements are separately tracked in [#528](https://github.com/djebaz/dtflow/issues/528); no UI changes are added during merge preparation. See the [implementation/evidence plan](plans/2026-11-21-queue-pose-editor.md).
 
 ## Unreleased: desktop provider selection (#518, PR #519)
 
