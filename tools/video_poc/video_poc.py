@@ -289,9 +289,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "-i", dest="images", type=Path, nargs="+", default=[], help="start image(s); several = multi-frame"
     )
     parser.add_argument("-o", dest="out", type=Path, default=Path("tmp") / "video-poc" / stamp, help="output folder")
-    parser.add_argument("-kf", dest="keep_frames", action="store_true", help="keep the PNG frames")
+    parser.add_argument("-kf", dest="keep_frames", action="store_true", help="save frame images alongside MP4 (PNG by default)")
+    parser.add_argument(
+        "-jpg", dest="jpg_frames", action="store_true",
+        help="save frame images as JPEG at quality 80 instead of PNG; implies -kf",
+    )
     parser.add_argument("-q", dest="quiet", action="store_true", help="no live progress line (the log is unchanged)")
-    parser.add_argument("-nomp4", dest="no_mp4", action="store_true", help="skip the ffmpeg encode")
+    parser.add_argument("-nomp4", dest="no_mp4", action="store_true", help="skip MP4; save PNG frames (JPEG with -jpg)")
     parser.add_argument("-to", dest="timeout", type=float, default=900, help="total timeout in seconds (default 900)")
     parser.add_argument("-lg", dest="log", type=Path, default=Path("tmp") / f"video-poc-{stamp}.log", help="log file")
     args = parser.parse_args(argv)
@@ -490,14 +494,14 @@ class EncodeResult:
 
 
 class FrameSink:
-    """Frames leave memory at once: a writer thread saves each PNG and feeds ffmpeg's stdin through a small queue.
+    """Frames leave memory at once: a writer thread feeds FFmpeg and optionally saves PNG/JPEG frames.
 
     ffmpeg's stderr is drained in its own thread (an unread pipe freezes it at about 64 KB), a stalled writer is
     detected by a timed queue put, and a writer that does not finish after the end is killed with the process.
     """
 
-    def __init__(self, out: Path, ffmpeg: str | None, fps: int, log: Log, keep_png: bool):
-        self.out, self.ffmpeg, self.fps, self.log, self.keep_png = out, ffmpeg, fps, log, keep_png
+    def __init__(self, out: Path, ffmpeg: str | None, fps: int, log: Log, frame_format: str | None):
+        self.out, self.ffmpeg, self.fps, self.log, self.frame_format = out, ffmpeg, fps, log, frame_format
         self.frames_dir = out / "frames"
         self.queue: queue.Queue = queue.Queue(maxsize=8)
         self.result = EncodeResult()
@@ -508,7 +512,8 @@ class FrameSink:
         self._failed: str | None = None
 
     def _start(self, width: int, height: int) -> None:
-        self.frames_dir.mkdir(parents=True, exist_ok=True)
+        if self.frame_format is not None:
+            self.frames_dir.mkdir(parents=True, exist_ok=True)
         self.result.size = (width, height)
         if self.ffmpeg:
             self.result.video_partial = self.out / "video.mp4.partial"
@@ -551,7 +556,13 @@ class FrameSink:
                     continue
                 index, rgb = item
                 try:
-                    Image.frombytes("RGB", (width, height), rgb).save(self.frames_dir / f"frame-{index:05d}.png")
+                    if self.frame_format is not None:
+                        image = Image.frombytes("RGB", (width, height), rgb)
+                        target = self.frames_dir / f"frame-{index:05d}.{self.frame_format}"
+                        if self.frame_format == "jpg":
+                            image.save(target, format="JPEG", quality=80)
+                        else:
+                            image.save(target, format="PNG")
                     if stdin is not None:
                         stdin.write(rgb)
                     self.result.frames += 1
@@ -1019,7 +1030,9 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
         BackendSelection("cloud"), timeouts=TimeoutPolicy(total=args.timeout), saved=optional, preview_images=False
     )
 
-    sink = FrameSink(args.out, ffmpeg if encode else None, fps, log, args.keep_frames)
+    frame_format = "jpg" if args.jpg_frames else "png" if args.keep_frames or args.no_mp4 else None
+    sink = FrameSink(args.out, ffmpeg if encode else None, fps, log, frame_format)
+    log.line(f"frame image output: {frame_format or 'none (MP4 stream only)'}", echo=True)
     got = Received()
     progress = Progress(not args.quiet, args.steps, args.frames)
     log.progress = progress
@@ -1230,10 +1243,10 @@ async def finish_run(
     result = sink.finish()
     log.section("7 Encode")
     if not encode:
-        log.line(f"-nomp4: no encode; PNG frames kept in {sink.frames_dir} ({result.frames} written)")
+        log.line(f"-nomp4: no encode; {sink.frame_format.upper()} frames saved in {sink.frames_dir} ({result.frames} written)")
         found.ok = result.error is None and frames_in == args.frames
         found.outputs.append(str(sink.frames_dir))
-        found.verdict = f"{frames_in}/{args.frames} frames received at {returned[1]}x{returned[0]}, PNG only (-nomp4)"
+        found.verdict = f"{frames_in}/{args.frames} frames received at {returned[1]}x{returned[0]}, {sink.frame_format.upper()} only (-nomp4)"
         if frames_in != args.frames:
             found.verdict += "; incomplete video, NOT a successful generation"
         return
@@ -1243,8 +1256,11 @@ async def finish_run(
         log.line("ffmpeg stderr tail:\n" + result.stderr_tail)
     if result.error or result.returncode != 0 or result.video_partial is None:
         found.verdict = f"{frames_in} frames received but the encode failed: {result.error or 'ffmpeg exit ' + str(result.returncode)}"
-        found.outputs.append(str(sink.frames_dir))
-        log.line("encode failed; the PNG frames are kept for inspection (nothing half-written is published)")
+        if sink.frame_format is not None:
+            found.outputs.append(str(sink.frames_dir))
+            log.line("encode failed; saved frames are kept for inspection (nothing half-written is published)")
+        else:
+            log.line("encode failed; frame images were not requested (nothing half-written is published)")
         return
     final = args.out / "video.mp4"
     if audio_raw_path is not None and audio_rate:
@@ -1258,17 +1274,17 @@ async def finish_run(
             muxed.unlink(missing_ok=True)
             os.replace(result.video_partial, final)
             log.warn("audio mux failed; the MP4 was published without audio")
-        if not args.keep_frames:
+        if sink.frame_format is None:
             audio_raw_path.unlink(missing_ok=True)
     else:
         os.replace(result.video_partial, final)
         log.line(f".partial publish: {final}")
     found.outputs.append(str(final))
-    if not args.keep_frames:
-        shutil.rmtree(sink.frames_dir, ignore_errors=True)
-        log.line("PNG frames removed (use -kf to keep them)")
-    else:
+    if sink.frame_format is not None:
         found.outputs.append(str(sink.frames_dir))
+        log.line(f"{sink.frame_format.upper()} frames kept in {sink.frames_dir} ({result.frames} written)")
+    else:
+        log.line("frames streamed directly to FFmpeg; no still images written (use -kf or -jpg to save them)")
 
     log.section("8 ffprobe versus request")
     try:
