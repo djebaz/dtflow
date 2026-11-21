@@ -2837,6 +2837,27 @@ QLabel#galleryVideoBadge {
   font-weight: 600;
 }
 
-/* In-app video playback: controls are defined by gallery_video_controls.ui. */
-QWidget#galleryVideoPanel { background-color: #000000; }
-QWidget#galleryVideoControls { background-color: ${color.host}; }
+/* Local video playback: compact Designer-owned controls without fixed side margins. */
+QWidget#galleryVideoPanel { background-color: ${color.canvas}; }
+QWidget#galleryVideoControls { background-color: ${color.host}; border-top: 1px solid ${color.panelEdge}; }
+QWidget#galleryVideoControls QPushButton {
+  background: transparent; border: 1px solid transparent; border-radius: ${size.radius};
+  padding: 3px; min-width: 26px; min-height: 26px;
+}
+QWidget#galleryVideoControls QPushButton:hover { background: ${color.buttonHover}; }
+QWidget#galleryVideoControls QPushButton:focus { border-color: ${color.focus}; }
+QLabel#videoPlaybackTime { color: ${color.text}; font-size: ${type.small}; padding: 0 4px; }
+QSlider#videoPlaybackSeek { min-height: 12px; }
+QSlider#videoPlaybackSeek::groove:horizontal { height: 4px; background: ${color.groove}; border-radius: 2px; }
+QSlider#videoPlaybackSeek::sub-page:horizontal { background: ${color.accentHover}; border-radius: 2px; }
+QSlider#videoPlaybackSeek::handle:horizontal {
+  width: 11px; margin: -4px 0; background: ${color.text}; border: 1px solid ${color.focus}; border-radius: 6px;
+}
+QSlider#videoPlaybackSeek::handle:horizontal:hover,
+QSlider#videoPlaybackSeek::handle:horizontal:focus { background: ${color.focus}; }
+QPushButton#galleryPlayVideoButton {
+  background: rgba(12, 12, 12, 205); border: 2px solid rgba(242, 246, 248, 165);
+  border-radius: 38px; padding: 8px;
+}
+QPushButton#galleryPlayVideoButton:hover { background: ${color.accentHover}; border-color: ${color.focus}; }
+QPushButton#galleryPlayVideoButton:focus { border-color: ${color.focus}; }
