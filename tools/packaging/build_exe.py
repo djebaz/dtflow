@@ -16,8 +16,6 @@ import sys
 from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
-from ffmpeg_bundle import prepare as prepare_ffmpeg
-
 ROOT = Path(__file__).resolve().parents[2]
 BUILDINFO = ROOT / "src" / "dtflow" / "_buildinfo.py"
 ARCHES = {"amd64": "x64", "x86_64": "x64", "arm64": "arm64", "aarch64": "arm64"}
@@ -70,6 +68,8 @@ def main(argv: list[str] | None = None) -> int:
     if windows:
         if ARCHES.get(platform.machine().lower()) != "x64":
             parser.error("Bundled FFmpeg currently supports Windows x64 only.")
+        from ffmpeg_bundle import prepare as prepare_ffmpeg
+
         try:
             ffmpeg_bundle = prepare_ffmpeg(args.ffmpeg_provider)
         except (OSError, ValueError, shutil.Error) as exc:
