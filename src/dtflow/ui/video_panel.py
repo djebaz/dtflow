@@ -1,4 +1,4 @@
-"""Video mode of the Generate page: duration, one start image and the cost note.
+"""Video mode of the Generate page: duration and one start image.
 
 Selecting a video checkpoint switches the page to video mode (``model_changed``): the model's own profile fills steps,
 guidance and sampler, frames and size get video defaults, image-only controls are disabled with the reason, and this
@@ -26,10 +26,6 @@ from dtflow.ui.file_dialogs import QFileDialog
 
 IMAGE_FILTER = "Images (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.bmp)"
 IMAGE_ONLY_REASON = "Not available for video: a video is one clip from text or one start image."
-COST_NOTE = (
-    "A video takes minutes and can use a large part of the monthly allowance. DT+ does not report what a run costs, "
-    "so no cost is shown."
-)
 MAX_START_IMAGE_BYTES = 32 * 1024 * 1024
 FORM = Path(__file__).parent / "forms" / "video_panel.ui"
 
@@ -120,9 +116,7 @@ class VideoPanel(QObject):
         self.thumb = self.frame.findChild(QLabel, "videoStartThumb")
         self.start_label = self.frame.findChild(QLabel, "videoStartLabel")
         self.start_note = self.frame.findChild(QLabel, "videoStartNote")
-        self.note = self.frame.findChild(QLabel, "videoCostNote")
         self.problem = self.frame.findChild(QLabel, "videoProblemLabel")
-        self.note.setText(COST_NOTE)
         self.seconds.valueChanged.connect(self._sync)
         page.widthSpinBox.valueChanged.connect(self._sync)
         page.heightSpinBox.valueChanged.connect(self._sync)

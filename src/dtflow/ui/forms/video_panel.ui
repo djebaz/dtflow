@@ -31,7 +31,6 @@
      <item><widget class="QPushButton" name="videoClearStartButton"><property name="text"><string>Clear</string></property></widget></item>
     </layout>
    </item>
-   <item><widget class="QLabel" name="videoCostNote"><property name="text"><string>A video takes minutes and can use a large part of the monthly allowance. DT+ does not report what a run costs, so no cost is shown.</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
    <item><widget class="QLabel" name="videoProblemLabel"><property name="text"><string /></property><property name="wordWrap"><bool>true</bool></property><property name="state" stdset="0"><string>warning</string></property></widget></item>
   </layout>
  </widget>
