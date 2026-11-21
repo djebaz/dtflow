@@ -213,7 +213,10 @@ class VideoPanel(QObject):
         self._sync()
 
         def done(info, failure) -> None:
-            if token != self._choice_revision or model != self.model or self._runner.closed:
+            if token != self._choice_revision or self._runner.closed:
+                return
+            # Inventory refresh briefly blanks the checkpoint selector without changing the user's draft.
+            if model != self.model and not (not self.model and self._catalogue_previous_model == model):
                 return
             self._loading = False
             if source != self._backend_source():
