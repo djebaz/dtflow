@@ -28,7 +28,6 @@ from PySide6.QtWidgets import (
 
 from dtflow.ui.file_dialogs import QFileDialog
 from dtflow import startup
-from dtflow.composition import BACKENDS
 from dtflow.core.compute_units import ComputeUnitEstimate, estimate_compute_units
 from dtflow.core.model_profiles import has_own_profile, profile_for
 from dtflow.core.models import (
