@@ -525,13 +525,18 @@ class QueuePage:
     def _refresh_script_run(self) -> None:
         """The running script's or workflow's steps are read for the global bar whichever queue is selected."""
         run = self._dispatching
+        # A queue with observed video clips is read too, so its running items are known whichever queue is selected.
+        video = run is not None and any(owner == run for owner, _ in self._video_progress)
         if (
             run is None
             or self._reading_run
-            or (self._views.get(run) or {}).get("kind")
-            not in (
-                "script",
-                "workflow",
+            or (
+                (self._views.get(run) or {}).get("kind")
+                not in (
+                    "script",
+                    "workflow",
+                )
+                and not video
             )
         ):
             self._run_detail = None
@@ -859,11 +864,14 @@ class QueuePage:
             # Observed clips of this queue, even when it is not the one shown on screen (then no item list is read);
             # when the list is read, only items it still shows as running count.
             running_ids = {item["item_id"] for item in running_items} if shown is not None else None
-            video_fractions = [
+            video_fractions = sorted(
                 video.fraction()
                 for (owner, item_id), video in self._video_progress.items()
                 if owner == queue_id and (running_ids is None or item_id in running_ids)
-            ]
+            )
+            if running_ids is None:
+                # Without a read item list, settled clips may still be remembered: never count more than are running.
+                video_fractions = video_fractions[: max(0, running)]
             if video_fractions:
                 # Running clips add their estimated share to the settled items; the counts stay settled/total.
                 fraction = min(1.0, (summary.settled + sum(video_fractions)) / max(1, summary.total))
