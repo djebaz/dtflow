@@ -19,6 +19,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import math
 import os
 import platform
 import queue
@@ -207,7 +208,23 @@ def snap_side(value: int) -> int:
     return min(2048, max(128, (value + 32) // 64 * 64))
 
 
+def parse_config_field(text: str) -> tuple[str, bool | int | float | str]:
+    """Parse one native Draw Things configuration field, e.g. hiresFix=true or hiresFixStrength=0.7."""
+    key, separator, raw = text.partition("=")
+    if not separator or not key.strip() or not raw.strip():
+        raise argparse.ArgumentTypeError("--set needs a field=value pair (e.g. hiresFix=true).")
+    try:
+        value = json.loads(raw)
+    except json.JSONDecodeError:
+        value = raw
+    if value is None or isinstance(value, (list, dict)):
+        raise argparse.ArgumentTypeError("--set accepts scalar values only; use the model/LoRA controls for lists.")
+    return key.strip(), value
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    from dtflow.core.models import Sampler
+
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter, allow_abbrev=False
@@ -232,6 +249,18 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-s", dest="steps", type=int, default=None, help="steps (default: the model profile's)")
     parser.add_argument("-g", dest="guidance", type=float, default=None, help="guidance (default: the model profile's)")
     parser.add_argument("-sh", dest="shift", type=float, default=None, help="shift (default: the model profile's)")
+    parser.add_argument(
+        "-sampler", "--sampler", choices=[sampler.value for sampler in Sampler], default=None,
+        help="sampling algorithm (default: model profile; TCD Trailing for H3 smoke)",
+    )
+    parser.add_argument("-neg", "--negative", default="", help="negative prompt")
+    parser.add_argument(
+        "-set", "--set", dest="config_fields", type=parse_config_field, action="append", default=[],
+        metavar="FIELD=VALUE",
+        help="override any supported scalar Draw Things configuration field (repeatable); "
+        "examples: hiresFix=true, hiresFixWidth=640, hiresFixStrength=0.7, tiledDecoding=true. "
+        "Model, sampler, steps, guidance, shift, size, frames and seed use their own flags.",
+    )
     parser.add_argument("-sd", dest="seed", type=int, default=None, help="seed (default random)")
     parser.add_argument(
         "-i", dest="images", type=Path, nargs="+", default=[], help="start image(s); several = multi-frame"
@@ -529,8 +558,11 @@ class FrameSink:
 # -- request ---------------------------------------------------------------------------------------------------------
 
 
-def patch_configuration(configuration: bytes, frames: int, shift: float | None, *, h3: bool = False) -> bytes:
-    """Set the POC frame count and selected checkpoint's experimental sampling fields."""
+def patch_configuration(
+    configuration: bytes, frames: int, shift: float | None,
+    *, h3: bool = False, config_fields: list[tuple[str, bool | int | float | str]] | None = None,
+) -> bytes:
+    """Apply video settings and CLI scalar overrides to the exact FlatBuffer that DT+ receives."""
     import flatbuffers
     from drawthings_py.generated.dt_grpc.config_generated import GenerationConfiguration, GenerationConfigurationT
 
@@ -541,9 +573,55 @@ def patch_configuration(configuration: bytes, frames: int, shift: float | None, 
     if h3:
         table.stochasticSamplingGamma = 1.0
         table.resolutionDependentShift = False
+    reserved = {
+        "model": "-m", "width": "-sz", "height": "-sz", "numFrames": "-f",
+        "steps": "-s", "guidanceScale": "-g", "shift": "-sh", "seed": "-sd",
+        "sampler": "-sampler", "negativePrompt": "-neg",
+    }
+    applied = {}
+    for raw_key, supplied in config_fields or ():
+        key = re.sub(r"_([a-z])", lambda match: match[1].upper(), raw_key)
+        if key in reserved:
+            raise ValueError(f"--set {raw_key}: use {reserved[key]} instead.")
+        if not hasattr(table, key):
+            raise ValueError(
+                f"Unsupported Draw Things setting {raw_key!r} in the pinned SDK; it was not sent."
+            )
+        current = getattr(table, key)
+        value = supplied
+        if isinstance(current, bool):
+            valid = type(value) is bool
+        elif isinstance(current, int):
+            valid = type(value) is int
+        elif isinstance(current, float):
+            valid = type(value) in (int, float) and math.isfinite(float(value))
+            if valid:
+                value = float(value)
+        elif isinstance(current, str) or current is None:
+            valid = isinstance(value, str)
+        else:
+            valid = False
+        if not valid:
+            raise ValueError(
+                f"--set {raw_key}: expected a scalar compatible with "
+                f"{type(current).__name__}, got {value!r}."
+            )
+        setattr(table, key, value)
+        applied[key] = value
     builder = flatbuffers.Builder(0)
     builder.Finish(table.Pack(builder))
-    return bytes(builder.Output())
+    payload = bytes(builder.Output())
+    roundtrip = GenerationConfigurationT.InitFromObj(GenerationConfiguration.GetRootAs(payload, 0))
+    for key, value in applied.items():
+        actual = getattr(roundtrip, key)
+        matches = (
+            math.isclose(actual, value, rel_tol=1e-5, abs_tol=1e-5)
+            if type(value) is float and type(actual) in (int, float)
+            else actual == value
+        )
+        if not matches:
+            raise ValueError(f"--set {key} was not preserved by the FlatBuffer serializer.")
+    return payload
 
 
 def custom_model_spec(path: Path, model: str) -> dict:
@@ -801,7 +879,7 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
         sampler = Sampler.TCD_TRAILING
         defaults = {"steps": 6, "guidance": 1.0, "shift": 4.0}
         label = "Pika H3 Flex" if pika else "MiniMax H3"
-        log.line(f"{label} Ref2VA POC settings: TCD Trailing, 6 steps, guidance 1, shift 4, "
+        log.line(f"{label} Ref2VA smoke defaults: TCD Trailing, 6 steps, guidance 1, shift 4, "
                  "stochastic sampling 100%; audio shift 1 unavailable in pinned SDK", echo=True)
     else:
         sampler = profile.sampler
@@ -819,6 +897,9 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
         )
         extras = dict(profile.extras)
         defaults = {"steps": profile.steps, "guidance": profile.guidance, "shift": extras.get("shift")}
+    if args.sampler is not None:
+        sampler = Sampler(args.sampler)
+    log.line(f"effective sampler: {sampler.value} ({'CLI' if args.sampler else 'model default'})", echo=True)
     sources = []
     for name, wanted, own in (
         ("steps", args.steps, defaults["steps"]),
@@ -860,6 +941,7 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
     request = ResolvedGenerationRequest(
         request_id=uuid.uuid4().hex,
         prompt=args.prompt,
+        negative_prompt=args.negative,
         model_id=args.model,
         seed=seed,
         width_px=args.width,
@@ -912,15 +994,23 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
             )
             wire = build_generation_message(request, None, base_version, spec)
             message = wire.message
-            message.configuration = patch_configuration(message.configuration, args.frames, args.shift, h3=h3)
+            message.configuration = patch_configuration(
+                message.configuration, args.frames, args.shift, h3=h3, config_fields=args.config_fields
+            )
             config = sent_configuration(message.configuration)
             log.line("GenConfig fields sent: " + json.dumps(config, sort_keys=True, default=str))
-            if h3:
-                from drawthings_py.generated.dt_grpc.config_generated import GenerationConfiguration, SamplerType
+            if args.config_fields:
+                log.line(f"applied raw configuration overrides: {args.config_fields}", echo=True)
+            from dtflow.backends.drawthings.wire import SAMPLER_WIRE_VALUE
+            from drawthings_py.generated.dt_grpc.config_generated import GenerationConfiguration, GenerationConfigurationT
 
-                raw = GenerationConfiguration.GetRootAs(message.configuration, 0)
-                if raw.Sampler() != SamplerType.TCDTrailing or abs(raw.StochasticSamplingGamma() - 1.0) > 0.001:
-                    raise ValidationError("H3 TCD Trailing/stochastic sampling settings were not serialized as requested.")
+            raw = GenerationConfiguration.GetRootAs(message.configuration, 0)
+            if raw.Sampler() != SAMPLER_WIRE_VALUE[sampler]:
+                raise ValidationError(f"Sampler {sampler.value} was not serialized as requested.")
+            if h3:
+                resolved = GenerationConfigurationT.InitFromObj(raw)
+                if not math.isfinite(resolved.stochasticSamplingGamma):
+                    raise ValidationError("H3 stochastic sampling gamma was not serialized.")
             for key, wanted in (
                 ("num_frames", args.frames),
                 ("steps", args.steps),
