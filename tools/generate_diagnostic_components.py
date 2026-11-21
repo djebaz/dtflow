@@ -1,7 +1,7 @@
 """Generate DTFlow's bundled logging-component choices from source declarations.
 
-Run after adding a module with logging.getLogger(__name__). Packaging also
-regenerates this list automatically; the desktop never scans Python or log files.
+Packaging generates this ignored catalogue automatically. Source checkouts work
+without it using the Logs workspace fallback; the desktop never scans Python or log files.
 """
 
 from __future__ import annotations
