@@ -50,15 +50,13 @@ class VideoPlayer(QObject):
         self._duration = 0
         self._muted = False
         self._video = None
-        # Window-scoped shortcuts work regardless of which non-editing widget has focus.
-        self._play_shortcuts = []
-        for key in ("Space", "K"):
-            shortcut = QShortcut(QKeySequence(key), surface)
-            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
-            shortcut.setAutoRepeat(False)
-            shortcut.setEnabled(False)
-            shortcut.activated.connect(self.toggle_play)
-            self._play_shortcuts.append(shortcut)
+        # K controls the selected video without taking focus from other widgets.
+        # Space retains Qt's native focused-control activation behavior.
+        self._play_shortcut = QShortcut(QKeySequence("K"), surface)
+        self._play_shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+        self._play_shortcut.setAutoRepeat(False)
+        self._play_shortcut.setEnabled(False)
+        self._play_shortcut.activated.connect(self.toggle_play)
         self.play_button = QPushButton(surface)
         self.play_button.setObjectName("galleryPlayVideoButton")
         self.play_button.setIcon(QIcon(str(ICONS / "video-play.svg")))
@@ -74,6 +72,7 @@ class VideoPlayer(QObject):
         """Show the poster Play affordance only when a companion MP4 is available."""
         self.release()
         self.play_button.setVisible(is_video)
+        self._set_shortcut_enabled(is_video)
         self._place()
 
     @property
@@ -136,8 +135,7 @@ class VideoPlayer(QObject):
         self._panel, self._player, self._audio, self._duration = panel, player, audio, 0
         self._video = video
         self.play_button.hide()
-        for shortcut in self._play_shortcuts:
-            shortcut.setEnabled(True)
+        self._set_shortcut_enabled(True)
 
         def update_time(position: int) -> None:
             if not slider.isSliderDown() and self._duration:
@@ -156,7 +154,7 @@ class VideoPlayer(QObject):
             active = player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
             ended = player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia
             toggle.setIcon(QIcon(str(ICONS / ("video-pause.svg" if active else "video-play.svg"))))
-            description = "Pause video (Space/K)" if active else "Replay video" if ended else "Play video (Space/K)"
+            description = "Pause video (K)" if active else "Replay video (K)" if ended else "Play video (K)"
             toggle.setToolTip(description)
             toggle.setAccessibleName(description)
 
@@ -199,15 +197,14 @@ class VideoPlayer(QObject):
         panel.raise_()
         if self._on_playback_changed is not None:
             self._on_playback_changed(True)
-        app = QApplication.instance()
-        if app is not None:
-            app.installEventFilter(self)
         player.setSource(QUrl.fromLocalFile(path))
         player.play()
 
     def toggle_play(self) -> None:
         """Pause, resume or replay a finished video."""
         if self._player is None:
+            if self.play_button.isVisible() and self.surface.isVisible():
+                self.play_button.click()
             return
         from PySide6.QtMultimedia import QMediaPlayer
 
@@ -243,11 +240,7 @@ class VideoPlayer(QObject):
         """Stop, detach video/audio, clear the source and free the media handle."""
         panel, player = self._panel, self._player
         self._panel = self._player = self._audio = self._video = None
-        for shortcut in self._play_shortcuts:
-            shortcut.setEnabled(False)
-        app = QApplication.instance()
-        if app is not None:
-            app.removeEventFilter(self)
+        self._set_shortcut_enabled(False)
         if player is not None:
             try:
                 player.stop()
@@ -263,7 +256,18 @@ class VideoPlayer(QObject):
                 self._on_playback_changed(False)
         if show_play and panel is not None:
             self.play_button.show()
+            self._set_shortcut_enabled(True)
             self._place()
+
+    def _set_shortcut_enabled(self, enabled: bool) -> None:
+        """Keep the video key and its editable-field guard active together."""
+        self._play_shortcut.setEnabled(enabled)
+        app = QApplication.instance()
+        if app is not None:
+            if enabled:
+                app.installEventFilter(self)
+            else:
+                app.removeEventFilter(self)
 
     def eventFilter(self, watched, event) -> bool:
         kind = event.type()
@@ -299,7 +303,9 @@ class VideoPlayer(QObject):
                 self.toggle_play()
             return True
 
-        if self._panel is None or kind not in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress):
+        if kind not in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress):
+            return False
+        if not self.surface.isVisible() or (self._panel is None and not self.play_button.isVisible()):
             return False
         if QApplication.activeModalWidget() is not None:
             return False
@@ -316,11 +322,11 @@ class VideoPlayer(QObject):
             or (isinstance(focus, QComboBox) and focus.isEditable())
         )
         if editing:
-            # Keep ordinary typing even while window-scoped video shortcuts exist.
-            if kind == QEvent.Type.ShortcutOverride and event.key() in (Qt.Key.Key_Space, Qt.Key.Key_K):
+            # Prevent K from stealing typing focus. Space is never a video shortcut.
+            if kind == QEvent.Type.ShortcutOverride and event.key() == Qt.Key.Key_K:
                 event.accept()
             return False
-        if QApplication.activeWindow() is not self.surface.window():
+        if QApplication.activeWindow() is not self.surface.window() or self._panel is None:
             return False
         key = event.key()
         keypad = bool(modifiers & Qt.KeyboardModifier.KeypadModifier)
@@ -345,8 +351,7 @@ class VideoPlayer(QObject):
                 return self.seek_delta(1000)
         elif not keypad and key == Qt.Key.Key_M:
             action = self.toggle_mute
-        # Space/K use WindowShortcut instead: unlike KeyPress on the video
-        # surface, the shortcut works when another non-editing control has focus.
+        # K uses WindowShortcut instead; Space retains Qt's focused-widget behavior.
         if action is None:
             return False
         if kind == QEvent.Type.KeyPress and (
