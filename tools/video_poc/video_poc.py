@@ -271,7 +271,9 @@ def add_drawthings_arguments(parser: argparse.ArgumentParser) -> None:
     reserved = {"model", "width", "height", "num_frames", "steps", "guidance", "shift", "seed", "sampler"}
     native = GenerationConfigurationT()
     descriptions = load_definitions()
-    group = parser.add_argument_group("Draw Things configuration (advanced; effective support is model/provider-specific)")
+    group = parser.add_argument_group(
+        "Draw Things configuration (advanced; effective support is model/provider-specific)"
+    )
     for field_name, prop in sorted(CONFIG_PROPS.items()):
         if field_name in reserved or not hasattr(native, prop.config_t_name):
             continue
@@ -691,9 +693,9 @@ class FrameSink:
 
 def patch_configuration(
     configuration: bytes, frames: int, shift: float | None,
-    *, h3: bool = False, config_fields: list[tuple[str, bool | int | float | str]] | None = None,
+    *, h3: bool = False, config_fields: list[tuple[str, object]] | None = None,
 ) -> bytes:
-    """Apply video settings and CLI scalar overrides to the exact FlatBuffer that DT+ receives."""
+    """Apply CLI fields, enums and arrays to the exact FlatBuffer sent to DT+."""
     import flatbuffers
     from drawthings_py.generated.dt_grpc.config_generated import GenerationConfiguration, GenerationConfigurationT
 
@@ -746,7 +748,9 @@ def patch_configuration(
             elif isinstance(value, str) and normalized(value) in choices:
                 value = choices[normalized(value)]
             else:
-                raise ValueError(f"{raw_key}: expected one of {', '.join(choices)} (or its numeric value), got {value!r}.")
+                raise ValueError(
+                    f"{raw_key}: expected one of {', '.join(choices)} (or its numeric value), got {value!r}."
+                )
         elif field_name in ("loras", "controls"):
             if not isinstance(value, list) or any(
                 not isinstance(item, dict) or not isinstance(item.get("file"), str) or not item["file"]
@@ -1191,7 +1195,7 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
             config = sent_configuration(message.configuration)
             log.line("GenConfig fields sent: " + json.dumps(config, sort_keys=True, default=str))
             if args.config_fields:
-                log.line(f"applied raw configuration overrides: {args.config_fields}", echo=True)
+                log.line(f"applied Draw Things configuration overrides: {args.config_fields}", echo=True)
             from dtflow.backends.drawthings.wire import SAMPLER_NAME, SAMPLER_WIRE_VALUE
             from drawthings_py.generated.dt_grpc.config_generated import GenerationConfiguration, GenerationConfigurationT
 
