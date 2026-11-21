@@ -3422,6 +3422,7 @@ class GalleryPage(QObject):
             self.video_player.show_for_video(False)  # A poster alone does not establish that its clip is available.
         clip = clip_summary(request)
         if clip:
+            self.video_player.allow_keyboard_start()
             self.surface_painter.mode = "Fit"
         self._widget("galleryDimensionsOverlay", QLabel).setText(
             self._dimensions(item) + (f" · Video {clip[0]}" if clip else "")

@@ -75,6 +75,10 @@ class VideoPlayer(QObject):
         self._set_shortcut_enabled(is_video)
         self._place()
 
+    def allow_keyboard_start(self) -> None:
+        """Allow K to request playback as soon as a video output is selected."""
+        self._set_shortcut_enabled(True)
+
     @property
     def playing(self) -> bool:
         """True while loading, playing, paused or finished in the inline player."""
@@ -203,7 +207,7 @@ class VideoPlayer(QObject):
     def toggle_play(self) -> None:
         """Pause, resume or replay a finished video."""
         if self._player is None:
-            if self.play_button.isVisible() and self.surface.isVisible():
+            if self.surface.isVisible() and self._play_shortcut.isEnabled():
                 self.play_button.click()
             return
         from PySide6.QtMultimedia import QMediaPlayer
