@@ -1055,11 +1055,11 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
             log.line("GenConfig fields sent: " + json.dumps(config, sort_keys=True, default=str))
             if args.config_fields:
                 log.line(f"applied raw configuration overrides: {args.config_fields}", echo=True)
-            from dtflow.backends.drawthings.wire import SAMPLER_WIRE_VALUE
+            from dtflow.backends.drawthings.wire import SAMPLER_NAME, SAMPLER_WIRE_VALUE
             from drawthings_py.generated.dt_grpc.config_generated import GenerationConfiguration, GenerationConfigurationT
 
             raw = GenerationConfiguration.GetRootAs(message.configuration, 0)
-            if raw.Sampler() != SAMPLER_WIRE_VALUE[sampler]:
+            if raw.Sampler() != SAMPLER_WIRE_VALUE[SAMPLER_NAME[sampler]]:
                 raise ValidationError(f"Sampler {sampler.value} was not serialized as requested.")
             if h3:
                 resolved = GenerationConfigurationT.InitFromObj(raw)
