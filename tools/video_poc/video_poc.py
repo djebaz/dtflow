@@ -115,6 +115,7 @@ class Progress:
         self.received = 0
         self.nbytes = 0
         self.sent_at: float | None = None
+        self.log: Log | None = None
         self._shown = 0
         self._last_plain = ("", -999.0)
 
@@ -156,9 +157,13 @@ class Progress:
         self.enabled = False
 
     async def tick(self) -> None:
+        beats = 0
         while True:
             await asyncio.sleep(1)
             self.render()
+            beats += 1
+            if self.log is not None and beats % 30 == 0:  # the log shows life even while DT+ is silent
+                self.log.line("  still running: " + self.text())
 
 
 def quiet_process_kwargs() -> dict:
@@ -210,13 +215,16 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "-sz",
         dest="size",
         type=parse_size,
-        default=(320, 320),
-        help="WIDTHxHEIGHT, e.g. 320x640 (default 320x320); adapted to the nearest multiple of 64 in 128..2048",
+        default=None,
+        help="WIDTHxHEIGHT, e.g. 320x640; adapted to the nearest multiple of 64 in 128..2048 "
+        "(default: 320x320 for LTX, the model preset's native size for other families)",
     )
-    parser.add_argument("-f", dest="frames", type=int, default=121, help="frame count (default 121)")
-    parser.add_argument("-s", dest="steps", type=int, default=8, help="steps (default 8)")
-    parser.add_argument("-g", dest="guidance", type=float, default=1.0, help="guidance (default 1)")
-    parser.add_argument("-sh", dest="shift", type=float, default=5.0, help="shift (default 5)")
+    parser.add_argument(
+        "-f", dest="frames", type=int, default=None, help="frame count (default: the model preset's, else 121)"
+    )
+    parser.add_argument("-s", dest="steps", type=int, default=None, help="steps (default: the model profile's)")
+    parser.add_argument("-g", dest="guidance", type=float, default=None, help="guidance (default: the model profile's)")
+    parser.add_argument("-sh", dest="shift", type=float, default=None, help="shift (default: the model profile's)")
     parser.add_argument("-sd", dest="seed", type=int, default=None, help="seed (default random)")
     parser.add_argument(
         "-i", dest="images", type=Path, nargs="+", default=[], help="start image(s); several = multi-frame"
@@ -229,9 +237,62 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-lg", dest="log", type=Path, default=Path("tmp") / f"video-poc-{stamp}.log", help="log file")
     args = parser.parse_args(argv)
     args.requested_size = args.size
-    args.width, args.height = snap_side(args.size[0]), snap_side(args.size[1])
-    args.size = (args.width, args.height)
     return args
+
+
+def preset_for(model: str) -> dict | None:
+    """The bundled Draw Things preset configuration for this checkpoint (quantization and build tag ignored)."""
+    from dtflow.core.model_profiles import model_key
+
+    path = ROOT / "src" / "dtflow" / "resources" / "presets" / "draw_things_configs.json"
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    wanted = {model_key(name) for name in profile_candidates(model)}
+
+    def walk(node):
+        if isinstance(node, list):
+            for item in node:
+                yield from walk(item)
+        elif isinstance(node, dict):
+            if isinstance(node.get("configuration"), dict):
+                yield node["configuration"]
+            else:
+                for item in node.values():
+                    yield from walk(item)
+
+    return next((c for c in walk(document) if model_key(str(c.get("model", ""))) in wanted), None)
+
+
+def resolve_defaults(args: argparse.Namespace, log: Log) -> None:
+    """Fill frames and size the user left out (and log where each value came from); steps, guidance and shift follow
+    from the model profile later."""
+    preset = preset_for(args.model)
+    if args.frames is None:
+        native = preset.get("numFrames") if preset else None
+        args.frames = int(native) if native else 121
+        log.line(f"  frames {args.frames} ({'model preset' if native else 'POC default, no preset found'})", echo=True)
+    else:
+        log.line(f"  frames {args.frames} (argument)")
+    if args.size is None:
+        if family_of(args.model) == "ltx":
+            args.requested_size, source = (320, 320), "POC default for LTX (small first run)"
+        elif preset and preset.get("width") and preset.get("height"):
+            args.requested_size, source = (int(preset["width"]), int(preset["height"])), "model preset (native size)"
+        else:
+            args.requested_size, source = (320, 320), "POC fallback, no preset found"
+    else:
+        source = "argument"
+    args.width, args.height = snap_side(args.requested_size[0]), snap_side(args.requested_size[1])
+    args.size = (args.width, args.height)
+    log.line(f"  size {args.width}x{args.height} ({source})", echo=source != "argument")
+    if args.requested_size != args.size:
+        log.line(
+            f"  size adapted to multiples of 64: requested {args.requested_size[0]}x{args.requested_size[1]}, "
+            f"using {args.width}x{args.height}",
+            echo=True,
+        )
 
 
 def family_of(model: str) -> str:
@@ -450,14 +511,15 @@ class FrameSink:
 # -- request ---------------------------------------------------------------------------------------------------------
 
 
-def patch_configuration(configuration: bytes, frames: int, shift: float) -> bytes:
+def patch_configuration(configuration: bytes, frames: int, shift: float | None) -> bytes:
     """Set ``num_frames`` and the chosen ``shift`` on the serialized configuration (script-local, wire.py untouched)."""
     import flatbuffers
     from drawthings_py.generated.dt_grpc.config_generated import GenerationConfiguration, GenerationConfigurationT
 
     table = GenerationConfigurationT.InitFromObj(GenerationConfiguration.GetRootAs(configuration, 0))
     table.numFrames = frames
-    table.shift = shift
+    if shift is not None:
+        table.shift = shift
     builder = flatbuffers.Builder(0)
     builder.Finish(table.Pack(builder))
     return bytes(builder.Output())
@@ -713,9 +775,17 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
         f"profile steps {profile.steps}, guidance {profile.guidance}, extras {dict(profile.extras)}; base family {base_version}",
         echo=True,
     )
-    log.line(
-        f"used instead of the profile: steps {args.steps}, guidance {args.guidance}, shift {args.shift} (arguments)"
-    )
+    extras = dict(profile.extras)
+    sources = []
+    for name, wanted, own in (
+        ("steps", args.steps, profile.steps),
+        ("guidance", args.guidance, profile.guidance),
+        ("shift", args.shift, extras.get("shift")),
+    ):
+        value = own if wanted is None else wanted
+        setattr(args, name, None if value is None else (float(value) if name != "steps" else int(value)))
+        sources.append(f"{name} {value} ({'profile' if wanted is None else 'argument'})")
+    log.line("values used: " + ", ".join(sources), echo=True)
     seed = args.seed if args.seed is not None else random.randrange(0, 2**31)
     count = len(args.images)
     log.line(
@@ -765,6 +835,7 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
     got = Received()
     progress = Progress(not args.quiet, args.steps, args.frames)
     log.progress = progress
+    progress.log = log
     ticker = None
     deadline = time.monotonic() + args.timeout
     request_sent = time.monotonic()
@@ -1052,11 +1123,8 @@ def main() -> int:
         log.section("2 Resolved arguments")
         for name, value in sorted(vars(args).items()):
             log.line(f"  {name} = {value}")
-        asked = f"{args.requested_size[0]}x{args.requested_size[1]}"
-        if args.requested_size != args.size:
-            log.line(
-                f"  size adapted to multiples of 64: requested {asked}, using {args.width}x{args.height}", echo=True
-            )
+        log.line("defaults resolved:")
+        resolve_defaults(args, log)
         for path in args.images:
             if not path.is_file():
                 raise FileNotFoundError(f"start image not found: {path}")
