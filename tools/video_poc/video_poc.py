@@ -124,15 +124,16 @@ def run_tool(command: list[str], timeout: float = 60) -> subprocess.CompletedPro
 
 
 def parse_size(text: str) -> tuple[int, int]:
-    """``WIDTHxHEIGHT`` (width first), both multiples of 64 in 128..2048."""
+    """``WIDTHxHEIGHT`` (width first) as typed; the values are adapted later by ``snap_side``."""
     match = re.fullmatch(r"(\d+)[xX](\d+)", text.strip())
-    if not match:
+    if not match or not int(match[1]) or not int(match[2]):
         raise argparse.ArgumentTypeError(f"-sz must look like WIDTHxHEIGHT, for example 320x640 (got {text!r})")
-    width, height = int(match[1]), int(match[2])
-    for name, value in (("width", width), ("height", height)):
-        if not 128 <= value <= 2048 or value % 64:
-            raise argparse.ArgumentTypeError(f"-sz {name} {value} must be a multiple of 64 between 128 and 2048")
-    return width, height
+    return int(match[1]), int(match[2])
+
+
+def snap_side(value: int) -> int:
+    """Nearest multiple of 64 (ties go up), kept inside 128..2048."""
+    return min(2048, max(128, (value + 32) // 64 * 64))
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -143,7 +144,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-m", dest="model", default=DEFAULT_MODEL, help="model file (default %(default)s)")
     parser.add_argument("-p", dest="prompt", default="", help="prompt")
     parser.add_argument(
-        "-sz", dest="size", type=parse_size, default=(320, 320), help="WIDTHxHEIGHT, e.g. 320x640 (default 320x320)"
+        "-sz",
+        dest="size",
+        type=parse_size,
+        default=(320, 320),
+        help="WIDTHxHEIGHT, e.g. 320x640 (default 320x320); adapted to the nearest multiple of 64 in 128..2048",
     )
     parser.add_argument("-f", dest="frames", type=int, default=121, help="frame count (default 121)")
     parser.add_argument("-s", dest="steps", type=int, default=8, help="steps (default 8)")
@@ -160,7 +165,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-to", dest="timeout", type=float, default=900, help="total timeout in seconds (default 900)")
     parser.add_argument("-lg", dest="log", type=Path, default=Path("tmp") / f"video-poc-{stamp}.log", help="log file")
     args = parser.parse_args(argv)
-    args.width, args.height = args.size
+    args.requested_size = args.size
+    args.width, args.height = snap_side(args.size[0]), snap_side(args.size[1])
+    args.size = (args.width, args.height)
     return args
 
 
@@ -1018,6 +1025,11 @@ def main() -> int:
         log.section("2 Resolved arguments")
         for name, value in sorted(vars(args).items()):
             log.line(f"  {name} = {value}")
+        asked = f"{args.requested_size[0]}x{args.requested_size[1]}"
+        if args.requested_size != args.size:
+            log.line(
+                f"  size adapted to multiples of 64: requested {asked}, using {args.width}x{args.height}", echo=True
+            )
         for path in args.images:
             if not path.is_file():
                 raise FileNotFoundError(f"start image not found: {path}")
