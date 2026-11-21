@@ -277,7 +277,8 @@ def resolve_defaults(args: argparse.Namespace, log: Log) -> None:
     if args.frames is None:
         native = preset.get("numFrames") if preset else None
         args.frames = 22 if args.model == PIKA_MODEL else int(native) if native else 121
-        log.line(f"  frames {args.frames} ({'model preset' if native else 'POC default, no preset found'})", echo=True)
+        source = "Pika Ref2VA smoke default" if args.model == PIKA_MODEL else "model preset" if native else "POC default, no preset found"
+        log.line(f"  frames {args.frames} ({source})", echo=True)
     else:
         log.line(f"  frames {args.frames} (argument)")
     if args.size is None:
