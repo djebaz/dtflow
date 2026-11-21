@@ -273,17 +273,28 @@ class VideoPlayer(QObject):
                 return False
             # The poster's painter normally pans on click. For video posters, click
             # anywhere on the image to use the same lazy Play action as the icon.
-            if self._panel is None and self.play_button.isVisible() and kind in (
-                QEvent.Type.MouseButtonPress,
-                QEvent.Type.MouseButtonRelease,
-            ) and event.button() == Qt.MouseButton.LeftButton:
+            if (
+                self._panel is None
+                and self.play_button.isVisible()
+                and kind
+                in (
+                    QEvent.Type.MouseButtonPress,
+                    QEvent.Type.MouseButtonRelease,
+                )
+                and event.button() == Qt.MouseButton.LeftButton
+            ):
                 if kind == QEvent.Type.MouseButtonRelease:
                     self.play_button.click()
                 return True
-        if watched is self._video and kind in (
-            QEvent.Type.MouseButtonPress,
-            QEvent.Type.MouseButtonRelease,
-        ) and event.button() == Qt.MouseButton.LeftButton:
+        if (
+            watched is self._video
+            and kind
+            in (
+                QEvent.Type.MouseButtonPress,
+                QEvent.Type.MouseButtonRelease,
+            )
+            and event.button() == Qt.MouseButton.LeftButton
+        ):
             if kind == QEvent.Type.MouseButtonRelease:
                 self.toggle_play()
             return True
