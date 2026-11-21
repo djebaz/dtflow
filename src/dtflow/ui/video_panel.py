@@ -134,10 +134,6 @@ class VideoPanel(QObject):
         for widget in self._preview_targets:
             widget.installEventFilter(self)
         self.problem = self.frame.findChild(QLabel, "videoProblemLabel")
-        policy = self.problem.sizePolicy()
-        policy.setRetainSizeWhenHidden(True)
-        self.problem.setSizePolicy(policy)
-        self.problem.setMinimumHeight(self.problem.fontMetrics().height())
         self.seconds.valueChanged.connect(self._sync)
         page.widthSpinBox.valueChanged.connect(self._sync)
         page.heightSpinBox.valueChanged.connect(self._sync)

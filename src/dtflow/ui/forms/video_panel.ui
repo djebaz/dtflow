@@ -91,7 +91,19 @@
      <property name="role" stdset="0">
       <string>sectionContents</string>
      </property>
-     <layout class="QGridLayout" name="videoGrid" columnstretch="0,1">
+     <layout class="QGridLayout" name="videoGrid" columnstretch="0,0,1,0,0,0">
+      <property name="leftMargin">
+       <number>12</number>
+      </property>
+      <property name="topMargin">
+       <number>12</number>
+      </property>
+      <property name="rightMargin">
+       <number>12</number>
+      </property>
+      <property name="bottomMargin">
+       <number>12</number>
+      </property>
       <property name="horizontalSpacing">
        <number>8</number>
       </property>
@@ -112,57 +124,37 @@
        </widget>
       </item>
       <item row="0" column="1">
-       <layout class="QHBoxLayout" name="videoDurationRow">
-        <property name="spacing">
-         <number>8</number>
+       <widget class="QDoubleSpinBox" name="videoDurationSpinBox">
+        <property name="accessibleName">
+         <string>Clip duration in seconds</string>
         </property>
-        <item>
-         <widget class="QDoubleSpinBox" name="videoDurationSpinBox">
-          <property name="accessibleName">
-           <string>Clip duration in seconds</string>
-          </property>
-          <property name="toolTip">
-           <string>The clip's requested length; frames follow from the model's playback rate and frame rule.</string>
-          </property>
-          <property name="maximumSize">
-           <size>
-            <width>116</width>
-            <height>16777215</height>
-           </size>
-          </property>
-          <property name="suffix">
-           <string> s</string>
-          </property>
-          <property name="decimals">
-           <number>2</number>
-          </property>
-          <property name="singleStep">
-           <double>0.5</double>
-          </property>
-          <property name="minimum">
-           <double>0.36</double>
-          </property>
-          <property name="maximum">
-           <double>60.0</double>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <spacer name="videoDurationFill">
-          <property name="orientation">
-           <enum>Qt::Horizontal</enum>
-          </property>
-          <property name="sizeHint" stdset="0">
-           <size>
-            <width>0</width>
-            <height>0</height>
-           </size>
-          </property>
-         </spacer>
-        </item>
-       </layout>
+        <property name="toolTip">
+         <string>The clip's requested length; frames follow from the model's playback rate and frame rule.</string>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>116</width>
+          <height>16777215</height>
+         </size>
+        </property>
+        <property name="suffix">
+         <string> s</string>
+        </property>
+        <property name="decimals">
+         <number>2</number>
+        </property>
+        <property name="singleStep">
+         <double>0.5</double>
+        </property>
+        <property name="minimum">
+         <double>0.36</double>
+        </property>
+        <property name="maximum">
+         <double>60.0</double>
+        </property>
+       </widget>
       </item>
-      <item row="1" column="1">
+      <item row="0" column="2">
        <widget class="QLabel" name="videoDurationLabel">
         <property name="accessibleName">
          <string>Effective clip length</string>
@@ -187,7 +179,7 @@
         </property>
        </widget>
       </item>
-      <item row="2" column="0">
+      <item row="0" column="3">
        <widget class="QLabel" name="videoStartTitle">
         <property name="text">
          <string>Start image</string>
@@ -200,72 +192,52 @@
         </property>
        </widget>
       </item>
-      <item row="2" column="1">
-       <layout class="QHBoxLayout" name="videoStartRow">
-        <property name="spacing">
-         <number>8</number>
-        </property>
-        <item>
-         <widget class="QPushButton" name="videoChooseStartButton">
-          <property name="text">
-           <string>Choose
+      <item row="0" column="4">
+       <widget class="QPushButton" name="videoChooseStartButton">
+        <property name="text">
+         <string>Choose
 image</string>
-          </property>
-          <property name="minimumSize">
-           <size>
-            <width>80</width>
-            <height>56</height>
-           </size>
-          </property>
-          <property name="maximumSize">
-           <size>
-            <width>80</width>
-            <height>56</height>
-           </size>
-          </property>
-          <property name="iconSize">
-           <size>
-            <width>72</width>
-            <height>48</height>
-           </size>
-          </property>
-          <property name="accessibleName">
-           <string>Choose or replace start image; hover or focus to preview the crop</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <widget class="QPushButton" name="videoClearStartButton">
-          <property name="text">
-           <string>Clear</string>
-          </property>
-          <property name="accessibleName">
-           <string>Clear start image</string>
-          </property>
-          <property name="enabled">
-           <bool>false</bool>
-          </property>
-          <property name="toolTip">
-           <string>Clear the draft start image; saved outputs are unchanged.</string>
-          </property>
-         </widget>
-        </item>
-        <item>
-         <spacer name="videoStartFill">
-          <property name="orientation">
-           <enum>Qt::Horizontal</enum>
-          </property>
-          <property name="sizeHint" stdset="0">
-           <size>
-            <width>0</width>
-            <height>0</height>
-           </size>
-          </property>
-         </spacer>
-        </item>
-       </layout>
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>80</width>
+          <height>56</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>80</width>
+          <height>56</height>
+         </size>
+        </property>
+        <property name="iconSize">
+         <size>
+          <width>72</width>
+          <height>48</height>
+         </size>
+        </property>
+        <property name="accessibleName">
+         <string>Choose or replace start image; hover or focus to preview the crop</string>
+        </property>
+       </widget>
       </item>
-      <item row="3" column="0" colspan="2">
+      <item row="0" column="5">
+       <widget class="QPushButton" name="videoClearStartButton">
+        <property name="text">
+         <string>Clear</string>
+        </property>
+        <property name="accessibleName">
+         <string>Clear start image</string>
+        </property>
+        <property name="enabled">
+         <bool>false</bool>
+        </property>
+        <property name="toolTip">
+         <string>Clear the draft start image; saved outputs are unchanged.</string>
+        </property>
+       </widget>
+      </item>
+      <item row="1" column="0" colspan="6">
        <widget class="QLabel" name="videoProblemLabel">
         <property name="text">
          <string />

@@ -4,7 +4,7 @@ Updated 2026-11-21 for Queue pose editor PR #522; prior release/feature evidence
 
 ## In review: video UX alignment (#540, PR #545; 2026-11-21)
 
-Video controls reuse Generate's shared section-card design, wrapping duration evidence and neutral source actions. Source/Width/Height hover and keyboard focus expose the live centered crop without replacing the result. Draft validation notifies Generate availability; second-pass progress uses only that pass's reported counts. Static validation is separate from pending Windows/DPI, restart and backend acceptance; see the [desktop guide](guides/desktop.md#generate).
+Video controls reuse Generate's shared section-card design, 12 px body padding and one control row (Duration/readout left, source thumbnail/neutral Clear right), without reserved blank warning height. Source/Width/Height hover and keyboard focus expose the live centered crop without replacing the result. Draft validation notifies Generate availability; second-pass progress uses only that pass's reported counts. Static validation is separate from pending Windows/DPI, restart and backend acceptance; see the [desktop guide](guides/desktop.md#generate).
 
 ## Unreleased: Windows video packaging (#529, PR #533)
 
