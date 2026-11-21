@@ -975,8 +975,10 @@ async def receive(stream, got: Received, sink: FrameSink, log: Log, request_sent
                 progress.second_pass_seen = True
             if name == "sampling":
                 got.sampling_steps = max(got.sampling_steps, int(value.step))
-                stage = f"pass 1/2: sampling step {int(value.step)}" if progress.hires_requested else (
-                    f"sampling step {int(value.step)} of {progress.steps}"
+                stage = (
+                    f"pass 1/2: sampling step {int(value.step)} of {progress.steps}"
+                    if progress.hires_requested
+                    else f"sampling step {int(value.step)} of {progress.steps}"
                 )
                 progress.set(stage)
             elif name == "second_pass_sampling":
