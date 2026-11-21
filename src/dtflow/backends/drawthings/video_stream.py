@@ -528,7 +528,11 @@ def _now() -> str:
 
 
 def _reject(
-    request: ResolvedGenerationRequest, code: str, stage, *, category=ErrorCategory.PROTOCOL,
+    request: ResolvedGenerationRequest,
+    code: str,
+    stage,
+    *,
+    category=ErrorCategory.PROTOCOL,
     message="Received video output was rejected.",
 ) -> BackendError:
     from dtflow.backends.drawthings.errors import api_failure, diagnostics

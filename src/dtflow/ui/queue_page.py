@@ -899,8 +899,13 @@ class QueuePage:
                     ]
                     if phases:
                         phase_names = {
-                            "preparing": "preparing", "waiting": "waiting", "sampling": "sampling",
-                            "second_pass": "second pass", "receiving": "receiving", "encoding": "finalizing", "saving": "saving",
+                            "preparing": "preparing",
+                            "waiting": "waiting",
+                            "sampling": "sampling",
+                            "second_pass": "second pass",
+                            "receiving": "receiving",
+                            "encoding": "finalizing",
+                            "saving": "saving",
                         }
                         counts = {}
                         for item in running_items:

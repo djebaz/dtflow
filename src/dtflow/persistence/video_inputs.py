@@ -60,7 +60,9 @@ def retain_source(state: Path, data: bytes, digest: str) -> str:
             finally:
                 os.close(descriptor)
     except OSError as exc:
-        raise ValidationError("The retained video start-image copy could not be committed; the original is unchanged.") from exc
+        raise ValidationError(
+            "The retained video start-image copy could not be committed; the original is unchanged."
+        ) from exc
     finally:
         pending.unlink(missing_ok=True)
     return str(target)
