@@ -17,7 +17,7 @@ The build uses Windows 2022 x64, managed Python 3.13.13, uv 0.11.19 and PyInstal
 
 PR builds have a PR-number cache suffix separate from the normal/release cache, so they cannot populate the dependency namespace used by release builds. Run only reviewed same-repository code; manual builds still execute the selected source's build scripts. Older PRs without the canonical builder/verifier are not supported by this workflow. A clean PR build stamp means an unmodified checkout, not merged/released or runtime-accepted code.
 
-GitHub Actions build artifacts are stored under the workflow run with **14-day retention**; download the artifact before it expires. They do not require Google Drive OAuth secrets. Release-tag builds download the artifact within the workflow, verify the manifest and checksums, and attach the three files to a draft GitHub Release. Draft attachment rechecks the remote tag and refuses published releases or existing asset names. A partial release upload is an explicit failure requiring manual draft inspection; no clobber, deletion or silent retry is performed. Follow [the release guide](releasing.md).
+GitHub Actions build artifacts are stored under the workflow run with **24-hour retention**; download the artifact before it expires. They do not require Google Drive OAuth secrets. Release-tag builds download the artifact within the workflow, verify the manifest and checksums, and attach the three files to a draft GitHub Release. Draft attachment rechecks the remote tag and refuses published releases or existing asset names. A partial release upload is an explicit failure requiring manual draft inspection; no clobber, deletion or silent retry is performed. Follow [the release guide](releasing.md).
 
 ## Build from PowerShell
 
