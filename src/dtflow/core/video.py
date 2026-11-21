@@ -31,7 +31,9 @@ FAMILIES: tuple[VideoFamily, ...] = (
     VideoFamily("ltx_2.3", "LTX-2.3", 8, 121, 25, 48000, (320, 320)),
     VideoFamily("ltx_2", "LTX-2", 8, 121, 25, 24000, (320, 320)),
     VideoFamily("ltx", "LTX", 8, 121, 25, 24000, (320, 320)),
+    VideoFamily("wan_v2.2", "Wan 2.2", 4, 81, 24, None, (480, 320)),
     VideoFamily("wan_v2.1", "Wan 2.1", 4, 81, 16, None, (480, 320)),
+    VideoFamily("wan", "Wan", 4, 81, 16, None, (480, 320)),
 )
 
 MAX_FRAMES = 361
@@ -57,6 +59,11 @@ def family_of(model_id: str) -> VideoFamily | None:
 
 
 def is_video_model(model_id: str) -> bool:
+    """Recognize a video checkpoint even when this production slice cannot dispatch it."""
+    return family_of(model_id) is not None
+
+
+def supported_video_model(model_id: str) -> bool:
     return model_id in SUPPORTED_VIDEO_MODELS
 
 
@@ -130,7 +137,7 @@ def video_shift(model_id: str) -> float | None:
 
 def check_request_fields(model_id: str, frames: int, start_image: str | None) -> None:
     """Request validation shared by the request model: frame rule and start-image support."""
-    if not is_video_model(model_id):
+    if not supported_video_model(model_id):
         raise ValidationError("This exact checkpoint is not yet verified for video generation.")
     problem = frame_problem(model_id, frames)
     if problem:
