@@ -1,5 +1,7 @@
 # Desktop guide
 
+On **Connection**, choose **Local Draw Things** or **DT+ Cloud**. The Fake backend is reserved for CLI development, offline tests and preview tooling; it is not a desktop provider choice. If a saved session previously selected Fake, the provider remains unselected until you explicitly choose a real backend. No generation starts automatically.
+
 DTFlow's desktop application has Connection, Generate, Queues and Images pages. Generate and Queues use the primary left navigation. The colored Connection power icon sits at the extreme right of the bottom bar; Images opens through the blue primary-action button above ordinary right-hand inspectors (above the centre at narrow widths). That Images button is absent from Images and Logs. The panel icon beside the brand toggles details. Images uses the same logo/primary navigation in two aligned header rows and hides the content rails; returning restores splitter geometry and the shared Inspector choice. Workflows is currently an offline mockup, not a normal-launch tab.
 
 ## Downloads and Auto-prepare (#477, #479)
