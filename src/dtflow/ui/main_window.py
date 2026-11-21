@@ -551,7 +551,8 @@ class MainWindow:
         )
         self.generation.queue_behind = self.queue.queue_behind
         self.generation.queue_images = self._queue_images
-        form.backendCombo.addItems(("local", "cloud"))
+        form.backendCombo.addItems(BACKENDS)
+        form.backendCombo.view().setRowHidden(form.backendCombo.findText("fake"), True)
         form.backendCombo.setPlaceholderText("Select a provider")
         startup.mark("page wiring")
         self._restore_session()
