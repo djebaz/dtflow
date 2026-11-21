@@ -207,8 +207,9 @@ def _video_companion(
         return None
     declared = declared_video_companion(metadata, record)
     if declared is None:
-        # A matching filename without a video declaration is not ours to remove.
-        return None
+        # An undeclared sibling might be unrelated, or a video whose sidecar
+        # was damaged. Neither case permits removal of the poster.
+        raise OSError("MP4 beside poster has no ownership declaration.")
     name, recorded_size = declared
     if (
         clip.name != name
@@ -610,9 +611,15 @@ def prepare_recycle(
                 if raw_state is not None and raw_state[0] != "failed":
                     ineligible += 1
                     continue
-            if target.video is not None:
-                video_state = states.get(f"{target.identity}:video")
-                if video_state is not None and video_state[0] != "failed":
+            video_state = states.get(f"{target.identity}:video")
+            if video_state is not None:
+                if target.video is None:
+                    # An unverified or failed MP4 disposition cannot be silently
+                    # treated as a successful companion removal.
+                    if video_state[0] not in ("recycled", "deleted"):
+                        ineligible += 1
+                        continue
+                elif video_state[0] != "failed":
                     ineligible += 1
                     continue
             if not permanent and trash_check is not None:

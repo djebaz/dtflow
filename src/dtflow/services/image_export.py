@@ -447,9 +447,8 @@ def _export_video(item: GalleryItem, destination: Path, options: ExportOptions, 
     )
     try:
         with clip.open("rb") as source:
-            if (source_info := os.fstat(source.fileno())) and (
-                source_info.st_size, source_info.st_mtime_ns, source_info.st_ino, source_info.st_dev
-            ) != before:
+            source_info = os.fstat(source.fileno())
+            if (source_info.st_size, source_info.st_mtime_ns, source_info.st_ino, source_info.st_dev) != before:
                 raise ValidationError("Original video changed before export; retry after checking the saved file.")
             shutil.copyfileobj(source, target_handle, length=1024 * 1024)
         after = clip.stat()
@@ -629,7 +628,7 @@ def _run_export(state, destination, options, query, identities, cancel, progress
     else:
         identities = tuple(dict.fromkeys(identities))
     if len(identities) > MAX_EXPORT_IMAGES:
-        raise ValidationError("Export is limited to 10,000 images per operation; narrow the Images filter.")
+        raise ValidationError("Export is limited to 10,000 outputs per operation; narrow the Images filter.")
     total = len(identities)
     if not total or cancel.is_set():
         return ExportResult(str(destination), total, 0, 0, cancel.is_set())
