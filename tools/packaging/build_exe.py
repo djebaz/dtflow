@@ -65,7 +65,6 @@ def main(argv: list[str] | None = None) -> int:
             "--paths", "src", "--copy-metadata", "dtflow", "--collect-data", "drawthings_py",
             "--collect-data", "dtflow", "--collect-data", "kmeans1d", "--copy-metadata", "keyring", "--collect-binaries", "onnxruntime",
             "--copy-metadata", "quickjs-ng", "--copy-metadata", "nodeeditor-qtpy", "--copy-metadata", "kmeans1d", "--hidden-import", "kmeans1d", "--hidden-import", "quickjs", "--hidden-import", "_quickjs", "--hidden-import", "dtflow.scripting.worker",
-            "--hidden-import", "PySide6.QtMultimedia", "--hidden-import", "PySide6.QtMultimediaWidgets",
             "--distpath", str(out),
         ]  # fmt: skip
         if platform.system() == "Windows":
