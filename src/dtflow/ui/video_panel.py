@@ -162,7 +162,12 @@ class VideoPanel(QObject):
         )
         self.clear.setEnabled(self._start is not None or self._loading)
         problem = (
-            self._choice_problem
+            (
+                "This exact checkpoint is not verified for video yet. "
+                "Select LTX-2.3 distilled 1.1 q6p or q8p."
+                if not rules.supported_video_model(self.model) else ""
+            )
+            or self._choice_problem
             or (
                 "Connection changed; choose the start image again."
                 if self._start is not None and self._start_source != self._backend_source()
@@ -179,6 +184,8 @@ class VideoPanel(QObject):
         """Why a video cannot start now (empty when it can); checked before submit so no paid run is wasted."""
         if not self.active:
             return ""
+        if not rules.supported_video_model(self.model):
+            return "This exact checkpoint is not verified for video yet; select LTX-2.3 distilled 1.1 q6p or q8p."
         if self._loading:
             return "Checking the selected start image; generation cannot begin yet."
         if self._choice_problem:
@@ -233,6 +240,8 @@ class VideoPanel(QObject):
         """The resolved image request plus the video fields; the request model checks the frame rule and the image."""
         from dtflow.core.models import ValidationError
 
+        if not rules.supported_video_model(self.model):
+            raise ValidationError(self.blocker())
         if request.loras:
             raise ValidationError("LoRAs are not supported for video yet.")
         if self._loading:
