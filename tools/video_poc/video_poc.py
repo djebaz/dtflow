@@ -4,7 +4,7 @@ Usage (from the repository root, PAID DT+ generation on every call):
     uv run python tools/video_poc/video_poc.py -p "a red fox runs through snow"
     uv run python tools/video_poc/video_poc.py -p "..." -i start.png
     uv run python tools/video_poc/video_poc.py -p "..." -i a.png b.png c.png
-    uv run python tools/video_poc/video_poc.py -p "..." -w 1280 -ht 768
+    uv run python tools/video_poc/video_poc.py -p "..." -sz 1280x768
 
 Exactly one generation per call. The request goes through ``build_generation_message`` (text-to-video config plus
 ``num_frames``); the response is read by this script's own receiver (no single-output rule, no PNG check, no size cap,
@@ -123,6 +123,18 @@ def run_tool(command: list[str], timeout: float = 60) -> subprocess.CompletedPro
 # -- arguments and small helpers -------------------------------------------------------------------------------------
 
 
+def parse_size(text: str) -> tuple[int, int]:
+    """``WIDTHxHEIGHT`` (width first), both multiples of 64 in 128..2048."""
+    match = re.fullmatch(r"(\d+)[xX](\d+)", text.strip())
+    if not match:
+        raise argparse.ArgumentTypeError(f"-sz must look like WIDTHxHEIGHT, for example 320x640 (got {text!r})")
+    width, height = int(match[1]), int(match[2])
+    for name, value in (("width", width), ("height", height)):
+        if not 128 <= value <= 2048 or value % 64:
+            raise argparse.ArgumentTypeError(f"-sz {name} {value} must be a multiple of 64 between 128 and 2048")
+    return width, height
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     parser = argparse.ArgumentParser(
@@ -130,8 +142,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("-m", dest="model", default=DEFAULT_MODEL, help="model file (default %(default)s)")
     parser.add_argument("-p", dest="prompt", default="", help="prompt")
-    parser.add_argument("-w", dest="width", type=int, default=320, help="width (default 320)")
-    parser.add_argument("-ht", dest="height", type=int, default=320, help="height (default 320)")
+    parser.add_argument(
+        "-sz", dest="size", type=parse_size, default=(320, 320), help="WIDTHxHEIGHT, e.g. 320x640 (default 320x320)"
+    )
     parser.add_argument("-f", dest="frames", type=int, default=121, help="frame count (default 121)")
     parser.add_argument("-s", dest="steps", type=int, default=8, help="steps (default 8)")
     parser.add_argument("-g", dest="guidance", type=float, default=1.0, help="guidance (default 1)")
@@ -146,7 +159,9 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-play", dest="play", action="store_true", help="play the MP4 in a throwaway Qt window")
     parser.add_argument("-to", dest="timeout", type=float, default=900, help="total timeout in seconds (default 900)")
     parser.add_argument("-lg", dest="log", type=Path, default=Path("tmp") / f"video-poc-{stamp}.log", help="log file")
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    args.width, args.height = args.size
+    return args
 
 
 def family_of(model: str) -> str:
