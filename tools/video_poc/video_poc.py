@@ -279,7 +279,11 @@ def resolve_defaults(args: argparse.Namespace, log: Log) -> None:
     if args.frames is None:
         native = preset.get("numFrames") if preset else None
         args.frames = 22 if args.model in H3_REF2VA_MODELS else int(native) if native else 121
-        source = "H3 Ref2VA smoke default" if args.model in H3_REF2VA_MODELS else "model preset" if native else "POC default, no preset found"
+        source = (
+            "H3 Ref2VA smoke default"
+            if args.model in H3_REF2VA_MODELS
+            else "model preset" if native else "POC default, no preset found"
+        )
         log.line(f"  frames {args.frames} ({source})", echo=True)
     else:
         log.line(f"  frames {args.frames} (argument)")
@@ -825,7 +829,8 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
     ):
         value = own if wanted is None else wanted
         setattr(args, name, None if value is None else (float(value) if name != "steps" else int(value)))
-        sources.append(f"{name} {value} ({'profile' if wanted is None else 'argument'})")
+        origin = "H3 smoke default" if h3 and wanted is None else "profile" if wanted is None else "argument"
+        sources.append(f"{name} {value} ({origin})")
     log.line("values used: " + ", ".join(sources), echo=True)
     seed = args.seed if args.seed is not None else random.randrange(0, 2**31)
     count = len(args.images)
