@@ -29,6 +29,16 @@ The existing `image_recycle.sqlite3` advances to schema 2 on the next writer, pr
 
 Intent commits before the external operation. Success requires a confirmed operation and source absence; disappearance alone is not success. Lost/failed Windows deletion acknowledgments remain uncertain even if the source still appears unchanged. Partial outcomes settle per image; durable-write failure leaves intent for manual review, not automatic retry. No metadata deletion, automatic recovery or replay is introduced.
 
+## Video companions (issue #530)
+
+Saved video outputs remain one gallery identity with an MP4, PNG poster, and attempt sidecar. The original sidecar and generation history stay in place under the existing audit contract; Trash and Delete are **file removal**, not sidecar/history cleanup. The service reads the bounded sidecar's exact `video.file`, `video.poster`, byte count, and committed final artifact path before authorizing the MP4. A similarly named undeclared clip is **not** removal authority. Invalid ownership, unexpected links, redirects, changed size, or ambiguous ledger state refuse mutation rather than guessing.
+
+The same original-file and batch leases, existing per-file durable-intent ledger, and explicit confirmation cover the MP4 before the poster. The clip has ledger identity `<output identity>:video`; the PNG keeps its normal gallery identity. A failed/uncertain MP4 disposition leaves the poster untouched and requires explicit manual review. If the MP4 was confirmed removed but the poster removal fails, the remaining poster stays visible, the result is partial, and a later explicitly confirmed removal can finish it without moving the clip again. A missing poster with an MP4 still present cannot be cleared as a confirmed absent card. Existing image-only and image-operation raw-file rules remain.
+
+Permanent deletion on Windows also checks the exact managed `<prefix>-<attempt>-1.mp4` name and file fingerprint under the existing handle boundary; it cannot delete a generic path. The original MP4 content is not recoverable after permanent deletion. Qt Trash has no DTFlow Undo or supported in-app restore; putting recovered files back in the folder does not automatically unhide an identity in the durable ledger. A content-verified restoration would require a separately approved workflow, not inference from file names, sizes, or timestamps.
+
+**Evidence:** Source reviewed only on draft PR #535. Mixed-selection Trash, permanent deletion, incomplete-video states, and Windows/WSL ownership/handle behavior still require owner acceptance. No automated tests or renders were added/run during implementation.
+
 ## Existing Trash-specific behavior
 
 ## Boundaries
