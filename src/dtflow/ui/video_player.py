@@ -8,10 +8,14 @@ hands over the path. "Open video in player" stays as the fallback when playback 
 
 from __future__ import annotations
 
-from PySide6.QtCore import QEvent, QObject, Qt, QUrl
-from PySide6.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
+from pathlib import Path
+
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, QUrl
+from PySide6.QtUiTools import QUiLoader
+from PySide6.QtWidgets import QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
 
 SLIDER_SCALE = 1000
+CONTROLS_FORM = Path(__file__).parent / "forms" / "gallery_video_controls.ui"
 
 
 def clock(milliseconds: int) -> str:
@@ -55,23 +59,26 @@ class VideoPlayer(QObject):
         self.play_button.hide()
         panel = QWidget(self.surface)
         panel.setObjectName("galleryVideoPanel")
-        panel.setStyleSheet("#galleryVideoPanel { background: black; }")
         column = QVBoxLayout(panel)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(0)
         video = QVideoWidget(panel)
         column.addWidget(video, 1)
-        bar = QWidget(panel)
-        row = QHBoxLayout(bar)
-        row.setContentsMargins(330, 4, 56, 4)  # clear of the position overlay and the next arrow
-        toggle = QPushButton("Pause", bar)
-        slider = QSlider(Qt.Orientation.Horizontal, bar)
+        file = QFile(str(CONTROLS_FORM))
+        if not file.open(QIODevice.OpenModeFlag.ReadOnly):
+            raise OSError("Video playback controls form could not be opened.")
+        try:
+            bar = QUiLoader().load(file, panel)
+        finally:
+            file.close()
+        if bar is None:
+            raise RuntimeError("Video playback controls form could not be loaded.")
+        toggle = bar.findChild(QPushButton, "videoPlaybackToggle")
+        slider = bar.findChild(QSlider, "videoPlaybackSeek")
+        label = bar.findChild(QLabel, "videoPlaybackTime")
+        mute = bar.findChild(QPushButton, "videoPlaybackMute")
+        close = bar.findChild(QPushButton, "videoPlaybackClose")
         slider.setRange(0, SLIDER_SCALE)
-        label = QLabel("0:00 / 0:00", bar)
-        mute = QPushButton("Mute", bar)
-        close = QPushButton("Close", bar)
-        for widget in (toggle, slider, label, mute, close):
-            row.addWidget(widget, 1 if widget is slider else 0)
         column.addWidget(bar)
         player, audio = QMediaPlayer(panel), QAudioOutput(panel)
         player.setAudioOutput(audio)
