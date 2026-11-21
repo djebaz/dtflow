@@ -161,7 +161,6 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-o", dest="out", type=Path, default=Path("tmp") / "video-poc" / stamp, help="output folder")
     parser.add_argument("-kf", dest="keep_frames", action="store_true", help="keep the PNG frames")
     parser.add_argument("-nomp4", dest="no_mp4", action="store_true", help="skip the ffmpeg encode")
-    parser.add_argument("-play", dest="play", action="store_true", help="play the MP4 in a throwaway Qt window")
     parser.add_argument("-to", dest="timeout", type=float, default=900, help="total timeout in seconds (default 900)")
     parser.add_argument("-lg", dest="log", type=Path, default=Path("tmp") / f"video-poc-{stamp}.log", help="log file")
     args = parser.parse_args(argv)
@@ -560,59 +559,6 @@ def mux_audio(ffmpeg: str, video: Path, audio_raw: Path, rate: int, target: Path
     return result.returncode == 0, result.stderr
 
 
-# -- throwaway Qt playback check -------------------------------------------------------------------------------------
-
-
-def play(path: Path, log: Log) -> None:
-    """Play the MP4 twice in a QMediaPlayer window, seek to the middle once, and report what Qt said."""
-    from PySide6.QtCore import QTimer, QUrl
-    from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
-    from PySide6.QtMultimediaWidgets import QVideoWidget
-    from PySide6.QtWidgets import QApplication
-
-    app = QApplication.instance() or QApplication([])
-    widget, audio, player = QVideoWidget(), QAudioOutput(), QMediaPlayer()
-    player.setAudioOutput(audio)
-    player.setVideoOutput(widget)
-    player.setLoops(2)
-    seeked: dict = {}
-    widget.resize(640, 640)
-    widget.setWindowTitle("video_poc playback check")
-    player.errorOccurred.connect(lambda code, text: log.line(f"play: Qt error {code}: {text}", echo=True))
-
-    def on_status(status) -> None:
-        log.line(f"play: media status {status.name}")
-        if status == QMediaPlayer.MediaStatus.LoadedMedia:
-            log.line(
-                f"play: duration {player.duration} ms, video tracks {len(player.videoTracks())}, "
-                f"audio tracks {len(player.audioTracks())}",
-                echo=True,
-            )
-            player.play()
-            QTimer.singleShot(1500, seek_middle)
-        elif status == QMediaPlayer.MediaStatus.EndOfMedia:
-            log.line("play: end of media (two loops done)", echo=True)
-            QTimer.singleShot(300, app.quit)
-        elif status == QMediaPlayer.MediaStatus.InvalidMedia:
-            QTimer.singleShot(300, app.quit)
-
-    def seek_middle() -> None:
-        target = player.duration // 2
-        seeked["target"] = target
-        player.setPosition(target)
-        QTimer.singleShot(
-            400, lambda: log.line(f"play: seek requested {target} ms, landed at {player.position()} ms", echo=True)
-        )
-
-    player.mediaStatusChanged.connect(on_status)
-    player.setSource(QUrl.fromLocalFile(str(path.resolve())))
-    widget.show()
-    QTimer.singleShot(int(180_000), app.quit)  # never hang
-    app.exec()
-    player.stop()
-    log.line("play: window closed; audible audio and picture are for you to judge", echo=True)
-
-
 # -- main run --------------------------------------------------------------------------------------------------------
 
 
@@ -1002,11 +948,6 @@ async def finish_run(
     )
     if count_images := len(args.images):
         found.verdict += f"; start image(s) {count_images}: DT+ accepted them, compare the first frames by eye"
-    if args.play:
-        try:
-            await asyncio.to_thread(play, final, log)
-        except Exception as exc:
-            log.warn(f"playback check failed: {type(exc).__name__}: {exc}")
 
 
 def main() -> int:
