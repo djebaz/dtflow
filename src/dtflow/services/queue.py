@@ -434,13 +434,13 @@ class QueueDispatcher:
                         break
                     except BackendError as exc:
                         repaired = await self._try_asset_recovery(queue_id, item_id, request, exc.failure)
+                        limit = auto_retry_limit(request, exc.failure)
                         # Retry a repaired request only when the provider definitely did not receive it.
                         safe_replay = (
                             repaired
                             and exc.failure.remote_outcome == RemoteOutcome.NOT_STARTED
-                            and retries < AUTO_RETRIES
+                            and retries < min(AUTO_RETRIES, limit)
                         )
-                        limit = auto_retry_limit(request, exc.failure)
                         if not safe_replay and (retries >= limit or not auto_retryable(exc.failure)):
                             raise
                         retries += 1

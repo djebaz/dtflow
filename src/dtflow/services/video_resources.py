@@ -1,0 +1,107 @@
+"""Process-local admission for owned video pipelines; bounds are policy, not measured process RSS."""
+
+import asyncio
+import shutil
+import tempfile
+import threading
+from contextlib import asynccontextmanager
+from pathlib import Path
+
+from dtflow.core.models import MAX_QUEUE_CONCURRENCY, BackendError, BackendFailure, ErrorCategory, ValidationError
+from dtflow.core.tasks import settle
+
+MIB = 1024 * 1024
+TENSOR_LIMIT = 64 * MIB
+AUDIO_LIMIT = 64 * MIB
+MP4_LIMIT = 256 * MIB
+SCRATCH_RESERVE = 1024 * MIB
+OUTPUT_RESERVE = 512 * MIB
+DISK_HEADROOM = 256 * MIB
+MEMORY_BUDGET = 4 * 1024 * MIB
+_lock = threading.Lock()
+_active: dict["VideoLease", tuple[int, dict[int, tuple[Path, int]]]] = {}
+
+
+class VideoLease:
+    def __init__(self, request, output: Path):
+        self.request, self.output = request, Path(output)
+        # Conservative admission accounting for frame conversion, bounded payload queues, audio and poster.
+        # External SDK/FFmpeg allocations and whole-process RSS are not certified by this estimate.
+        self.memory = 192 * MIB + request.width_px * request.height_px * 3 * 16
+
+    def _disks(self):
+        self.output.mkdir(parents=True, exist_ok=True)
+        disks = {}
+        for path, amount in ((Path(tempfile.gettempdir()), SCRATCH_RESERVE), (self.output, OUTPUT_RESERVE)):
+            volume = path.stat().st_dev
+            previous = disks.get(volume, (path, 0))
+            disks[volume] = path, previous[1] + amount
+        return disks
+
+    def _check_disks(self, disks):
+        for volume, (path, amount) in disks.items():
+            reserved = sum(held.get(volume, (path, 0))[1] for owner, (_, held) in _active.items() if owner is not self)
+            if shutil.disk_usage(path).free < reserved + amount + DISK_HEADROOM:
+                raise ValidationError(
+                    "Insufficient free storage for this video and the other admitted clips. Nothing was submitted."
+                )
+
+    def acquire(self) -> bool:
+        with _lock:
+            if (
+                len(_active) >= MAX_QUEUE_CONCURRENCY
+                or sum(value[0] for value in _active.values()) + self.memory > MEMORY_BUDGET
+            ):
+                return False
+            disks = self._disks()
+            self._check_disks(disks)
+            _active[self] = self.memory, disks
+            return True
+
+    def recheck(self):
+        with _lock:
+            self._check_disks(_active[self][1])
+
+    def release(self):
+        with _lock:
+            _active.pop(self, None)
+
+
+def recheck_video_storage(request_id: str) -> None:
+    """Revalidate a service-owned reservation after backend connection/auth/lane awaits, before submission."""
+    with _lock:
+        for owner, (_, disks) in _active.items():
+            if owner.request.request_id == request_id:
+                owner._check_disks(disks)
+                return
+
+
+@asynccontextmanager
+async def video_admission(request, output):
+    lease = VideoLease(request, output)
+    if request.width_px * request.height_px > 2048 * 2048 or lease.memory > MEMORY_BUDGET:
+        raise BackendError(
+            BackendFailure(
+                ErrorCategory.RESOURCE_LIMIT,
+                "video_memory_limit",
+                "Video exceeds the bounded frame/payload policy; nothing was submitted.",
+                request.request_id,
+            )
+        )
+    try:
+        try:
+            # The lease object exists before the worker starts; cancellation cannot lose an acquired reservation.
+            while not await settle(asyncio.to_thread(lease.acquire)):
+                await asyncio.sleep(0.1)
+        except (OSError, ValueError) as exc:
+            raise BackendError(
+                BackendFailure(
+                    ErrorCategory.RESOURCE_LIMIT,
+                    "video_storage_limit",
+                    "Insufficient or unavailable video storage for this clip and existing reservations. Nothing was submitted.",
+                    request.request_id,
+                )
+            ) from exc
+        yield lease
+    finally:
+        lease.release()

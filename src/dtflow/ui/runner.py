@@ -121,7 +121,8 @@ class EventRelay(QObject):
         """Event sink for the session service; safe to call from any thread."""
         with self._lock:
             if event.kind in TRANSIENT_EVENTS:
-                self._transient[event.kind] = event
+                # Multiplexed queues retain the latest observation per item, not just the last active lane.
+                self._transient[getattr(event, "transient_key", event.kind)] = event
             else:
                 self._critical.append(event)
             schedule, self._scheduled = not self._scheduled, True

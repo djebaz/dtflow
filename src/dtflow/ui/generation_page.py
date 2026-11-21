@@ -87,7 +87,7 @@ from dtflow.ui.generation_presenter import (
 )
 from dtflow.ui.inline_feedback import InlineNotice, edit_text
 from dtflow.ui.video_progress import VideoProgress
-from dtflow.ui.video_panel import IMAGE_ONLY_REASON, VideoPanel
+from dtflow.ui.video_panel import VideoPanel
 from dtflow.core import video as rules
 from dtflow.core.video import VIDEO_TOTAL_TIMEOUT
 from dtflow.services.video_artifacts import video_path_for
@@ -836,11 +836,36 @@ class GenerationPage:
             }
         )
 
-    def reuse_saved_request(self, document: dict, source_identity: str, *, origin: str = "the selected output") -> None:
+    def reuse_saved_request(self, document: dict, source_identity: str, *, origin: str = "the selected output") -> bool:
         """Populate Generate from one recorded request without dispatching."""
+        video_request = None
+        if document.get("num_frames") is not None:
+            from dtflow.core.request_records import request_from_record
+
+            try:
+                video_request = request_from_record(document)
+            except ValidationError:
+                self._status(
+                    Presentation(
+                        "error",
+                        "Cannot load video settings",
+                        "The recorded video request is invalid. Generate is unchanged.",
+                    )
+                )
+                return False
         values = self._saved_request_values(document)
         self._apply(values)
         self.lora.set_loras(values.loras, loaded=True)
+        if video_request is not None:
+            from dtflow.core.video import duration_seconds
+
+            self.video.restore(
+                {
+                    "duration_seconds": duration_seconds(video_request.model_id, video_request.num_frames),
+                    "start_image": video_request.start_image,
+                    "start_image_sha256": video_request.start_image_sha256,
+                }
+            )
         self._reuse_source_identity = source_identity
         self._config_name = None
         if document.get("pose_control") is not None:
@@ -852,6 +877,7 @@ class GenerationPage:
                 f"Generate was populated from {origin}. Nothing was submitted; availability is revalidated on use.",
             )
         )
+        return True
 
     def regenerate_saved_request(self, document: dict, source_identity: str) -> bool:
         """Validate recorded settings before replacing the form, then submit them as a fresh request."""
@@ -876,7 +902,8 @@ class GenerationPage:
             self._mark(exc.widget)
             self._status(Presentation("error", "Cannot regenerate", str(exc)))
             return False
-        self.reuse_saved_request(document, source_identity)
+        if not self.reuse_saved_request(document, source_identity):
+            return False
         self.generate()
         return True
 
@@ -951,8 +978,11 @@ class GenerationPage:
             reason = video.blocker()
             button.setEnabled(not blocked and not no_model and not reason)
             button.setToolTip(reason)
-            self.page.queueGenerateButton.setEnabled(False)
-            self.page.queueGenerateButton.setToolTip(IMAGE_ONLY_REASON)
+            self.page.queueGenerateButton.setEnabled(not self._busy and not no_model and not reason)
+            self.page.queueGenerateButton.setToolTip(
+                reason
+                or "Queue this video: Repeat uses these settings; Plan uses the independent Queue draft. Start may use credits."
+            )
             return
         if hasattr(self, "inpaint"):
             self.inpaint.set_busy(blocked)  # Inpaint keeps its editor open and only gates Edit image
@@ -1037,7 +1067,8 @@ class GenerationPage:
         chosen, so repeated previews and the creation use the seeds the dry-run table shows, even after a rejection.
         """
         if self.video.active:
-            raise FormError("A video cannot be queued yet; Generate runs it directly.", None)
+            if reason := self.video.blocker():
+                raise FormError(reason, None)
         if self.inpaint.active and self.inpaint.queue_job() is None:
             raise FormError("Choose a source image and paint or select the area to change first.", None)
         if self.controlnet.active and self.controlnet.job() is None:
@@ -1048,6 +1079,8 @@ class GenerationPage:
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
             request = self._with_reuse_lineage(self._allow_local_bridge_model(request))
+            if self.video.active:
+                request = self.video.apply(request)
         except FormError as exc:
             self._mark(exc.widget)
             raise

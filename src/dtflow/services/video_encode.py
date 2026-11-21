@@ -18,6 +18,8 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 
+from dtflow.services.video_resources import MP4_LIMIT
+
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
 STALL_SECONDS = 90  # a frame writer that makes no progress for this long fails the run
 
@@ -100,7 +102,7 @@ class FrameSink:
 
     def __init__(self, ffmpeg: str, fps: int, partial: Path):
         self.ffmpeg, self.fps, self.partial = ffmpeg, fps, partial
-        self.queue: queue.Queue = queue.Queue(maxsize=8)
+        self.queue: queue.Queue = queue.Queue(maxsize=2)
         self.frames = 0
         self.size: tuple[int, int] | None = None
         self.first_frame: bytes | None = None
@@ -118,9 +120,9 @@ class FrameSink:
             self.ffmpeg, "-hide_banner", "-nostdin", "-y",
             "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{width}x{height}", "-r", str(self.fps), "-i", "pipe:0",
             "-c:v", "libx264", "-profile:v", "high", "-level:v", "4.1", "-pix_fmt", "yuv420p",
-            "-b:v", str(bitrate), "-g", "30", "-bf", "2",
+            "-b:v", str(bitrate), "-g", "30", "-bf", "2", "-threads", "2", "-filter_threads", "1",
             "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
-            "-movflags", "+faststart", "-f", "mp4", str(self.partial),
+            "-movflags", "+faststart", "-fs", str(MP4_LIMIT), "-f", "mp4", str(self.partial),
         ]  # fmt: skip
         self._proc = subprocess.Popen(
             command, stdin=subprocess.PIPE, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, **quiet_process_kwargs()
@@ -170,18 +172,37 @@ class FrameSink:
         if self._done:
             return
         self._done = True
+        requested_abort = abort
         error = None
+
+        def stop_writer() -> None:
+            # Wake a writer blocked on the pipe, discard buffered frames and leave a guaranteed sentinel.
+            if self._proc is not None and self._proc.poll() is None:
+                self._proc.kill()
+            while True:
+                try:
+                    self.queue.get_nowait()
+                except queue.Empty:
+                    break
+            self.queue.put_nowait(None)
+
         if self._writer is not None:
-            try:
-                self.queue.put(None, timeout=STALL_SECONDS)
-            except queue.Full:
-                abort = True
+            if abort:
+                stop_writer()
+            else:
+                try:
+                    self.queue.put(None, timeout=STALL_SECONDS)
+                except queue.Full:
+                    abort, error = True, "The frame writer stopped consuming frames."
+                    stop_writer()
             self._writer.join(timeout=60)
             if self._writer.is_alive():
                 abort, error = True, "The frame writer did not finish within 60 s."
+                stop_writer()
+                self._writer.join(timeout=5)
         returncode = None
         if self._proc is not None:
-            if abort:
+            if abort and self._proc.poll() is None:
                 self._proc.kill()
             try:
                 returncode = self._proc.wait(timeout=120)
@@ -194,7 +215,7 @@ class FrameSink:
         error = error or self._failed
         if abort or error or returncode != 0:
             self.partial.unlink(missing_ok=True)
-            if abort:
+            if requested_abort:
                 return
             raise EncodeError(error or f"ffmpeg exit {returncode}: {tail(chr(10).join(self._stderr))}")
 
@@ -204,7 +225,7 @@ def mux_audio(ffmpeg: str, video: Path, audio_raw: Path, rate: int, target: Path
         ffmpeg, "-hide_banner", "-nostdin", "-y", "-i", str(video),
         "-f", "f32le", "-ar", str(rate), "-ac", "2", "-i", str(audio_raw),
         "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", str(min(192_000, rate * 6)),
-        "-movflags", "+faststart", "-f", "mp4", str(target),
+        "-movflags", "+faststart", "-threads", "2", "-fs", str(MP4_LIMIT), "-f", "mp4", str(target),
     ]  # fmt: skip
     result = run_tool(command, timeout=300)
     if result.returncode != 0:
