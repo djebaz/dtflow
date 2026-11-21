@@ -163,7 +163,7 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
             base_version = (model.architecture if model else None) or bundled_base_version(request.model_id)
             emit("preparing", stage="encoding_request")
             secret = await backend._secret()
-            trace("authorization_complete", elapsed_ms=round((time.monotonic() - started) * 1000))
+            trace("credentials_resolved", elapsed_ms=round((time.monotonic() - started) * 1000))
             wire = await settle(asyncio.to_thread(build_generation_message, request, secret, base_version, spec))
             emit("preparing", stage="wire_validated")
             emit("preparing", stage="waiting_execution_lane")
@@ -172,6 +172,7 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
                 await backend._connect()
                 emit("preparing", stage="preparing_grpc_metadata")
                 metadata = await backend._generation_metadata(wire.message)
+                trace("authorization_complete", elapsed_ms=round((time.monotonic() - started) * 1000))
                 if asyncio.current_task().cancelling():
                     raise asyncio.CancelledError
                 stage = SubmissionStage.POSSIBLY_SUBMITTED
