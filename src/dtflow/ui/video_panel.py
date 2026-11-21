@@ -161,7 +161,17 @@ class VideoPanel(QObject):
             else "A start image is only verified with LTX-2.3 (LTX-2 froze on it)."
         )
         self.clear.setEnabled(self._start is not None or self._loading)
-        problem = self._choice_problem or video_encode.tools_problem() or rules.frame_problem(self.model, self.frames.value()) or ""
+        problem = (
+            self._choice_problem
+            or (
+                "Connection changed; choose the start image again."
+                if self._start is not None and self._start_source != self._backend_source()
+                else ""
+            )
+            or video_encode.tools_problem()
+            or rules.frame_problem(self.model, self.frames.value())
+            or ""
+        )
         self.problem.setText(problem)
         self.problem.setVisible(bool(problem))
 
@@ -173,6 +183,8 @@ class VideoPanel(QObject):
             return "Checking the selected start image; generation cannot begin yet."
         if self._choice_problem:
             return self._choice_problem
+        if self._start is not None and self._start_source != self._backend_source():
+            return "Connection changed; choose the start image again."
         return video_encode.tools_problem() or rules.frame_problem(self.model, self.frames.value()) or ""
 
     def _choose(self) -> None:
@@ -188,10 +200,11 @@ class VideoPanel(QObject):
         self._sync()
 
         def done(digest, failure) -> None:
-            if (
-                token != self._choice_revision or model != self.model
-                or source != self._backend_source() or self._runner.closed
-            ):
+            if token != self._choice_revision or model != self.model or self._runner.closed:
+                return
+            if source != self._backend_source():
+                self._clear()
+                self._sync()
                 return
             self._loading = False
             if failure is not None:
@@ -214,6 +227,7 @@ class VideoPanel(QObject):
         self._choice_problem = ""
         self.start_label.setText("None (text to video)")
         self.clear.setEnabled(False)
+        self._sync()
 
     def apply(self, request: ResolvedGenerationRequest) -> ResolvedGenerationRequest:
         """The resolved image request plus the video fields; the request model checks the frame rule and the image."""
