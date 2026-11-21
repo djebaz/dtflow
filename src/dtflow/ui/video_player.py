@@ -66,13 +66,13 @@ class VideoPlayer(QObject):
         # K and S both toggle Play/Pause without taking focus from other widgets.
         # Space and Enter retain Qt's native focused-control behavior.
         self._play_shortcut = QShortcut(QKeySequence("K"), surface)
-        self._start_shortcut = QShortcut(QKeySequence("S"), surface)
-        for shortcut in (self._play_shortcut, self._start_shortcut):
+        self._s_shortcut = QShortcut(QKeySequence("S"), surface)
+        for shortcut in (self._play_shortcut, self._s_shortcut):
             shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
             shortcut.setAutoRepeat(False)
             shortcut.setEnabled(False)
         self._play_shortcut.activated.connect(self.toggle_play)
-        self._start_shortcut.activated.connect(self.toggle_play)
+        self._s_shortcut.activated.connect(self.toggle_play)
         self.play_button = QPushButton(surface)
         self.play_button.setObjectName("galleryPlayVideoButton")
         self.play_button.setIcon(QIcon(str(ICONS / "video-play.svg")))
@@ -176,7 +176,13 @@ class VideoPlayer(QObject):
             active = player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
             ended = player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia
             toggle.setIcon(QIcon(str(ICONS / ("video-pause.svg" if active else "video-play.svg"))))
-            description = "Pause video (K / S)" if active else "Replay video (K / S)" if ended else "Play video (K / S)"
+            description = (
+                "Pause video (K / S)"
+                if active
+                else "Replay video (K / S)"
+                if ended
+                else "Play video (K / S)"
+            )
             toggle.setToolTip(description)
             toggle.setAccessibleName(description)
 
@@ -298,7 +304,7 @@ class VideoPlayer(QObject):
 
     def _set_shortcut_enabled(self, enabled: bool) -> None:
         """Keep video keys and their editable-field guard active together."""
-        for shortcut in (self._play_shortcut, self._start_shortcut):
+        for shortcut in (self._play_shortcut, self._s_shortcut):
             shortcut.setEnabled(enabled)
         app = QApplication.instance()
         if app is not None:

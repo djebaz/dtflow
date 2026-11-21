@@ -3557,14 +3557,11 @@ class GalleryPage(QObject):
         if clip is not None and not item.issue:
             self.external_button.setEnabled(False)
             self.copy_button.setEnabled(False)
+            autoplay = self.video_player.autoplay and self._active and self.mode == "Detail" and selected_video_entry
             self.runner.submit(
                 asyncio.to_thread(self._video_companion_path, item),
                 lambda result, error: self._video_companion_done(
-                    detail_generation,
-                    item.identity,
-                    result,
-                    error,
-                    autoplay=self.video_player.autoplay and self._active and self.mode == "Detail" and selected_video_entry,
+                    detail_generation, item.identity, result, error, autoplay=autoplay
                 ),
             )
 
@@ -3596,7 +3593,13 @@ class GalleryPage(QObject):
             if self._active:
                 feedback(self.page).notice("Video unavailable", message, "warning")
         elif not self.video_player.playing:
-            if autoplay and self._active and self.mode == "Detail" and self.video_player.autoplay:
+            if (
+                autoplay
+                and self._active
+                and self.mode == "Detail"
+                and self.video_player.autoplay
+                and not self._recycle_busy
+            ):
                 self._start_video(path)
             else:
                 self.video_player.show_for_video(True)
@@ -4580,7 +4583,8 @@ class GalleryPage(QObject):
             if error is not None or not result:
                 self._selection_notice(f"Video unavailable: {error or 'it could not be read.'}")
                 return
-            self._start_video(result)
+            if not self.video_player.playing:
+                self._start_video(result)
 
         self.runner.submit(asyncio.to_thread(self._video_companion_path, item), done)
 
