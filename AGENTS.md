@@ -218,3 +218,4 @@ These instructions apply throughout `dtflow`.
 - Placeholder directories are intentional in this repository; use `.gitkeep` only while a directory has no real tracked files.
 - For runnable Python changes, validate syntax, imports, configuration parsing, and `--help` where applicable.
 - At the end of implementation work, state what changed, what was verified, what was not verified, whether training/inference ran, and whether any potentially billable action was performed.
+- `tools/video_poc/video_poc.py` (#521) is a throwaway DT+ video generation probe, not product code: it uses private backend methods and the installed `ffmpeg`/`ffprobe` from `PATH`, and one call sends one paid request. Do not import it from `src/` or treat its findings as video support; see the [POC findings](devdocs/research/2026-11-21-video-generation-poc.md).
