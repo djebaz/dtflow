@@ -459,7 +459,7 @@ class GenerationPage:
         self.controlnet = ControlnetEditor(page, runner)
         self.controlnet.attach(self)
         startup.mark("generate: controlnet editor")
-        self.video = VideoPanel(page, self._state)
+        self.video = VideoPanel(page, self._state, runner, self._backend)
         page.modelCombo.currentTextChanged.connect(self._video_model_changed)
         self._video_model_changed(page.modelCombo.currentText())
         startup.mark("generate: video panel")
