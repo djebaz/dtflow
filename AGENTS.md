@@ -104,6 +104,8 @@ These instructions apply throughout `dtflow`.
 
 ## UI and Qt
 
+- Generate video controls follow the [Video design contract](DESIGN.md#generate-video-controls): a center-workspace shared section card with caption/field rows, wrapping duration evidence, a keyboard-operable source thumbnail and adjacent neutral Clear. Hover/focus on the source or Width/Height previews the centered crop and dimension edits update it; leaving restores the current result without mutation. Keep availability in the Generate controller, notified when video validation/draft state changes, and use only newly reported counts for second-pass progress.
+
 - Queue pose editing (#515) lives in `ui/queue_pose.py` and canonical `queue_pose_editor.ui`, mounted in the independent composer. Keep exact controls in both captured/template PoseJob and recorded-request/template-map projections. Numeric text uses PoseControl validation without clamping; invalid edits block queue/template capture. Preview/fitting/replacement are local worker tasks, with stale results dropped after draft, connection, navigation or shutdown changes. Explicit replacement clears prior execution inputs/extraction evidence, preserves base/plan settings, and never extracts photos, stages a queue, downloads or uploads. Save/Update remains explicit under existing map/recipe limits; never mutate Generate or existing queues/templates from these controls.
 
 - Keep window fullscreen (F11) independent from the optimized Images layout (its icon or Escape outside editors/popups/inline feedback). Optimization only hides/restores chrome; it must not call native window show/state methods or restore a saved fullscreen state.

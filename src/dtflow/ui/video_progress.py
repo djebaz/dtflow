@@ -66,6 +66,7 @@ class VideoProgress:
             )
         elif event.kind == "progress" and event.stage and event.stage.startswith("second_pass"):
             self.phase, self.text = "second_pass", "Second-pass sampling"
+            self.done, self.total = event.completed, event.total
         elif event.kind == "progress" and event.stage:
             self.text = "DT+: " + event.stage.replace("_", " ")
         elif event.kind == "terminal":

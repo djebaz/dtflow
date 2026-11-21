@@ -1,84 +1,291 @@
 <?xml version="1.0" encoding="utf-8"?>
 <ui version="4.0">
  <class>VideoPanel</class>
- <widget class="QFrame" name="videoPanel">
-  <property name="role" stdset="0"><string>card</string></property>
-  <layout class="QVBoxLayout" name="videoPanelLayout">
-   <property name="leftMargin"><number>10</number></property>
-   <property name="topMargin"><number>5</number></property>
-   <property name="rightMargin"><number>10</number></property>
-   <property name="bottomMargin"><number>5</number></property>
-   <property name="spacing"><number>4</number></property>
+ <widget class="QGroupBox" name="videoPanel">
+  <property name="title">
+   <string />
+  </property>
+  <property name="role" stdset="0">
+   <string>sectionCard</string>
+  </property>
+  <property name="accessibleName">
+   <string>Video</string>
+  </property>
+  <layout class="QVBoxLayout" name="videoPanelCardLayout">
+   <property name="leftMargin">
+    <number>0</number>
+   </property>
+   <property name="topMargin">
+    <number>0</number>
+   </property>
+   <property name="rightMargin">
+    <number>0</number>
+   </property>
+   <property name="bottomMargin">
+    <number>0</number>
+   </property>
+   <property name="spacing">
+    <number>0</number>
+   </property>
    <item>
-    <layout class="QHBoxLayout" name="videoControlsRow">
-     <property name="spacing"><number>8</number></property>
-     <item>
-      <widget class="QLabel" name="videoDurationTitle">
-       <property name="text"><string>Duration</string></property>
-       <property name="textRole" stdset="0"><string>caption</string></property>
-       <property name="buddy"><cstring>videoDurationSpinBox</cstring></property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QDoubleSpinBox" name="videoDurationSpinBox">
-       <property name="accessibleName"><string>Clip duration in seconds</string></property>
-       <property name="toolTip"><string>The clip's requested length; frames follow from the model's playback rate and frame rule.</string></property>
-       <property name="minimumSize"><size><width>116</width><height>0</height></size></property>
-       <property name="maximumSize"><size><width>116</width><height>16777215</height></size></property>
-       <property name="suffix"><string> s</string></property>
-       <property name="decimals"><number>2</number></property>
-       <property name="singleStep"><double>0.5</double></property>
-       <property name="minimum"><double>0.36</double></property>
-       <property name="maximum"><double>60.0</double></property>
-      </widget>
-     </item>
-     <item>
-      <widget class="QLabel" name="videoDurationLabel">
-       <property name="accessibleName"><string>Effective clip length</string></property>
-       <property name="role" stdset="0"><string>secondary</string></property>
-       <property name="text"><string /></property>
-      </widget>
-     </item>
-     <item>
-      <spacer name="videoControlsFill">
-       <property name="orientation"><enum>Qt::Horizontal</enum></property>
-       <property name="sizeHint" stdset="0"><size><width>8</width><height>1</height></size></property>
-      </spacer>
-     </item>
-     <item>
-      <widget class="QFrame" name="videoStartCard">
-       <property name="frameShape"><enum>QFrame::StyledPanel</enum></property>
-       <property name="minimumSize"><size><width>80</width><height>56</height></size></property>
-       <property name="maximumSize"><size><width>80</width><height>56</height></size></property>
-       <property name="accessibleName"><string>Choose or replace start image</string></property>
-       <widget class="QLabel" name="videoStartThumb">
-        <property name="geometry"><rect><x>2</x><y>2</y><width>76</width><height>52</height></rect></property>
-        <property name="accessibleName"><string>Start image thumbnail; hover to preview crop, click to choose</string></property>
-        <property name="alignment"><set>Qt::AlignCenter</set></property>
-        <property name="role" stdset="0"><string>secondary</string></property>
-        <property name="text"><string>Choose image</string></property>
-        <property name="wordWrap"><bool>true</bool></property>
+    <widget class="QFrame" name="videoPanelHeader">
+     <property name="role" stdset="0">
+      <string>sectionHeader</string>
+     </property>
+     <layout class="QHBoxLayout" name="videoPanelHeaderLayout" stretch="0,1">
+      <property name="leftMargin">
+       <number>10</number>
+      </property>
+      <property name="topMargin">
+       <number>7</number>
+      </property>
+      <property name="rightMargin">
+       <number>10</number>
+      </property>
+      <property name="bottomMargin">
+       <number>7</number>
+      </property>
+      <property name="spacing">
+       <number>8</number>
+      </property>
+      <item>
+       <widget class="QLabel" name="videoPanelIcon">
+        <property name="role" stdset="0">
+         <string>sectionIcon</string>
+        </property>
+        <property name="iconKey" stdset="0">
+         <string>video</string>
+        </property>
+        <property name="text">
+         <string />
+        </property>
+        <property name="minimumSize">
+         <size>
+          <width>16</width>
+          <height>16</height>
+         </size>
+        </property>
+        <property name="maximumSize">
+         <size>
+          <width>16</width>
+          <height>16</height>
+         </size>
+        </property>
        </widget>
-       <widget class="QToolButton" name="videoClearStartButton">
-        <property name="geometry"><rect><x>48</x><y>2</y><width>30</width><height>30</height></rect></property>
-        <property name="text"><string>×</string></property>
-        <property name="toolTip"><string>Clear start image</string></property>
-        <property name="accessibleName"><string>Clear start image</string></property>
-        <property name="autoRaise"><bool>true</bool></property>
+      </item>
+      <item>
+       <widget class="QLabel" name="videoPanelHeading">
+        <property name="text">
+         <string>Video</string>
+        </property>
+        <property name="textRole" stdset="0">
+         <string>panelHeading</string>
+        </property>
        </widget>
-      </widget>
-     </item>
-    </layout>
+      </item>
+     </layout>
+    </widget>
    </item>
    <item>
-    <widget class="QLabel" name="videoProblemLabel">
-     <property name="text"><string /></property>
-     <property name="wordWrap"><bool>true</bool></property>
-     <property name="state" stdset="0"><string>warning</string></property>
+    <widget class="QWidget" name="videoPanelContents">
+     <property name="role" stdset="0">
+      <string>sectionContents</string>
+     </property>
+     <layout class="QGridLayout" name="videoGrid" columnstretch="0,1">
+      <property name="horizontalSpacing">
+       <number>8</number>
+      </property>
+      <property name="verticalSpacing">
+       <number>8</number>
+      </property>
+      <item row="0" column="0">
+       <widget class="QLabel" name="videoDurationTitle">
+        <property name="text">
+         <string>Duration</string>
+        </property>
+        <property name="textRole" stdset="0">
+         <string>caption</string>
+        </property>
+        <property name="buddy">
+         <cstring>videoDurationSpinBox</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="0" column="1">
+       <layout class="QHBoxLayout" name="videoDurationRow">
+        <property name="spacing">
+         <number>8</number>
+        </property>
+        <item>
+         <widget class="QDoubleSpinBox" name="videoDurationSpinBox">
+          <property name="accessibleName">
+           <string>Clip duration in seconds</string>
+          </property>
+          <property name="toolTip">
+           <string>The clip's requested length; frames follow from the model's playback rate and frame rule.</string>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>116</width>
+            <height>16777215</height>
+           </size>
+          </property>
+          <property name="suffix">
+           <string> s</string>
+          </property>
+          <property name="decimals">
+           <number>2</number>
+          </property>
+          <property name="singleStep">
+           <double>0.5</double>
+          </property>
+          <property name="minimum">
+           <double>0.36</double>
+          </property>
+          <property name="maximum">
+           <double>60.0</double>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="videoDurationFill">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+      <item row="1" column="1">
+       <widget class="QLabel" name="videoDurationLabel">
+        <property name="accessibleName">
+         <string>Effective clip length</string>
+        </property>
+        <property name="role" stdset="0">
+         <string>secondary</string>
+        </property>
+        <property name="text">
+         <string />
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="textRole" stdset="0">
+         <string>supporting</string>
+        </property>
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Ignored" vsizetype="Preferred">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="0">
+       <widget class="QLabel" name="videoStartTitle">
+        <property name="text">
+         <string>Start image</string>
+        </property>
+        <property name="textRole" stdset="0">
+         <string>caption</string>
+        </property>
+        <property name="buddy">
+         <cstring>videoChooseStartButton</cstring>
+        </property>
+       </widget>
+      </item>
+      <item row="2" column="1">
+       <layout class="QHBoxLayout" name="videoStartRow">
+        <property name="spacing">
+         <number>8</number>
+        </property>
+        <item>
+         <widget class="QPushButton" name="videoChooseStartButton">
+          <property name="text">
+           <string>Choose
+image</string>
+          </property>
+          <property name="minimumSize">
+           <size>
+            <width>80</width>
+            <height>56</height>
+           </size>
+          </property>
+          <property name="maximumSize">
+           <size>
+            <width>80</width>
+            <height>56</height>
+           </size>
+          </property>
+          <property name="iconSize">
+           <size>
+            <width>72</width>
+            <height>48</height>
+           </size>
+          </property>
+          <property name="accessibleName">
+           <string>Choose or replace start image; hover or focus to preview the crop</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <widget class="QPushButton" name="videoClearStartButton">
+          <property name="text">
+           <string>Clear</string>
+          </property>
+          <property name="accessibleName">
+           <string>Clear start image</string>
+          </property>
+          <property name="enabled">
+           <bool>false</bool>
+          </property>
+          <property name="toolTip">
+           <string>Clear the draft start image; saved outputs are unchanged.</string>
+          </property>
+         </widget>
+        </item>
+        <item>
+         <spacer name="videoStartFill">
+          <property name="orientation">
+           <enum>Qt::Horizontal</enum>
+          </property>
+          <property name="sizeHint" stdset="0">
+           <size>
+            <width>0</width>
+            <height>0</height>
+           </size>
+          </property>
+         </spacer>
+        </item>
+       </layout>
+      </item>
+      <item row="3" column="0" colspan="2">
+       <widget class="QLabel" name="videoProblemLabel">
+        <property name="text">
+         <string />
+        </property>
+        <property name="wordWrap">
+         <bool>true</bool>
+        </property>
+        <property name="state" stdset="0">
+         <string>warning</string>
+        </property>
+        <property name="textRole" stdset="0">
+         <string>supporting</string>
+        </property>
+       </widget>
+      </item>
+     </layout>
     </widget>
    </item>
   </layout>
  </widget>
- <resources/>
- <connections/>
+ <resources />
+ <connections />
 </ui>

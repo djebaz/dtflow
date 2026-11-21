@@ -41,6 +41,9 @@ class ImagePreview(QAbstractScrollArea):
         tokens = load_tokens()
         self._canvas_color = QColor(tokens["color.canvas"])
         self._secondary_color = QColor(tokens["color.secondary"])
+        self._crop_shade = QColor(tokens["color.canvas"])
+        self._crop_shade.setAlpha(145)
+        self._crop_outline = QColor(tokens["color.focus"])
         self._top = QFrame(self.viewport())
         self._top.setObjectName("previewToolbar")
         row = QHBoxLayout(self._top)
@@ -293,12 +296,12 @@ class ImagePreview(QAbstractScrollArea):
                 shown.width(),
                 kept_height * factor,
             )
-        shade = QColor(0, 0, 0, 145)
+        shade = self._crop_shade
         painter.fillRect(QRectF(shown.left(), shown.top(), shown.width(), kept.top() - shown.top()), shade)
         painter.fillRect(QRectF(shown.left(), kept.bottom(), shown.width(), shown.bottom() - kept.bottom()), shade)
         painter.fillRect(QRectF(shown.left(), kept.top(), kept.left() - shown.left(), kept.height()), shade)
         painter.fillRect(QRectF(kept.right(), kept.top(), shown.right() - kept.right(), kept.height()), shade)
-        painter.setPen(QColor(255, 255, 255))
+        painter.setPen(self._crop_outline)
         painter.drawRect(kept)
 
     def resizeEvent(self, event):

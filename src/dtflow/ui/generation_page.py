@@ -462,6 +462,7 @@ class GenerationPage:
         self.controlnet.attach(self)
         startup.mark("generate: controlnet editor")
         self.video = VideoPanel(page, self._state, runner, self._backend)
+        self.video.state_changed.connect(self._sync_generate)
         page.modelCombo.currentTextChanged.connect(self._video_model_changed)
         self._video_model_changed(page.modelCombo.currentText())
         startup.mark("generate: video panel")
@@ -616,9 +617,12 @@ class GenerationPage:
         profile = profile_for(model, entry.base_model if entry else None) if model else None
         allowed = sorted(SAMPLERS)
         wanted = keep or combo.currentText()
-        if not keep and profile and not rules.is_video_model(model) and wanted not in [
-            item.value for item in profile.samplers
-        ]:
+        if (
+            not keep
+            and profile
+            and not rules.is_video_model(model)
+            and wanted not in [item.value for item in profile.samplers]
+        ):
             wanted = profile.sampler.value
         if [combo.itemText(i) for i in range(combo.count())] != allowed:
             combo.blockSignals(True)

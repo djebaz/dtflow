@@ -13,10 +13,10 @@ import math
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
-from PySide6.QtGui import QImage, QPixmap
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, Signal
+from PySide6.QtGui import QIcon, QImage, QPixmap
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QDoubleSpinBox, QFrame, QLabel, QToolButton
+from PySide6.QtWidgets import QDoubleSpinBox, QLabel, QPushButton
 
 from dtflow.core import video as rules
 from dtflow.core.models import ResolvedGenerationRequest
@@ -93,6 +93,8 @@ LOCKED = ("inpaintModeButton", "controlnetModeButton", "scriptsModeButton", "ima
 
 
 class VideoPanel(QObject):
+    state_changed = Signal()
+
     def __init__(self, page, state_dir: Path, runner, backend_source):
         super().__init__(page)
         self.page, self._state = page, Path(state_dir)
@@ -104,7 +106,8 @@ class VideoPanel(QObject):
         self._start_source: tuple | None = None
         self._choice_revision = 0
         self._loading = False
-        self._hovering = False
+        self._preview_hovered: set[QObject] = set()
+        self._preview_focused: set[QObject] = set()
         self._choice_problem = ""
         self._locked_tips: dict[str, str] = {}
         self._seen_video = False
@@ -119,20 +122,27 @@ class VideoPanel(QObject):
             raise RuntimeError("Video controls form could not be loaded.")
         self.seconds = self.frame.findChild(QDoubleSpinBox, "videoDurationSpinBox")
         self.summary = self.frame.findChild(QLabel, "videoDurationLabel")
-        self.start_card = self.frame.findChild(QFrame, "videoStartCard")
-        self.clear = self.frame.findChild(QToolButton, "videoClearStartButton")
-        self.thumb = self.frame.findChild(QLabel, "videoStartThumb")
-        self._choose_targets = (self.start_card, self.thumb)
-        for widget in self._choose_targets:
+        self.clear = self.frame.findChild(QPushButton, "videoClearStartButton")
+        self.thumb = self.frame.findChild(QPushButton, "videoChooseStartButton")
+        self._preview_targets = (
+            self.thumb,
+            page.widthSpinBox,
+            page.widthSpinBox.lineEdit(),
+            page.heightSpinBox,
+            page.heightSpinBox.lineEdit(),
+        )
+        for widget in self._preview_targets:
             widget.installEventFilter(self)
-        self.start_card.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
-        self.start_card.setAccessibleName("Choose or replace start image")
         self.problem = self.frame.findChild(QLabel, "videoProblemLabel")
+        policy = self.problem.sizePolicy()
+        policy.setRetainSizeWhenHidden(True)
+        self.problem.setSizePolicy(policy)
+        self.problem.setMinimumHeight(self.problem.fontMetrics().height())
         self.seconds.valueChanged.connect(self._sync)
         page.widthSpinBox.valueChanged.connect(self._sync)
         page.heightSpinBox.valueChanged.connect(self._sync)
         self.clear.clicked.connect(self._clear)
-        self.clear.hide()
+        self.thumb.clicked.connect(self._choose)
         page.generationWorkspaceLayout.insertWidget(3, self.frame)
         self.frame.hide()
         self._sync()
@@ -242,24 +252,22 @@ class VideoPanel(QObject):
             rules.effective_text(self.model, self.seconds.value()) + (" · with sound" if audio else " · no sound")
         )
         accepts = rules.accepts_start_image(self.model)
-        self.start_card.setToolTip(
+        self.thumb.setEnabled(accepts)
+        self.thumb.setToolTip(
             (
                 f"{_short_name(self._start.name)} · {self._start_info.width}×{self._start_info.height}\n"
                 + crop_note(
                     (self._start_info.width, self._start_info.height),
                     (self.page.widthSpinBox.value(), self.page.heightSpinBox.value()),
                 )
-                + "\nHover to preview the crop. Click to replace."
+                + "\nHover or focus this image, Width or Height to preview the crop. Click to replace."
             )
             if self._start is not None and self._start_info is not None
             else "Click to choose a start image; leave empty for text to video."
             if accepts
             else "A start image is only verified with LTX-2.3 (LTX-2 froze on it)."
         )
-        for widget in self._choose_targets:
-            widget.setCursor(Qt.CursorShape.PointingHandCursor if accepts else Qt.CursorShape.ArrowCursor)
-        if self._hovering:
-            self._show_hover()
+        self._sync_crop_preview()
         self.clear.setEnabled(self._start is not None or self._loading)
         problem = (
             (_unverified(self.model) if not rules.supported_video_model(self.model) else "")
@@ -276,6 +284,7 @@ class VideoPanel(QObject):
         )
         self.problem.setText(problem)
         self.problem.setVisible(bool(problem))
+        self.state_changed.emit()
 
     def _incompatible_settings(self) -> str:
         """Explain incompatible values rather than silently resetting the video draft."""
@@ -339,7 +348,7 @@ class VideoPanel(QObject):
         self._runner.submit(asyncio.to_thread(_read_start_image, chosen), done)
 
     def _clear(self) -> None:
-        self._hide_hover()
+        self.page.resultPreviewLabel.clear_temporary_crop()
         self._choice_revision += 1
         self._start, self._sha, self._start_source, self._start_info = None, "", None, None
         self._loading = False
@@ -349,28 +358,30 @@ class VideoPanel(QObject):
         self._sync()
 
     def eventFilter(self, watched: QObject, event: QEvent) -> bool:
-        """Choose on click; hover previews the current centered crop without replacing output."""
+        """Inspect the crop while the source or output-size controls are hovered, focused or edited."""
         kind = event.type()
-        if watched is self.thumb and kind == QEvent.Type.Resize and self._start_info is not None:
-            self._render_thumbnail()
-        if watched in self._choose_targets:
+        if watched in self._preview_targets:
             if kind == QEvent.Type.Enter:
-                self._hovering = True
-                self._show_hover()
-            elif watched is self.start_card and kind == QEvent.Type.Leave:
-                self._hide_hover()
-            if rules.accepts_start_image(self.model):
-                if kind == QEvent.Type.MouseButtonRelease and event.button() == Qt.MouseButton.LeftButton:
-                    self._choose()
-                    return True
-                if (
-                    watched is self.start_card
-                    and kind == QEvent.Type.KeyPress
-                    and event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space)
-                ):
-                    self._choose()
-                    return True
+                self._preview_hovered.add(watched)
+            elif kind == QEvent.Type.Leave:
+                self._preview_hovered.discard(watched)
+            elif kind == QEvent.Type.FocusIn:
+                self._preview_focused.add(watched)
+            elif kind == QEvent.Type.FocusOut:
+                self._preview_focused.discard(watched)
+            elif kind == QEvent.Type.Hide:
+                self._preview_hovered.discard(watched)
+                self._preview_focused.discard(watched)
+            else:
+                return super().eventFilter(watched, event)
+            self._sync_crop_preview()
         return super().eventFilter(watched, event)
+
+    def _sync_crop_preview(self) -> None:
+        if self.active and (self._preview_hovered or self._preview_focused):
+            self._show_hover()
+        else:
+            self.page.resultPreviewLabel.clear_temporary_crop()
 
     def _show_hover(self) -> None:
         """Show the cached source in the canvas; preserve its current result underneath."""
@@ -385,7 +396,8 @@ class VideoPanel(QObject):
 
     def _hide_hover(self) -> None:
         """Restore whatever output the central viewer currently holds."""
-        self._hovering = False
+        self._preview_hovered.clear()
+        self._preview_focused.clear()
         self.page.resultPreviewLabel.clear_temporary_crop()
 
     def _render_thumbnail(self) -> None:
@@ -394,30 +406,27 @@ class VideoPanel(QObject):
         if info is None or self.thumb.width() <= 0 or self.thumb.height() <= 0:
             return
         picture = QPixmap.fromImage(QImage.fromData(info.thumbnail_png))
-        self.thumb.setPixmap(
-            picture.scaled(
-                self.thumb.size(),
-                aspectMode=Qt.AspectRatioMode.KeepAspectRatio,
-                mode=Qt.TransformationMode.SmoothTransformation,
+        self.thumb.setIcon(
+            QIcon(
+                picture.scaled(
+                    self.thumb.iconSize(),
+                    aspectMode=Qt.AspectRatioMode.KeepAspectRatio,
+                    mode=Qt.TransformationMode.SmoothTransformation,
+                )
             )
         )
 
     def _show_start(self) -> None:
-        """Keep the image thumbnail at the right of the duration line, even after generating."""
+        """Keep the selected source inspectable in its own row, including after generating."""
         info = self._start_info
-        self.clear.setVisible(self._start is not None or self._loading)
         if self._start is None or info is None:
-            self.thumb.clear()
-            self.thumb.setText("Choose\nimage")
-            self.thumb.setToolTip("")
-            if self._hovering:
-                self.page.resultPreviewLabel.clear_temporary_crop()
+            self.thumb.setIcon(QIcon())
+            self.thumb.setText("Checking…" if self._loading else "Choose\nimage")
+            self._sync_crop_preview()
             return
         self.thumb.setText("")
         self._render_thumbnail()
-        self.thumb.setToolTip(f"{self._start.name} · {info.width}×{info.height}")
-        if self._hovering:
-            self._show_hover()
+        self._sync_crop_preview()
 
     def apply(self, request: ResolvedGenerationRequest) -> ResolvedGenerationRequest:
         """The resolved image request plus the video fields; the request model checks the frame rule and the image."""

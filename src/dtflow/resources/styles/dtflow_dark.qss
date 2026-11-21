@@ -665,25 +665,11 @@ QToolButton#checkpointDetailsButton:disabled {
   background: transparent;
   border-color: transparent;
 }
-/* Video source thumbnail: prominent, reachable destructive clear action, without a separate button row. */
-QToolButton#videoClearStartButton {
-  background: ${color.dangerSurface};
-  border: 1px solid ${color.dangerBorder};
-  border-radius: ${size.radiusSm};
-  color: ${color.dangerText};
-  font-size: 17px;
-  font-weight: ${type.weightStrong};
-  padding: 0;
-}
-QToolButton#videoClearStartButton:hover {
-  background: ${color.dangerBorder};
-  color: ${color.onAccent};
-}
-QToolButton#videoClearStartButton:focus {
-  border-color: ${color.focus};
-}
-QToolButton#videoClearStartButton:pressed {
-  background: ${color.dangerSurface};
+/* Thumbnail inherits neutral button states; clearing a draft is not deleting saved media. */
+QPushButton#videoChooseStartButton {
+  padding: 2px;
+  min-width: 0;
+  min-height: 0;
 }
 /* Compute Units meter: slim, muted fill (0 to 40000). Blue below the limit, red at or above it. */
 QProgressBar#computeUnitsMeter {
@@ -1666,6 +1652,7 @@ QLabel[iconKey="file-image"] { image: url(../images/gallery/file-image.svg); }
 QLabel[iconKey="hard-drive"] { image: url(../images/gallery/hard-drive.svg); }
 QLabel[iconKey="weight"] { image: url(../images/gallery/weight.svg); }
 QLabel[iconKey="timer"] { image: url(../images/gallery/timer.svg); }
+QLabel[iconKey="video"] { image: url(../images/gallery/video-play.svg); }
 QGroupBox[role="sectionCard"]:disabled,
 QGroupBox[role="sectionCard"]:disabled QFrame[role="sectionHeader"] {
   border-color: ${color.disabledBorder};
