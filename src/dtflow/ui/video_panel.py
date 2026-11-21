@@ -26,6 +26,13 @@ from dtflow.ui.file_dialogs import QFileDialog
 
 IMAGE_FILTER = "Images (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.bmp)"
 IMAGE_ONLY_REASON = "Not available for video: a video is one clip from text or one start image."
+
+
+def _unverified(model: str) -> str:
+    """Name the selected file and the exact verified ones, so a near-identical name is not mistaken for them."""
+    return f"{model} is not verified for video yet. Verified: " + ", ".join(sorted(rules.SUPPORTED_VIDEO_MODELS)) + "."
+
+
 MAX_START_IMAGE_BYTES = 32 * 1024 * 1024
 FORM = Path(__file__).parent / "forms" / "video_panel.ui"
 
@@ -211,11 +218,7 @@ class VideoPanel(QObject):
         )
         self.clear.setEnabled(self._start is not None or self._loading)
         problem = (
-            (
-                "This exact checkpoint is not verified for video yet. Select LTX-2.3 distilled 1.1 q6p or q8p."
-                if not rules.supported_video_model(self.model)
-                else ""
-            )
+            (_unverified(self.model) if not rules.supported_video_model(self.model) else "")
             or self._choice_problem
             or (
                 "Connection changed; choose the start image again."
@@ -234,7 +237,7 @@ class VideoPanel(QObject):
         if not self.active:
             return ""
         if not rules.supported_video_model(self.model):
-            return "This exact checkpoint is not verified for video yet; select LTX-2.3 distilled 1.1 q6p or q8p."
+            return _unverified(self.model)
         if self._loading:
             return "Checking the selected start image; generation cannot begin yet."
         if self._choice_problem:
