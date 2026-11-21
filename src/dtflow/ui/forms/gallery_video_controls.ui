@@ -22,7 +22,7 @@
      <item>
       <widget class="QPushButton" name="videoPlaybackToggle">
        <property name="text"><string/></property>
-       <property name="toolTip"><string>Pause video (K / Enter)</string></property>
+       <property name="toolTip"><string>Pause video (K)</string></property>
        <property name="accessibleName"><string>Pause video</string></property>
       </widget>
      </item>

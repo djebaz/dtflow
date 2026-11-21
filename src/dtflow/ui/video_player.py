@@ -12,9 +12,6 @@ from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSize, Qt, QUrl
 from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
-    QAbstractButton,
-    QAbstractItemView,
-    QAbstractSlider,
     QAbstractSpinBox,
     QApplication,
     QComboBox,
@@ -165,13 +162,7 @@ class VideoPlayer(QObject):
             active = player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
             ended = player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia
             toggle.setIcon(QIcon(str(ICONS / ("video-pause.svg" if active else "video-play.svg"))))
-            description = (
-                "Pause video (K / Enter)"
-                if active
-                else "Replay video (K / Enter)"
-                if ended
-                else "Play video (K / Enter)"
-            )
+            description = "Pause video (K)" if active else "Replay video (K)" if ended else "Play video (K)"
             toggle.setToolTip(description)
             toggle.setAccessibleName(description)
 
@@ -347,17 +338,6 @@ class VideoPlayer(QObject):
             return False
         key = event.key()
         keypad = bool(modifiers & Qt.KeyboardModifier.KeypadModifier)
-        if key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
-            # Both Return and keypad Enter can play video, but must not replace
-            # the native action of a focused button, editor, slider or list.
-            if QApplication.activePopupWidget() is not None or isinstance(
-                focus, (QAbstractButton, QAbstractItemView, QAbstractSlider, QComboBox)
-            ):
-                return False
-            if kind == QEvent.Type.KeyPress and not event.isAutoRepeat():
-                self.toggle_play()
-            event.accept()
-            return True
         if (
             modifiers == Qt.KeyboardModifier.NoModifier
             and key in (Qt.Key.Key_Left, Qt.Key.Key_Right)
@@ -394,7 +374,7 @@ class VideoPlayer(QObject):
                 return self.seek_delta(1000)
         elif not keypad and key == Qt.Key.Key_M:
             action = self.toggle_mute
-        # K uses WindowShortcut instead; Space retains Qt's focused-widget behavior.
+        # K uses WindowShortcut; Space and Enter keep native focused-widget behavior.
         if action is None:
             return False
         if kind == QEvent.Type.KeyPress and (
