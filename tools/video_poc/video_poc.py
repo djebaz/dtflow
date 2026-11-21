@@ -1203,8 +1203,10 @@ async def finish_run(
         data = await asyncio.to_thread(probe, ffprobe, final)
     except Exception as exc:
         log.warn(f"ffprobe failed: {exc}")
-        found.verdict = f"{frames_in} frames received and MP4 written, but ffprobe failed"
-        found.ok = True
+        found.verdict = f"{frames_in}/{args.frames} frames received and MP4 written, but ffprobe failed"
+        found.ok = frames_in == args.frames and result.frames == args.frames
+        if not found.ok:
+            found.verdict += "; incomplete video, NOT a successful generation"
         return
     video = next((s for s in data.get("streams", []) if s.get("codec_type") == "video"), {})
     audio = next((s for s in data.get("streams", []) if s.get("codec_type") == "audio"), None)
