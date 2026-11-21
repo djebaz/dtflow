@@ -344,6 +344,12 @@ def resolve_defaults(args: argparse.Namespace, log: Log) -> None:
         log.line(f"  frames {args.frames} ({source})", echo=True)
     else:
         log.line(f"  frames {args.frames} (argument)")
+    if args.frames < 1:
+        raise ValueError("-f must be positive.")
+    if family_of(args.model) == "ltx" and (args.frames - 1) % 8:
+        adjusted = (args.frames - 1) // 8 * 8 + 1
+        log.warn(f"LTX requires 8k+1 frames: requested {args.frames}, using {adjusted} before submission")
+        args.frames = adjusted
 
     if args.model == PIKA_MODEL:
         baseline, baseline_source = (768, 512), "Pika Ref2VA smoke default"
