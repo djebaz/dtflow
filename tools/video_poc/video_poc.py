@@ -228,8 +228,7 @@ def match_image_ratio(image_size: tuple[int, int], budget_size: tuple[int, int])
     return min(
         ((w, h) for w in widths for h in heights),
         key=lambda size: (
-            abs(math.log((size[0] / size[1]) / aspect))
-            + 0.35 * abs(math.log((size[0] * size[1]) / pixels))
+            abs(math.log((size[0] / size[1]) / aspect)) + 0.35 * abs(math.log((size[0] * size[1]) / pixels))
         ),
     )
 
@@ -289,9 +288,16 @@ def add_drawthings_arguments(parser: argparse.ArgumentParser) -> None:
             detail += "; does not change the POC MP4 playback rate"
         elif field_name in ("loras", "controls"):
             detail += "; pass a JSON array of model objects (no automatic cloud asset upload)"
-        elif field_name in ("hires_fix_width", "hires_fix_height", "decoding_tile_width", "decoding_tile_height",
-                            "decoding_tile_overlap", "diffusion_tile_width", "diffusion_tile_height",
-                            "diffusion_tile_overlap"):
+        elif field_name in (
+            "hires_fix_width",
+            "hires_fix_height",
+            "decoding_tile_width",
+            "decoding_tile_height",
+            "decoding_tile_overlap",
+            "diffusion_tile_width",
+            "diffusion_tile_height",
+            "diffusion_tile_overlap",
+        ):
             detail += "; pixel value must be a multiple of 64"
         elif field_name == "compression_artifacts":
             detail += "; values: Disabled, H264, H265, Jpeg (not the MP4 encoder)"
@@ -302,8 +308,12 @@ def add_drawthings_arguments(parser: argparse.ArgumentParser) -> None:
         if is_bool:
             detail += "; omit VALUE for true or pass true/false"
         group.add_argument(
-            *dict.fromkeys(options), dest="config_fields", action=ConfigOptionAction,
-            field_name=field_name, default=argparse.SUPPRESS, metavar="VALUE",
+            *dict.fromkeys(options),
+            dest="config_fields",
+            action=ConfigOptionAction,
+            field_name=field_name,
+            default=argparse.SUPPRESS,
+            metavar="VALUE",
             **({"nargs": "?", "const": "true"} if is_bool else {}),
             help=detail,
         )
@@ -318,7 +328,10 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("-m", dest="model", default=DEFAULT_MODEL, help="model file (default %(default)s)")
     parser.add_argument(
-        "-spec", dest="model_specs", type=Path, default=None,
+        "-spec",
+        dest="model_specs",
+        type=Path,
+        default=None,
         help="JSON array of Draw Things model descriptions (exact checkpoint match, e.g. custom.json)",
     )
     parser.add_argument("-p", dest="prompt", default="", help="prompt")
@@ -338,20 +351,35 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("-g", dest="guidance", type=float, default=None, help="guidance (default: the model profile's)")
     parser.add_argument("-sh", dest="shift", type=float, default=None, help="shift (default: the model profile's)")
     parser.add_argument(
-        "-sampler", "--sampler", choices=[sampler.value for sampler in Sampler], default=None,
+        "-sampler",
+        "--sampler",
+        choices=[sampler.value for sampler in Sampler],
+        default=None,
         help="sampling algorithm (default: model profile; TCD Trailing for H3 smoke)",
     )
     parser.add_argument("-neg", "--negative", default="", help="negative prompt")
     parser.add_argument(
-        "-set", "--set", dest="config_fields", type=parse_config_field, action="append", default=[],
+        "-set",
+        "--set",
+        dest="config_fields",
+        type=parse_config_field,
+        action="append",
+        default=[],
         metavar="FIELD=VALUE",
         help="override a supported SDK field (repeatable); accepts camelCase, snake_case or kebab-case "
         "names, JSON scalars, and JSON arrays for LoRAs/controls. Dedicated flags still own model, sampler, "
         "steps, guidance, shift, size, frames and seed.",
     )
     parser.add_argument(
-        "--hires-fix", "--hires_fix", "--hiresFix", dest="hires_factor",
-        type=float, nargs="?", const=2.0, default=None, metavar="FACTOR",
+        "--hires-fix",
+        "--hires_fix",
+        "--hiresFix",
+        dest="hires_factor",
+        type=float,
+        nargs="?",
+        const=2.0,
+        default=None,
+        metavar="FACTOR",
         help="upscale factor: 1 disables; 2 (default when flag used) to 4. -sz is the final resolution; "
         "the first pass is derived at multiples of 64, or overridden by --hires-fix-width/height.",
     )
@@ -360,9 +388,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "-i", dest="images", type=Path, nargs="+", default=[], help="start image(s); several = multi-frame"
     )
     parser.add_argument("-o", dest="out", type=Path, default=Path("tmp") / "video-poc" / stamp, help="output folder")
-    parser.add_argument("-kf", dest="keep_frames", action="store_true", help="save frame images alongside MP4 (PNG by default)")
     parser.add_argument(
-        "-jpg", dest="jpg_frames", action="store_true",
+        "-kf", dest="keep_frames", action="store_true", help="save frame images alongside MP4 (PNG by default)"
+    )
+    parser.add_argument(
+        "-jpg",
+        dest="jpg_frames",
+        action="store_true",
         help="save frame images as JPEG at quality 80 instead of PNG; implies -kf",
     )
     parser.add_argument("-q", dest="quiet", action="store_true", help="no live progress line (the log is unchanged)")
@@ -411,7 +443,9 @@ def resolve_defaults(args: argparse.Namespace, log: Log) -> None:
         source = (
             "H3 Ref2VA smoke default"
             if args.model in H3_REF2VA_MODELS
-            else "model preset" if native else "POC default, no preset found"
+            else "model preset"
+            if native
+            else "POC default, no preset found"
         )
         log.line(f"  frames {args.frames} ({source})", echo=True)
     else:
@@ -470,13 +504,15 @@ def resolve_defaults(args: argparse.Namespace, log: Log) -> None:
     if requested != args.size:
         log.line(
             f"  size adapted to multiples of 64: requested {requested[0]}x{requested[1]}, "
-            f"using {args.width}x{args.height}", echo=True,
+            f"using {args.width}x{args.height}",
+            echo=True,
         )
     resolve_hires_fix(args, log)
 
 
 def resolve_hires_fix(args: argparse.Namespace, log: Log) -> None:
     """Derive Hires Fix first-pass dimensions from the final -sz, preserving explicit overrides."""
+
     def normalized(name: str) -> str:
         return re.sub(r"[-_ ]", "", name).lower()
 
@@ -543,11 +579,9 @@ def resolve_hires_fix(args: argparse.Namespace, log: Log) -> None:
     args.config_fields = fields
     log.line(
         f"  Hires Fix: {factor:g}x, first pass {first_pass['width']}x{first_pass['height']} "
-        f"-> final {args.width}x{args.height}"
-        + (" (explicit first-pass dimension override)" if dimensions else ""),
+        f"-> final {args.width}x{args.height}" + (" (explicit first-pass dimension override)" if dimensions else ""),
         echo=True,
     )
-
 
 
 def family_of(model: str) -> str:
@@ -777,8 +811,12 @@ class FrameSink:
 
 
 def patch_configuration(
-    configuration: bytes, frames: int, shift: float | None,
-    *, h3: bool = False, config_fields: list[tuple[str, object]] | None = None,
+    configuration: bytes,
+    frames: int,
+    shift: float | None,
+    *,
+    h3: bool = False,
+    config_fields: list[tuple[str, object]] | None = None,
 ) -> bytes:
     """Apply CLI fields, enums and arrays to the exact FlatBuffer sent to DT+."""
     import flatbuffers
@@ -798,9 +836,19 @@ def patch_configuration(
         return re.sub(r"[-_ ]", "", name).lower()
 
     reserved = {
-        "model": "-m", "width": "-sz", "height": "-sz", "startwidth": "-sz", "startheight": "-sz",
-        "numframes": "-f", "steps": "-s", "guidance": "-g", "guidancescale": "-g",
-        "shift": "-sh", "seed": "-sd", "sampler": "--sampler", "negativeprompt": "-neg",
+        "model": "-m",
+        "width": "-sz",
+        "height": "-sz",
+        "startwidth": "-sz",
+        "startheight": "-sz",
+        "numframes": "-f",
+        "steps": "-s",
+        "guidance": "-g",
+        "guidancescale": "-g",
+        "shift": "-sh",
+        "seed": "-sd",
+        "sampler": "--sampler",
+        "negativeprompt": "-neg",
     }
     enum_types = {"seed_mode": SeedMode, "compression_artifacts": CompressionMethod}
     applied = {}
@@ -856,9 +904,8 @@ def patch_configuration(
                 raise ValueError(f"{raw_key}: expected an integer, got {value!r}.")
             if prop is not None and getattr(prop, "unit", 1) != 1:
                 # SDK JSON names use pixel dimensions; FlatBuffer stores these as 64-pixel units.
-                native_hi_res_name = (
-                    field_name in ("hires_fix_width", "hires_fix_height")
-                    and name == normalized(prop.config_t_name)
+                native_hi_res_name = field_name in ("hires_fix_width", "hires_fix_height") and name == normalized(
+                    prop.config_t_name
                 )
                 if not native_hi_res_name:
                     if value % prop.unit:
@@ -888,7 +935,7 @@ def patch_configuration(
         if type(a) in (int, float) and type(b) in (int, float) and (type(a) is float or type(b) is float):
             return math.isclose(a, b, rel_tol=1e-5, abs_tol=1e-5)
         if isinstance(a, list) and isinstance(b, list):
-            return len(a) == len(b) and all(same(x, y) for x, y in zip(a, b))
+            return len(a) == len(b) and all(same(x, y) for x, y in zip(a, b, strict=False))
         if hasattr(a, "__dict__") and hasattr(b, "__dict__"):
             return a.__dict__.keys() == b.__dict__.keys() and all(
                 same(a.__dict__[name], b.__dict__[name]) for name in vars(a)
@@ -1175,8 +1222,11 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
         sampler = Sampler.TCD_TRAILING
         defaults = {"steps": 6, "guidance": 1.0, "shift": 4.0}
         label = "Pika H3 Flex" if pika else "MiniMax H3"
-        log.line(f"{label} Ref2VA smoke defaults: TCD Trailing, 6 steps, guidance 1, shift 4, "
-                 "stochastic sampling 100%; audio shift 1 unavailable in pinned SDK", echo=True)
+        log.line(
+            f"{label} Ref2VA smoke defaults: TCD Trailing, 6 steps, guidance 1, shift 4, "
+            "stochastic sampling 100%; audio shift 1 unavailable in pinned SDK",
+            echo=True,
+        )
     else:
         sampler = profile.sampler
         why = (
@@ -1266,9 +1316,7 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
     sink = FrameSink(args.out, ffmpeg if encode else None, fps, log, frame_format)
     log.line(f"frame image output: {frame_format or 'none (MP4 stream only)'}", echo=True)
     got = Received()
-    progress = Progress(
-        not args.quiet, args.steps, args.frames, hires_requested=args.hires_factor > 1
-    )
+    progress = Progress(not args.quiet, args.steps, args.frames, hires_requested=args.hires_factor > 1)
     log.progress = progress
     progress.log = log
     ticker = None
@@ -1303,7 +1351,10 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
             if args.config_fields:
                 log.line(f"applied Draw Things configuration overrides: {args.config_fields}", echo=True)
             from dtflow.backends.drawthings.wire import SAMPLER_NAME, SAMPLER_WIRE_VALUE
-            from drawthings_py.generated.dt_grpc.config_generated import GenerationConfiguration, GenerationConfigurationT
+            from drawthings_py.generated.dt_grpc.config_generated import (
+                GenerationConfiguration,
+                GenerationConfigurationT,
+            )
 
             raw = GenerationConfiguration.GetRootAs(message.configuration, 0)
             if raw.Sampler() != SAMPLER_WIRE_VALUE[SAMPLER_NAME[sampler]]:
@@ -1485,7 +1536,9 @@ async def finish_run(
     result = sink.finish()
     log.section("7 Encode")
     if not encode:
-        log.line(f"-nomp4: no encode; {sink.frame_format.upper()} frames saved in {sink.frames_dir} ({result.frames} written)")
+        log.line(
+            f"-nomp4: no encode; {sink.frame_format.upper()} frames saved in {sink.frames_dir} ({result.frames} written)"
+        )
         found.ok = result.error is None and frames_in == args.frames
         found.outputs.append(str(sink.frames_dir))
         found.verdict = f"{frames_in}/{args.frames} frames received at {returned[1]}x{returned[0]}, {sink.frame_format.upper()} only (-nomp4)"
@@ -1572,8 +1625,9 @@ async def finish_run(
         log.line("  DIFF " + item)
     found.ok = frames_in == args.frames and result.frames == args.frames and real_frames == args.frames
     audio_text = f", audio {audio_rate / 1000:g} kHz" if audio_samples and audio else ", no audio"
-    found.verdict = f"{frames_in}/{args.frames} frames returned at {returned[1]}x{returned[0]}, {fps} fps{audio_text}, MP4 OK" + (
-        f" ({len(differences)} difference(s) from the request)" if differences else ""
+    found.verdict = (
+        f"{frames_in}/{args.frames} frames returned at {returned[1]}x{returned[0]}, {fps} fps{audio_text}, MP4 OK"
+        + (f" ({len(differences)} difference(s) from the request)" if differences else "")
     )
     if not found.ok:
         found.verdict += "; incomplete video, NOT a successful generation"
