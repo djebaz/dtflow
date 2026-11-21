@@ -664,6 +664,7 @@ class BackendEvent:
     total: int | None = None
     artifact: ImageArtifact | None = None
     failure: BackendFailure | None = None
+    received_bytes: int | None = None
 
 
 EventSink = Callable[[BackendEvent], None]

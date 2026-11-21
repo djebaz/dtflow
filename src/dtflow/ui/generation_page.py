@@ -86,6 +86,7 @@ from dtflow.ui.generation_presenter import (
     values_from_request,
 )
 from dtflow.ui.inline_feedback import InlineNotice, confirm_action, edit_text
+from dtflow.ui.video_progress import VideoProgress
 from dtflow.ui.video_panel import IMAGE_ONLY_REASON, VideoPanel
 from dtflow.core.video import VIDEO_TOTAL_TIMEOUT
 from dtflow.services.video_artifacts import video_path_for
@@ -328,6 +329,10 @@ class GenerationPage:
         self._run_edit = False
         self._run_pose = False
         self._run_video = False
+        self._video_progress = VideoProgress()
+        self._video_tick = QTimer(page)
+        self._video_tick.setInterval(1000)
+        self._video_tick.timeout.connect(self._tick_video)
         # The last submission exactly as sent (request, backend, endpoint, receipts, prefix, simulation, edit), for
         # Retry: it resends the recorded request with the same seed, never the form's current values (#240).
         self._last_submission: tuple | None = None
@@ -1176,6 +1181,13 @@ class GenerationPage:
         )
         return True
 
+    def _tick_video(self) -> None:
+        """Keep the elapsed time moving while DT+ is silent."""
+        if self._generating and self._run_video:
+            self._video_progress.present(self._activity)
+        else:
+            self._video_tick.stop()
+
     def _notice_confirmed(self) -> None:
         self.video.notice_seen()
         self.generate()
@@ -1217,6 +1229,9 @@ class GenerationPage:
         self._run_edit = isinstance(edit, EditJob)
         self._run_pose = isinstance(edit, PoseJob)
         self._run_video = request.num_frames is not None
+        if self._run_video:
+            self._video_progress.reset()
+            self._video_tick.start()
         self._last_submission = (request, name, endpoint, tuple(asset_ids), prefix, simulation, edit)
         self._offer_retry(False)
         diagnostic_event(
@@ -1400,20 +1415,10 @@ class GenerationPage:
         label = event.stage if event.kind == "progress" else {"preview": "first preview"}.get(event.kind, event.kind)
         if label:
             self._stage_seen.setdefault(label, time.monotonic() - self._stage_started)
-        if event.kind == "progress" and self._run_video and event.stage in ("receiving_frames", "encoding_video"):
-            frames = event.stage == "receiving_frames"
-            self._activity.present_run(
-                RunState(
-                    owner="generation",
-                    phase="running",
-                    completed=event.completed if frames else None,
-                    total=event.total if frames else None,
-                    detail=f"Receiving frame {event.completed} of {event.total}"
-                    if frames
-                    else "Encoding the MP4 and checking the file",
-                )
-            )
-        elif event.kind == "progress":
+        if self._run_video and self._video_progress.observe(event):
+            self._video_progress.present(self._activity)
+            return
+        if event.kind == "progress":
             from dtflow.ui.progress_stages import event_stage
 
             self._present_progress(event_stage(event), event.completed, event.total)

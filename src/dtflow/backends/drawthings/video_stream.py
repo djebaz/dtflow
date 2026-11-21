@@ -90,6 +90,7 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
     work = Path(tempfile.mkdtemp(prefix="dtflow-video-"))
     sink = video_encode.FrameSink(ffmpeg, playback_fps(request.model_id), work / "video.mp4.partial")
     frames = 0
+    received = 0
     audio = bytearray()
     poster: bytes | None = None
     keep = False
@@ -158,7 +159,14 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
                                 poster = await settle(asyncio.to_thread(encode_png, rgb, width, height, 3))
                             await settle(asyncio.to_thread(sink.put, width, height, rgb))
                             frames += 1
-                            emit("progress", stage="receiving_frames", completed=frames, total=request.num_frames)
+                            received += len(tensor)
+                            emit(
+                                "progress",
+                                stage="receiving_frames",
+                                completed=frames,
+                                total=request.num_frames,
+                                received_bytes=received,
+                            )
                     stage = SubmissionStage.TERMINAL_OBSERVED
             if frames == 0 or poster is None:
                 raise _reject(request, "no_final_output", stage)
