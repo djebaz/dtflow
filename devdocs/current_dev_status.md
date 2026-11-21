@@ -1,6 +1,6 @@
 # Current development status
 
-Updated 2026-11-20 for PR #513 review repairs, 6.4.1 preparation and in-review PR #510; the merged-main baseline remains `81d68eb7` through PR #498. [6.4.0](https://github.com/djebaz/dtflow/releases/tag/v6.4.0) is published. See [6.4.1 notes](releases/v6.4.1.md) and its [release audit](plans/2026-11-16-release-6.4.1.md) for the next release scope and build gates.
+Updated 2026-11-21 for Queue pose editor PR #522; prior release/feature evidence below retains its recorded scope. [6.4.0](https://github.com/djebaz/dtflow/releases/tag/v6.4.0) is published. See [6.4.1 notes](releases/v6.4.1.md) and its [release audit](plans/2026-11-16-release-6.4.1.md) for the next release scope and build gates.
 
 ## Delivered since 6.4.0
 
@@ -10,6 +10,10 @@ Updated 2026-11-20 for PR #513 review repairs, 6.4.1 preparation and in-review P
 - Queue concurrency follows Connection's DT+ default at each start; separate queue controls and stored queue/recipe limits no longer govern dispatch.
 - Slideshow New direction shows arrivals next under Newest first sorting, then resumes forward playback.
 - Downloads runs bounded stale staging/orphan-source cleanup once at startup, off Qt; failed/refused conversion sources remain retained. Civitai documentation now covers tokens, permissions, file retention and recorded acceptance boundaries.
+
+## In review: Queue pose editing (#515, PR #522)
+
+- The independent Queue composer exposes exact pose control settings, a worker-prepared read-only map preview and explicit prepared-map replacement for captured poses, templates and recorded Edit as new drafts. Changes retain the existing queue/template validation and persistence paths, without provider work while editing. Source implementation/review and focused static checks are complete; behavioral Must acceptance, Windows/DPI and provider-effective results remain unverified. See the [implementation plan](plans/2026-11-21-queue-pose-editor.md).
 
 ## Unreleased: desktop provider selection (#518, PR #519)
 

@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ui version="4.0">
+ <class>QueuePoseEditor</class>
+ <widget class="QFrame" name="queuePoseEditor">
+  <property name="role" stdset="0"><string>card</string></property>
+  <layout class="QVBoxLayout" name="queuePoseLayout">
+   <item><widget class="QLabel" name="queuePoseTitle">
+    <property name="text"><string>ControlNet pose</string></property>
+    <property name="textRole" stdset="0"><string>section</string></property>
+   </widget></item>
+   <item><layout class="QHBoxLayout" name="queuePoseMapRow">
+    <item><widget class="QLabel" name="queuePosePreview">
+     <property name="minimumSize"><size><width>0</width><height>100</height></size></property>
+     <property name="maximumSize"><size><width>160</width><height>120</height></size></property>
+     <property name="sizePolicy"><sizepolicy hsizetype="Ignored" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+     <property name="alignment"><set>Qt::AlignCenter</set></property>
+     <property name="text"><string>Map preview</string></property>
+     <property name="wordWrap"><bool>true</bool></property>
+     <property name="textFormat"><enum>Qt::PlainText</enum></property>
+     <property name="accessibleName"><string>Attached Queue pose map, read only</string></property>
+    </widget></item>
+    <item><widget class="QPushButton" name="replaceQueuePoseButton">
+     <property name="text"><string>Replace pose map…</string></property>
+     <property name="toolTip"><string>Select an already prepared body map. This changes only the Queue draft; no extraction, upload or generation occurs.</string></property>
+    </widget></item>
+   </layout></item>
+   <item><layout class="QFormLayout" name="queuePoseFields">
+    <property name="fieldGrowthPolicy"><enum>QFormLayout::AllNonFixedFieldsGrow</enum></property>
+    <property name="rowWrapPolicy"><enum>QFormLayout::WrapLongRows</enum></property>
+    <item row="0" column="0"><widget class="QLabel" name="queuePoseCheckpointLabel">
+     <property name="text"><string>ControlNet checkpoint</string></property>
+     <property name="buddy"><cstring>queuePoseCheckpointCombo</cstring></property>
+    </widget></item>
+    <item row="0" column="1"><widget class="QComboBox" name="queuePoseCheckpointCombo">
+     <property name="sizePolicy"><sizepolicy hsizetype="Ignored" vsizetype="Fixed"><horstretch>0</horstretch><verstretch>0</verstretch></sizepolicy></property>
+     <property name="accessibleName"><string>Queue ControlNet checkpoint and quantization</string></property>
+     <property name="toolTip"><string>The pose guidance checkpoint, not the generation checkpoint. Choices reuse Generate's cached supported inventory; availability is rechecked when creating the queue.</string></property>
+    </widget></item>
+    <item row="1" column="0"><widget class="QLabel" name="queuePoseStrengthLabel">
+     <property name="text"><string>Strength</string></property>
+     <property name="buddy"><cstring>queuePoseStrengthEdit</cstring></property>
+    </widget></item>
+    <item row="1" column="1"><widget class="QLineEdit" name="queuePoseStrengthEdit">
+     <property name="maximumWidth"><number>140</number></property>
+     <property name="accessibleName"><string>Queue pose control strength</string></property>
+     <property name="toolTip"><string>Control weight, greater than 0 and at most 2. Saved values are retained exactly, without clamping.</string></property>
+    </widget></item>
+    <item row="2" column="0"><widget class="QLabel" name="queuePoseModeLabel">
+     <property name="text"><string>Control force</string></property>
+     <property name="buddy"><cstring>queuePoseModeCombo</cstring></property>
+    </widget></item>
+    <item row="2" column="1"><widget class="QComboBox" name="queuePoseModeCombo">
+     <property name="accessibleName"><string>Queue pose control mode</string></property>
+    </widget></item>
+    <item row="3" column="0"><widget class="QLabel" name="queuePoseFromLabel">
+     <property name="text"><string>Apply from</string></property>
+     <property name="buddy"><cstring>queuePoseFromEdit</cstring></property>
+    </widget></item>
+    <item row="3" column="1"><widget class="QLineEdit" name="queuePoseFromEdit">
+     <property name="maximumWidth"><number>140</number></property>
+     <property name="accessibleName"><string>Queue pose apply from</string></property>
+     <property name="toolTip"><string>Sampling fraction from 0 to 1; must be before Apply to.</string></property>
+    </widget></item>
+    <item row="4" column="0"><widget class="QLabel" name="queuePoseToLabel">
+     <property name="text"><string>Apply to</string></property>
+     <property name="buddy"><cstring>queuePoseToEdit</cstring></property>
+    </widget></item>
+    <item row="4" column="1"><widget class="QLineEdit" name="queuePoseToEdit">
+     <property name="maximumWidth"><number>140</number></property>
+     <property name="accessibleName"><string>Queue pose apply to</string></property>
+     <property name="toolTip"><string>Sampling fraction up to 1; must be after Apply from.</string></property>
+    </widget></item>
+   </layout></item>
+   <item><widget class="QLabel" name="queuePoseError">
+    <property name="textFormat"><enum>Qt::PlainText</enum></property>
+    <property name="wordWrap"><bool>true</bool></property>
+    <property name="state" stdset="0"><string>error</string></property>
+   </widget></item>
+   <item><widget class="QLabel" name="queuePoseNote">
+    <property name="text"><string>Queue draft only. Save/Update explicitly to change a template. Start sends the map to DT+ and may consume credits. Only Union Pro 1.0 q5p with FLUX.1 Dev q5p has been confirmed; other combinations are not verified. Photographs require extraction in Generate.</string></property>
+    <property name="wordWrap"><bool>true</bool></property>
+    <property name="textRole" stdset="0"><string>secondary</string></property>
+   </widget></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

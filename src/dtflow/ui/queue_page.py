@@ -90,6 +90,7 @@ from dtflow.ui.queue_item_delegate import ROW_HEIGHT, ItemTableHeader, ItemTable
 from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
 from dtflow.ui.queue_thumbnails import HoverPreview, QueueThumbnails
 from dtflow.ui.queue_templates import QueueTemplates
+from dtflow.ui.queue_pose import QueuePoseEditor
 from dtflow.ui.queue_presenter import (
     FILTERS,
     item_counts,
@@ -264,6 +265,7 @@ class QueuePage:
         models_source: Callable[[], dict] = dict,
         generate_hook: Callable[[], None] = lambda: None,
         reuse_hook: Callable[[dict], None] = lambda request: None,
+        pose_controls_source: Callable = tuple,
     ):
         self.page = page
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
@@ -459,6 +461,7 @@ class QueuePage:
             else:
                 widget.currentTextChanged.connect(self._plan_changed)
         self.templates = QueueTemplates(self)
+        self.pose_editor = QueuePoseEditor(self, pose_controls_source)
         self._mode_changed()
         activity.listen(self._sync)
         activity.listen(self._after_generation_ended)
@@ -965,6 +968,7 @@ class QueuePage:
 
     def sync_edit_fields(self) -> None:
         """Strengths apply to Inpaint edits only: shown while Generate is in Inpaint mode and a plan is composed."""
+        self.pose_editor.sync()
         editing = (
             self._draft_job is not None and not isinstance(self._draft_job, PoseJob)
             if self._draft is not None
@@ -1580,6 +1584,7 @@ class QueuePage:
         edit.blockSignals(True)
         edit.setPlainText(request.prompt)
         edit.blockSignals(False)
+        self.pose_editor.draft_changed()
 
     def _composer_choices(self) -> dict:
         if self._draft is None:
@@ -1664,6 +1669,8 @@ class QueuePage:
         if self._draft is None:
             request, name, endpoint, assets = self._request_source(preview=True)
             self._set_draft(request, name, endpoint, assets, self._edit_source())
+        self.pose_editor.sync()
+        self.pose_editor.validate()
         request, name, endpoint, assets = self._draft
         prompt = self.page.composerPromptEdit.toPlainText()
         if not prompt.strip():
