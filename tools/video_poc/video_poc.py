@@ -66,6 +66,7 @@ class Log:
         self.started = time.monotonic()
         self.secrets: set[str] = set()
         self.warnings: list[str] = []
+        self.progress: Progress | None = None
 
     def elapsed(self) -> float:
         return time.monotonic() - self.started
@@ -84,6 +85,8 @@ class Log:
             self._file.write(f"{stamp} +{self.elapsed():8.3f}s  {part}\n")
         self._file.flush()
         if echo:
+            if self.progress is not None:
+                self.progress.clear()
             print(text, flush=True)
 
     def section(self, title: str) -> None:
@@ -96,6 +99,66 @@ class Log:
 
     def close(self) -> None:
         self._file.close()
+
+
+class Progress:
+    """One updating console line while DT+ works (plain lines when stdout is not a terminal); the log keeps the detail.
+
+    Shows seconds since the request was sent, the stage DT+ reports (waiting, text encoded, sampling step n of N,
+    receiving frame k of F, finishing) and the compressed megabytes received once frames flow.
+    """
+
+    def __init__(self, enabled: bool, steps: int, frames: int):
+        self.enabled, self.steps, self.frames = enabled, steps, frames
+        self.tty = sys.stdout.isatty()
+        self.stage = "waiting for DT+ (queued or starting)"
+        self.received = 0
+        self.nbytes = 0
+        self.sent_at: float | None = None
+        self._shown = 0
+        self._last_plain = ("", -999.0)
+
+    def start(self) -> None:
+        self.sent_at = time.monotonic()
+        self.render()
+
+    def set(self, stage: str) -> None:
+        self.stage = stage
+        self.render()
+
+    def text(self) -> str:
+        elapsed = 0 if self.sent_at is None else int(time.monotonic() - self.sent_at)
+        size = f" | {self.nbytes / 1_048_576:.1f} MB received" if self.nbytes else ""
+        return f"[{elapsed:4d}s] {self.stage}{size}"
+
+    def render(self) -> None:
+        if not self.enabled or self.sent_at is None:
+            return
+        text = self.text()
+        if self.tty:
+            self._shown = max(self._shown, len(text))
+            sys.stdout.write("\r" + text.ljust(self._shown))
+            sys.stdout.flush()
+            return
+        elapsed = time.monotonic() - self.sent_at
+        kind = re.sub(r"\d+", "#", self.stage)  # plain output: one line per kind of stage, plus one every 30 s
+        if kind != self._last_plain[0] or elapsed - self._last_plain[1] >= 30:
+            self._last_plain = (kind, elapsed)
+            print(text, flush=True)
+
+    def clear(self) -> None:
+        if self.enabled and self.tty and self._shown:
+            sys.stdout.write("\r" + " " * self._shown + "\r")
+            sys.stdout.flush()
+
+    def stop(self) -> None:
+        self.clear()
+        self.enabled = False
+
+    async def tick(self) -> None:
+        while True:
+            await asyncio.sleep(1)
+            self.render()
 
 
 def quiet_process_kwargs() -> dict:
@@ -160,6 +223,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("-o", dest="out", type=Path, default=Path("tmp") / "video-poc" / stamp, help="output folder")
     parser.add_argument("-kf", dest="keep_frames", action="store_true", help="keep the PNG frames")
+    parser.add_argument("-q", dest="quiet", action="store_true", help="no live progress line (the log is unchanged)")
     parser.add_argument("-nomp4", dest="no_mp4", action="store_true", help="skip the ffmpeg encode")
     parser.add_argument("-to", dest="timeout", type=float, default=900, help="total timeout in seconds (default 900)")
     parser.add_argument("-lg", dest="log", type=Path, default=Path("tmp") / f"video-poc-{stamp}.log", help="log file")
@@ -428,7 +492,7 @@ class Received:
     trailing_metadata: list = field(default_factory=list)
 
 
-async def receive(stream, got: Received, sink: FrameSink, log: Log, request_sent: float) -> None:
+async def receive(stream, got: Received, sink: FrameSink, log: Log, request_sent: float, progress: Progress) -> None:
     import betterproto
     from drawthings_py.generated.dt_grpc import image_service
 
@@ -440,6 +504,7 @@ async def receive(stream, got: Received, sink: FrameSink, log: Log, request_sent
         got.chunk_states[state] = got.chunk_states.get(state, 0) + 1
         parts = [f"msg {got.messages} +{now:.2f}s chunk={state}"]
         if response.download_size:
+            progress.set(f"DT+ is sending frames ({int(response.download_size) / 1_048_576:.0f} MB in total)")
             got.download_size = int(response.download_size)
             parts.append(f"download_size={got.download_size}")
         if response.scale_factor:
@@ -459,6 +524,11 @@ async def receive(stream, got: Received, sink: FrameSink, log: Log, request_sent
             signpost = f"{name}:{getattr(value, 'step', '')}"
             if name == "sampling":
                 got.sampling_steps = max(got.sampling_steps, int(value.step))
+                progress.set(f"sampling step {int(value.step)} of {progress.steps}")
+            elif name == "text_encoded":
+                progress.set("text encoded")
+            elif name == "image_decoded":
+                progress.set("start image decoded")
         if signpost:
             parts.append(f"signpost={signpost}")
         if response.signposts:
@@ -497,6 +567,8 @@ async def receive(stream, got: Received, sink: FrameSink, log: Log, request_sent
             parts.append(f"frame {index} {width}x{height}x{channels} {len(tensor)}B (raw {raw}B)")
             rgb_width, rgb_height, rgb = await asyncio.to_thread(decode_frame, tensor)
             await asyncio.to_thread(sink.put, index, rgb_width, rgb_height, rgb)
+            progress.nbytes += len(tensor)
+            progress.set(f"receiving frame {index} of {progress.frames}")
             got.last_frame = now
         log.line("  " + " ".join(parts))
     for attribute in ("initial_metadata", "trailing_metadata"):
@@ -691,6 +763,9 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
 
     sink = FrameSink(args.out, ffmpeg if encode else None, fps, log, args.keep_frames)
     got = Received()
+    progress = Progress(not args.quiet, args.steps, args.frames)
+    log.progress = progress
+    ticker = None
     deadline = time.monotonic() + args.timeout
     request_sent = time.monotonic()
     try:
@@ -745,11 +820,19 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
                 await stream.send_message(message, end=True)
                 request_sent = time.monotonic()
                 log.line("timing request sent; waiting for DT+ (PAID generation is running)", echo=True)
-                await receive(stream, got, sink, log, request_sent)
+                progress.start()
+                ticker = asyncio.create_task(progress.tick())
+                await receive(stream, got, sink, log, request_sent, progress)
     except BaseException as exc:
+        if ticker:
+            ticker.cancel()
+        progress.stop()
         sink.finish(abort=True)
         await backend_close(backend)
         raise_with_record(exc, log, got, args, request_sent, deadline)
+    if ticker:
+        ticker.cancel()
+    progress.set("finishing: encoding the MP4, audio mux, ffprobe")
     await backend_close(backend)
     total = time.monotonic() - request_sent
     log.section("5 Timings")
@@ -759,7 +842,10 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
         f"{'none' if got.last_frame is None else f'{got.last_frame:.2f}s'}, stream ended {total:.2f}s after send"
     )
     log.line(f"-to budget {args.timeout:.0f}s, left {max(0.0, deadline - time.monotonic()):.1f}s")
-    await finish_run(args, log, found, got, sink, ffmpeg, ffprobe, fps, encode)
+    try:
+        await finish_run(args, log, found, got, sink, ffmpeg, ffprobe, fps, encode)
+    finally:
+        progress.stop()
 
 
 async def backend_close(backend) -> None:
