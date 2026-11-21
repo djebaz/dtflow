@@ -1,145 +1,283 @@
-"""Inline playback of a saved video in the Images detail view (QtMultimedia from PySide6-Addons).
+"""In-app playback of a saved video in Images Detail.
 
-The player is created on the first Play of an item and fully released (stopped, source cleared, widgets deleted) when
-the selection changes, the page is left, the detail is cleared or the file is about to be recycled, so no file handle
-stays open. Nothing here touches the disk on the UI thread: the caller resolves and checks the MP4 on a worker and
-hands over the path. "Open video in player" stays as the fallback when playback cannot start.
+Only the existing resolved MP4 enters QtMultimedia. Changing output, leaving
+Images, and closing the player stop playback and release the file handle.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, QUrl
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSize, Qt, QUrl
+from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QLabel, QPushButton, QSlider, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QAbstractSpinBox,
+    QApplication,
+    QComboBox,
+    QLabel,
+    QLineEdit,
+    QPlainTextEdit,
+    QPushButton,
+    QSlider,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
-SLIDER_SCALE = 1000
 CONTROLS_FORM = Path(__file__).parent / "forms" / "gallery_video_controls.ui"
+ICONS = Path(__file__).parents[1] / "resources" / "images" / "gallery"
+SLIDER_SCALE = 1000
 
 
 def clock(milliseconds: int) -> str:
+    """Format media time without losing hours in long videos."""
     seconds = max(0, int(milliseconds // 1000))
-    return f"{seconds // 60}:{seconds % 60:02d}"
+    hours, remainder = divmod(seconds, 3600)
+    minutes, seconds = divmod(remainder, 60)
+    return f"{hours}:{minutes:02d}:{seconds:02d}" if hours else f"{minutes}:{seconds:02d}"
 
 
 class VideoPlayer(QObject):
-    def __init__(self, surface: QWidget, on_problem) -> None:
+    def __init__(
+        self,
+        surface: QWidget,
+        on_problem,
+        on_playback_changed=None,
+        *,
+        on_navigate=None,
+        navigation_allowed=None,
+        on_autoplay_changed=None,
+    ) -> None:
         super().__init__(surface)
         self.surface = surface
         self._on_problem = on_problem
+        self._on_playback_changed = on_playback_changed
+        self._on_navigate = on_navigate
+        self._navigation_allowed = navigation_allowed
+        self._on_autoplay_changed = on_autoplay_changed
+        self.autoplay = False
         self._panel: QWidget | None = None
         self._player = None
         self._audio = None
         self._duration = 0
         self._muted = False
-        self.play_button = QPushButton("▶  Play video", surface)
+        self._video = None
+        # K and S both toggle Play/Pause without taking focus from other widgets.
+        # Space and Enter retain Qt's native focused-control behavior.
+        self._play_shortcut = QShortcut(QKeySequence("K"), surface)
+        self._s_shortcut = QShortcut(QKeySequence("S"), surface)
+        for shortcut in (self._play_shortcut, self._s_shortcut):
+            shortcut.setContext(Qt.ShortcutContext.WindowShortcut)
+            shortcut.setAutoRepeat(False)
+            shortcut.setEnabled(False)
+        self._play_shortcut.activated.connect(self.toggle_play)
+        self._s_shortcut.activated.connect(self.toggle_play)
+        self.play_button = QPushButton(surface)
         self.play_button.setObjectName("galleryPlayVideoButton")
+        self.play_button.setIcon(QIcon(str(ICONS / "video-play.svg")))
+        self.play_button.setIconSize(QSize(34, 34))
+        self.play_button.setFixedSize(76, 76)
+        self.play_button.setToolTip("Play video (K / S)")
+        self.play_button.setAccessibleName("Play video")
         self.play_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.play_button.hide()
         surface.installEventFilter(self)
 
-    # -- item -----------------------------------------------------------------------------------------------------
     def show_for_video(self, is_video: bool) -> None:
-        """The poster of a video item gets the Play button; any other item releases the player."""
+        """Show the poster Play affordance only when a companion MP4 is available."""
         self.release()
         self.play_button.setVisible(is_video)
+        self._set_shortcut_enabled(is_video)
         self._place()
+
+    def allow_keyboard_start(self) -> None:
+        """Allow K and S before the selected video's file check finishes."""
+        self._set_shortcut_enabled(True)
 
     @property
     def playing(self) -> bool:
+        """True while loading, playing, paused or finished in the inline player."""
         return self._panel is not None
 
     def start(self, path: str) -> None:
-        """Called on the UI thread with an MP4 path a worker has already found."""
+        """Start a local MP4 already resolved on the gallery worker."""
         from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
         from PySide6.QtMultimediaWidgets import QVideoWidget
 
         self.release()
-        self.play_button.hide()
         panel = QWidget(self.surface)
         panel.setObjectName("galleryVideoPanel")
         column = QVBoxLayout(panel)
         column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(0)
         video = QVideoWidget(panel)
+        video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
+        video.setCursor(Qt.CursorShape.PointingHandCursor)
+        video.installEventFilter(self)
         column.addWidget(video, 1)
+
         file = QFile(str(CONTROLS_FORM))
         if not file.open(QIODevice.OpenModeFlag.ReadOnly):
+            panel.deleteLater()
             raise OSError("Video playback controls form could not be opened.")
         try:
             bar = QUiLoader().load(file, panel)
         finally:
             file.close()
         if bar is None:
+            panel.deleteLater()
             raise RuntimeError("Video playback controls form could not be loaded.")
         toggle = bar.findChild(QPushButton, "videoPlaybackToggle")
         slider = bar.findChild(QSlider, "videoPlaybackSeek")
-        label = bar.findChild(QLabel, "videoPlaybackTime")
+        time = bar.findChild(QLabel, "videoPlaybackTime")
         mute = bar.findChild(QPushButton, "videoPlaybackMute")
+        restart = bar.findChild(QPushButton, "videoPlaybackRestart")
+        autoplay = bar.findChild(QPushButton, "videoPlaybackAutoplay")
         close = bar.findChild(QPushButton, "videoPlaybackClose")
+        autoplay.setChecked(self.autoplay)
         slider.setRange(0, SLIDER_SCALE)
+        slider.setEnabled(False)
+        slider.setToolTip("Seek video. W/X: 1 second, Numpad 4/6: 10 seconds.")
+        for button, name in (
+            (toggle, "video-pause.svg"),
+            (mute, "video-muted.svg" if self._muted else "video-volume.svg"),
+            (restart, "refresh.svg"),
+            (close, "circle-x.svg"),
+        ):
+            button.setIcon(QIcon(str(ICONS / name)))
+            button.setIconSize(QSize(18, 18))
+            button.setCursor(Qt.CursorShape.PointingHandCursor)
         column.addWidget(bar)
+
         player, audio = QMediaPlayer(panel), QAudioOutput(panel)
         player.setAudioOutput(audio)
         player.setVideoOutput(video)
         audio.setMuted(self._muted)
-        mute.setText("Unmute" if self._muted else "Mute")
         self._panel, self._player, self._audio, self._duration = panel, player, audio, 0
+        self._video = video
+        self.play_button.hide()
+        self._set_shortcut_enabled(True)
 
-        def toggle_play() -> None:
-            if player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
-                player.pause()
-            else:
-                if player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia:
-                    player.setPosition(0)
-                player.play()
-
-        def moved(position: int) -> None:
+        def update_time(position: int) -> None:
             if not slider.isSliderDown() and self._duration:
                 slider.setValue(int(position * SLIDER_SCALE / self._duration))
-            label.setText(f"{clock(position)} / {clock(self._duration)}")
+            time.setText(f"{clock(position)} / {clock(self._duration)}")
 
-        def duration(value: int) -> None:
-            self._duration = value
-            moved(player.position())
+        def duration_changed(value: int) -> None:
+            if self._player is player:
+                self._duration = max(0, value)
+                slider.setEnabled(self._duration > 0)
+                update_time(player.position())
 
-        def state(_value) -> None:
-            playing = player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
-            toggle.setText("Pause" if playing else "Play")
+        def state_changed(_value=None) -> None:
+            if self._player is not player:
+                return
+            active = player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+            ended = player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia
+            toggle.setIcon(QIcon(str(ICONS / ("video-pause.svg" if active else "video-play.svg"))))
+            description = "Pause video (K / S)" if active else "Replay video (K / S)" if ended else "Play video (K / S)"
+            toggle.setToolTip(description)
+            toggle.setAccessibleName(description)
+
+        def media_status(status) -> None:
+            if self._player is not player:
+                return
+            if status in (QMediaPlayer.MediaStatus.LoadingMedia, QMediaPlayer.MediaStatus.BufferingMedia):
+                time.setText("Loading video…")
+            else:
+                update_time(player.position())
+            state_changed()
 
         def seek(value: int) -> None:
             if self._duration:
                 player.setPosition(int(value * self._duration / SLIDER_SCALE))
 
-        def toggle_mute() -> None:
-            self._muted = not audio.isMuted()
-            audio.setMuted(self._muted)
-            mute.setText("Unmute" if self._muted else "Mute")
+        def failure(_error, message: str) -> None:
+            if self._player is player:
+                self.release(show_play=True)
+                detail = message or "the file could not be decoded"
+                self._on_problem(f"Video playback failed: {detail}. Try Open video in player.")
 
-        def failed(_error, text: str) -> None:
-            self._on_problem(text or "The video could not be played here. Use Open video in player.")
-            self.release(show_play=True)
-
-        toggle.clicked.connect(toggle_play)
+        toggle.clicked.connect(self.toggle_play)
         slider.sliderMoved.connect(seek)
         slider.sliderReleased.connect(lambda: seek(slider.value()))
-        mute.clicked.connect(toggle_mute)
+        mute.clicked.connect(self.toggle_mute)
+        restart.clicked.connect(self.restart)
+        autoplay.toggled.connect(self.set_autoplay)
         close.clicked.connect(lambda: self.release(show_play=True))
-        player.positionChanged.connect(moved)
-        player.durationChanged.connect(duration)
-        player.playbackStateChanged.connect(state)
-        player.errorOccurred.connect(failed)
+        player.positionChanged.connect(update_time)
+        player.durationChanged.connect(duration_changed)
+        player.playbackStateChanged.connect(state_changed)
+        player.mediaStatusChanged.connect(media_status)
+        player.errorOccurred.connect(failure)
+        state_changed()
+        if self._muted:
+            mute.setToolTip("Unmute video (M)")
+            mute.setAccessibleName("Unmute video")
         self._place()
         panel.show()
         panel.raise_()
+        if self._on_playback_changed is not None:
+            self._on_playback_changed(True)
         player.setSource(QUrl.fromLocalFile(path))
         player.play()
 
+    def play(self) -> None:
+        """Start, resume or replay; never pause an already playing video."""
+        if self._player is None:
+            if self.surface.isVisible() and self._play_shortcut.isEnabled():
+                self.play_button.click()
+            return
+        from PySide6.QtMultimedia import QMediaPlayer
+
+        if self._player.playbackState() != QMediaPlayer.PlaybackState.PlayingState:
+            if self._player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia:
+                self._player.setPosition(0)
+            self._player.play()
+
+    def toggle_play(self) -> None:
+        """Toggle Play/Pause for both K and S."""
+        if self._player is not None:
+            from PySide6.QtMultimedia import QMediaPlayer
+
+            if self._player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+                self._player.pause()
+                return
+        self.play()
+
+    def set_autoplay(self, enabled: bool) -> None:
+        """Keep the selection-entry playback preference across viewer sessions."""
+        self.autoplay = enabled
+        if self._on_autoplay_changed is not None:
+            self._on_autoplay_changed()
+
+    def seek_delta(self, milliseconds: int) -> None:
+        """Seek within the recorded player duration."""
+        if self._player is not None and self._duration:
+            self._player.setPosition(max(0, min(self._duration, self._player.position() + milliseconds)))
+
+    def restart(self) -> None:
+        """Return to 0:00 without changing paused/playing state."""
+        if self._player is not None:
+            self._player.setPosition(0)
+
+    def toggle_mute(self) -> None:
+        """Keep muted status across clips, with no separate volume shortcuts."""
+        if self._audio is not None:
+            self._muted = not self._audio.isMuted()
+            self._audio.setMuted(self._muted)
+            mute = self._panel.findChild(QPushButton, "videoPlaybackMute")
+            mute.setIcon(QIcon(str(ICONS / ("video-muted.svg" if self._muted else "video-volume.svg"))))
+            description = "Unmute video (M)" if self._muted else "Mute video (M)"
+            mute.setToolTip(description)
+            mute.setAccessibleName(description)
+
     def release(self, *, show_play: bool = False) -> None:
-        """Stop, drop the source (frees the file) and delete the widgets."""
+        """Stop, detach video/audio, clear the source and free the media handle."""
         panel, player = self._panel, self._player
-        self._panel = self._player = self._audio = None
+        self._panel = self._player = self._audio = self._video = None
+        self._set_shortcut_enabled(False)
         if player is not None:
             try:
                 player.stop()
@@ -151,19 +289,134 @@ class VideoPlayer(QObject):
         if panel is not None:
             panel.hide()
             panel.deleteLater()
+            if self._on_playback_changed is not None:
+                self._on_playback_changed(False)
         if show_play and panel is not None:
             self.play_button.show()
+            self._set_shortcut_enabled(True)
             self._place()
 
-    # -- layout ---------------------------------------------------------------------------------------------------
+    def _set_shortcut_enabled(self, enabled: bool) -> None:
+        """Keep video keys and their editable-field guard active together."""
+        for shortcut in (self._play_shortcut, self._s_shortcut):
+            shortcut.setEnabled(enabled)
+        app = QApplication.instance()
+        if app is not None:
+            if enabled:
+                app.installEventFilter(self)
+            else:
+                app.removeEventFilter(self)
+
     def eventFilter(self, watched, event) -> bool:
-        if watched is self.surface and event.type() == QEvent.Type.Resize:
-            self._place()
-        return False
+        kind = event.type()
+        if watched is self.surface:
+            if kind == QEvent.Type.Resize:
+                self._place()
+                return False
+            # The poster's painter normally pans on click. For video posters, click
+            # anywhere on the image to use the same lazy Play action as the icon.
+            if (
+                self._panel is None
+                and self.play_button.isVisible()
+                and kind
+                in (
+                    QEvent.Type.MouseButtonPress,
+                    QEvent.Type.MouseButtonRelease,
+                )
+                and event.button() == Qt.MouseButton.LeftButton
+            ):
+                if kind == QEvent.Type.MouseButtonRelease:
+                    self.play_button.click()
+                return True
+        if (
+            watched is self._video
+            and kind
+            in (
+                QEvent.Type.MouseButtonPress,
+                QEvent.Type.MouseButtonRelease,
+            )
+            and event.button() == Qt.MouseButton.LeftButton
+        ):
+            if kind == QEvent.Type.MouseButtonRelease:
+                self.toggle_play()
+            return True
+
+        if kind not in (QEvent.Type.ShortcutOverride, QEvent.Type.KeyPress):
+            return False
+        if not self.surface.isVisible() or not self._play_shortcut.isEnabled():
+            return False
+        if QApplication.activeModalWidget() is not None:
+            return False
+        modifiers = event.modifiers()
+        if modifiers & (
+            Qt.KeyboardModifier.ControlModifier | Qt.KeyboardModifier.AltModifier | Qt.KeyboardModifier.MetaModifier
+        ):
+            return False
+        focus = QApplication.focusWidget()
+        editing = (
+            (isinstance(focus, QLineEdit) and not focus.isReadOnly())
+            or (isinstance(focus, (QPlainTextEdit, QTextEdit)) and not focus.isReadOnly())
+            or isinstance(focus, QAbstractSpinBox)
+            or (isinstance(focus, QComboBox) and focus.isEditable())
+        )
+        if editing:
+            # Do not let K or S steal typing focus in editors.
+            if kind == QEvent.Type.ShortcutOverride and event.key() in (Qt.Key.Key_K, Qt.Key.Key_S):
+                event.accept()
+            return False
+        if QApplication.activeWindow() is not self.surface.window():
+            return False
+        key = event.key()
+        keypad = bool(modifiers & Qt.KeyboardModifier.KeypadModifier)
+        if (
+            modifiers == Qt.KeyboardModifier.NoModifier
+            and key in (Qt.Key.Key_Left, Qt.Key.Key_Right)
+            and self._on_navigate is not None
+            and self._navigation_allowed is not None
+            and self._navigation_allowed()
+        ):
+            # Focused media controls may consume the page's arrow QShortcut.
+            # Handle its override and key press here, exactly once per press.
+            if kind == QEvent.Type.KeyPress:
+                self._on_navigate(-1 if key == Qt.Key.Key_Left else 1)
+            event.accept()
+            return True
+        if self._panel is None:
+            return False
+        action = None
+        if keypad and key in (Qt.Key.Key_4, Qt.Key.Key_Left):
+
+            def action():
+                return self.seek_delta(-10000)
+        elif keypad and key in (Qt.Key.Key_6, Qt.Key.Key_Right):
+
+            def action():
+                return self.seek_delta(10000)
+        elif keypad and key in (Qt.Key.Key_0, Qt.Key.Key_Insert):
+            action = self.restart
+        elif not keypad and key == Qt.Key.Key_W:
+
+            def action():
+                return self.seek_delta(-1000)
+        elif not keypad and key == Qt.Key.Key_X:
+
+            def action():
+                return self.seek_delta(1000)
+        elif not keypad and key == Qt.Key.Key_M:
+            action = self.toggle_mute
+        # K and S use WindowShortcut; Space and Enter keep native focused-widget behavior.
+        if action is None:
+            return False
+        if kind == QEvent.Type.KeyPress and (
+            not event.isAutoRepeat()
+            or key in (Qt.Key.Key_4, Qt.Key.Key_6, Qt.Key.Key_Left, Qt.Key.Key_Right, Qt.Key.Key_W, Qt.Key.Key_X)
+        ):
+            action()
+        event.accept()
+        return True
 
     def _place(self) -> None:
         width, height = self.surface.width(), self.surface.height()
-        self.play_button.adjustSize()
         self.play_button.move((width - self.play_button.width()) // 2, (height - self.play_button.height()) // 2)
         self.play_button.raise_()
         if self._panel is not None:

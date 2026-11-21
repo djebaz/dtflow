@@ -2837,6 +2837,41 @@ QLabel#galleryVideoBadge {
   font-weight: 600;
 }
 
-/* In-app video playback: controls are defined by gallery_video_controls.ui. */
-QWidget#galleryVideoPanel { background-color: #000000; }
-QWidget#galleryVideoControls { background-color: ${color.host}; }
+/* Local video playback: compact Designer-owned controls without fixed side margins. */
+QWidget#galleryVideoPanel { background-color: ${color.canvas}; }
+QWidget#galleryVideoControls { background-color: ${color.host}; border-top: 1px solid ${color.panelEdge}; }
+QWidget#galleryVideoControls QPushButton {
+  background: transparent; border: 1px solid transparent; border-radius: ${size.radius};
+  padding: 3px; min-width: 26px; min-height: 26px;
+}
+QWidget#galleryVideoControls QPushButton:hover { background: ${color.buttonHover}; }
+QWidget#galleryVideoControls QPushButton:focus { border-color: ${color.focus}; }
+QWidget#galleryVideoControls QPushButton#videoPlaybackAutoplay { padding: 3px 8px; }
+QWidget#galleryVideoControls QPushButton#videoPlaybackAutoplay:checked {
+  background: ${color.selection}; border-color: ${color.selectionBorder};
+  color: ${color.selectionText};
+}
+QLabel#videoPlaybackTime {
+  color: ${color.text}; font-family: ${type.monoFamily}; font-size: ${type.small};
+  padding: 0 2px;
+}
+QSlider#videoPlaybackSeek { min-height: 24px; min-width: 72px; }
+QSlider#videoPlaybackSeek::groove:horizontal {
+  height: 4px; background: ${color.groove}; border-radius: 2px;
+}
+QSlider#videoPlaybackSeek::sub-page:horizontal { background: ${color.accentHover}; border-radius: 2px; }
+QSlider#videoPlaybackSeek::handle:horizontal {
+  width: 16px; margin: -10px 0; border: 0; background: transparent; border-radius: 0;
+  image: url(../images/gallery/video-seek-marker.svg);
+}
+QSlider#videoPlaybackSeek::handle:horizontal:hover,
+QSlider#videoPlaybackSeek::handle:horizontal:focus,
+QSlider#videoPlaybackSeek::handle:horizontal:pressed {
+  image: url(../images/gallery/video-seek-marker-active.svg);
+}
+QPushButton#galleryPlayVideoButton {
+  background: rgba(12, 12, 12, 205); border: 2px solid rgba(242, 246, 248, 165);
+  border-radius: 38px; padding: 8px;
+}
+QPushButton#galleryPlayVideoButton:hover { background: ${color.accentHover}; border-color: ${color.focus}; }
+QPushButton#galleryPlayVideoButton:focus { border-color: ${color.focus}; }

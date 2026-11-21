@@ -2,16 +2,67 @@
 <ui version="4.0">
  <class>GalleryVideoControls</class>
  <widget class="QWidget" name="galleryVideoControls">
-  <layout class="QHBoxLayout" name="galleryVideoControlRow">
-   <property name="leftMargin"><number>330</number></property>
-   <property name="topMargin"><number>4</number></property>
-   <property name="rightMargin"><number>56</number></property>
-   <property name="bottomMargin"><number>4</number></property>
-   <item><widget class="QPushButton" name="videoPlaybackToggle"><property name="text"><string>Pause</string></property></widget></item>
-   <item><widget class="QSlider" name="videoPlaybackSeek"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="minimum"><number>0</number></property><property name="maximum"><number>1000</number></property></widget></item>
-   <item><widget class="QLabel" name="videoPlaybackTime"><property name="text"><string>0:00 / 0:00</string></property></widget></item>
-   <item><widget class="QPushButton" name="videoPlaybackMute"><property name="text"><string>Mute</string></property></widget></item>
-   <item><widget class="QPushButton" name="videoPlaybackClose"><property name="text"><string>Close</string></property></widget></item>
+  <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"/></property>
+  <layout class="QHBoxLayout" name="galleryVideoControlsLayout">
+   <property name="leftMargin"><number>8</number></property>
+   <property name="topMargin"><number>5</number></property>
+   <property name="rightMargin"><number>8</number></property>
+   <property name="bottomMargin"><number>5</number></property>
+   <property name="spacing"><number>6</number></property>
+   <item>
+    <widget class="QPushButton" name="videoPlaybackToggle">
+     <property name="text"><string/></property>
+     <property name="toolTip"><string>Pause video (K / S)</string></property>
+     <property name="accessibleName"><string>Pause video</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QLabel" name="videoPlaybackTime">
+     <property name="text"><string>Loading video…</string></property>
+     <property name="accessibleName"><string>Elapsed and total video time</string></property>
+     <property name="sizePolicy"><sizepolicy hsizetype="Fixed" vsizetype="Preferred"/></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QSlider" name="videoPlaybackSeek">
+     <property name="orientation"><enum>Qt::Horizontal</enum></property>
+     <property name="focusPolicy"><enum>Qt::StrongFocus</enum></property>
+     <property name="sizePolicy"><sizepolicy hsizetype="Expanding" vsizetype="Fixed"/></property>
+     <property name="minimumSize"><size><width>72</width><height>24</height></size></property>
+     <property name="accessibleName"><string>Video playback position</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="videoPlaybackMute">
+     <property name="text"><string/></property>
+     <property name="toolTip"><string>Mute video (M)</string></property>
+     <property name="accessibleName"><string>Mute video</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="videoPlaybackRestart">
+     <property name="text"><string/></property>
+     <property name="toolTip"><string>Restart video (Numpad 0)</string></property>
+     <property name="accessibleName"><string>Restart video</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="videoPlaybackAutoplay">
+     <property name="text"><string>Autoplay</string></property>
+     <property name="checkable"><bool>true</bool></property>
+     <property name="toolTip">
+      <string>Automatically play from 0:00 when opening a video in Detail</string>
+     </property>
+     <property name="accessibleName"><string>Autoplay videos in Detail</string></property>
+    </widget>
+   </item>
+   <item>
+    <widget class="QPushButton" name="videoPlaybackClose">
+     <property name="text"><string/></property>
+     <property name="toolTip"><string>Close player and return to poster</string></property>
+     <property name="accessibleName"><string>Close video player</string></property>
+    </widget>
+   </item>
   </layout>
  </widget>
  <resources/>

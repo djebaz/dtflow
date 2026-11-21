@@ -65,7 +65,7 @@ from dtflow import gallery_limits
 from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.gallery_selection import MAX_CHECKED_IMAGES, GallerySelection
 from dtflow.core.models import ValidationError
-from dtflow.core.video import clip_summary
+from dtflow.core.video import clip_summary, duration_text
 from dtflow.services.video_artifacts import video_path_for
 from dtflow.services.lora_naming import display_label
 from dtflow.diagnostics import event as diagnostic_event
@@ -581,7 +581,14 @@ class GalleryPage(QObject):
         self.surface_painter = self._presentation_painters[0]
         self.surface_painter.pixmap = QPixmap()
         self.surface = self._widget("galleryImageSurface", QLabel)
-        self.video_player = VideoPlayer(self.surface, lambda text: self._selection_notice(text))
+        self.video_player = VideoPlayer(
+            self.surface,
+            lambda text: self._selection_notice(text),
+            self._video_playback_changed,
+            on_navigate=self.step,
+            navigation_allowed=lambda: self._active and self.mode == "Detail" and not self.slideshow.active,
+            on_autoplay_changed=self._schedule_save,
+        )
         self.video_player.play_button.clicked.connect(self._play_video)
         self.hover_card = GalleryHoverCard(self.surface)
         self.slideshow = GallerySlideshow(self)
@@ -1376,6 +1383,7 @@ class GalleryPage(QObject):
     def _restore_preferences(self) -> None:
         document = load_viewer(self.state_dir)
         self.slideshow.restore_preferences(document)
+        self.video_player.autoplay = document.get("video_autoplay") is True
         query_doc = document.get("query", {})
         try:
             stored_query = GalleryQuery(**query_doc)
@@ -1436,6 +1444,7 @@ class GalleryPage(QObject):
 
     def set_active(self, active: bool) -> None:
         first_activation = active and not self._active and not self.items
+        returning = active and not self._active
         self._active = active
         if not active:
             self.video_player.release(show_play=True)
@@ -1451,6 +1460,8 @@ class GalleryPage(QObject):
             # Catch up immediately on images added while another tab was open; the cheap
             # metadata check decides whether a read is needed.
             self._auto_refresh_tick()
+        if returning and self.mode == "Detail" and self.video_player.autoplay and not self.video_player.playing:
+            self._play_video()
         if active and self._pending_page_jump is not None:
             self._pending_jump_timer.start()
 
@@ -2794,7 +2805,8 @@ class GalleryPage(QObject):
         labels[1].setText(item.model or "Model not recorded")
         film[0].setAccessibleName(f"Open {filename}")
         film[0].setToolTip(tooltip)
-        film[1].badges = (dimensions, size)
+        clip = clip_summary(self._request(item))
+        film[1].badges = (f"▶ {clip[0]}", size) if clip else (dimensions, size)
         checked = item.identity in self.selection.checked
         button.setProperty("checkedSelection", checked)
         button.parentWidget().setProperty("checkedSelection", checked)
@@ -3101,7 +3113,8 @@ class GalleryPage(QObject):
         film_button, film_painter = self._film_entries[item.identity]
         film_button.setAccessibleName(f"Open {filename}")
         film_button.setToolTip(tooltip)
-        film_painter.badges = (dimensions, size)
+        clip = clip_summary(self._request(item))
+        film_painter.badges = (f"▶ {clip[0]}", size) if clip else (dimensions, size)
         button.update()
         film_button.update()
 
@@ -3118,10 +3131,14 @@ class GalleryPage(QObject):
             "; ".join(f"{display_label(identifier)} · {weight:g} · Unknown" for identifier, weight in item.loras)
             or "None"
         )
+        clip = clip_summary(self._request(item))
+        filename = _filename(item.path)
+        if clip:
+            filename = f"▶ {clip[0]} · {filename}"
         return (
             "",
             "",
-            _filename(item.path),
+            filename,
             item.model or "Not recorded",
             loras,
             self._dimensions(item),
@@ -3170,6 +3187,12 @@ class GalleryPage(QObject):
                     button, painter = self._make_film_entry()
                 button.setProperty("identity", item.identity)
                 self._film_entries[item.identity] = button, painter
+                clip = clip_summary(self._request(item))
+                painter.badges = (
+                    (f"▶ {clip[0]}", _human_size(item.file_size))
+                    if clip
+                    else (self._dimensions(item), _human_size(item.file_size))
+                )
             button, _painter = self._film_entries[item.identity]
             if layout.indexOf(button) != row:
                 layout.insertWidget(row, button)
@@ -3395,6 +3418,7 @@ class GalleryPage(QObject):
             return  # a queued seek does not decode intermediate page selections
         self._widget("galleryPositionOverlay", QLabel).setText(f"{position} / {self.total}")
         previous = self._presented_item
+        selected_video_entry = previous is None or previous.identity != item.identity
         if previous == item:
             return
         image_changed = (
@@ -3405,11 +3429,17 @@ class GalleryPage(QObject):
         if image_changed:
             self.video_player.show_for_video(False)  # A poster alone does not establish that its clip is available.
         clip = clip_summary(request)
+        if clip:
+            self.video_player.allow_keyboard_start()
+            self.surface_painter.mode = "Fit"
         self._widget("galleryDimensionsOverlay", QLabel).setText(
-            self._dimensions(item) + (f"  ·  Video {clip[1]}" if clip else "")
+            self._dimensions(item) + (f" · Video {clip[0]}" if clip else "")
         )
         self._widget("galleryModelValue", QLabel).setText(item.model or "Not recorded")
-        self._widget("galleryModelIdentifier", QLabel).hide()
+        video_facts = self._widget("galleryModelIdentifier", QLabel)
+        video_facts.setVisible(clip is not None)
+        if clip:
+            video_facts.setText("Video · reading saved media details…")
         self._present_loras(item)
         if not self.slideshow.active:
             self.hover_card.set_item(item)
@@ -3434,7 +3464,13 @@ class GalleryPage(QObject):
         filename = _filename(item.path)
         self._widget("galleryAdditionalFilenameValue", QLabel).setText(filename)
         self._widget("galleryAdditionalProviderValue", QLabel).setText(item.backend_id or "Not recorded")
-        self._widget("galleryAdditionalFileSizeValue", QLabel).setText(_human_size(item.file_size))
+        self._widget("galleryAdditionalFileSizeLabel", QLabel).setText("Video file size" if clip else "File size")
+        self._widget("galleryAdditionalFileSizeValue", QLabel).setText(
+            "Not recorded" if clip else _human_size(item.file_size)
+        )
+        self._widget("galleryAdditionalDurationLabel", QLabel).setText(
+            "Playback duration" if clip else "Provider duration"
+        )
         self._widget("galleryAdditionalDurationValue", QLabel).setText("Not recorded")
         self._widget("galleryAdditionalPathValue", QLabel).setText(_display_output_path(item.path))
         edited = request.get("operation", "txt2img") != "txt2img"
@@ -3516,9 +3552,12 @@ class GalleryPage(QObject):
         if clip is not None and not item.issue:
             self.external_button.setEnabled(False)
             self.copy_button.setEnabled(False)
+            autoplay = self.video_player.autoplay and self._active and self.mode == "Detail" and selected_video_entry
             self.runner.submit(
                 asyncio.to_thread(self._video_companion_path, item),
-                lambda result, error: self._video_companion_done(detail_generation, item.identity, result, error),
+                lambda result, error: self._video_companion_done(
+                    detail_generation, item.identity, result, error, autoplay=autoplay
+                ),
             )
 
     def _video_companion_path(self, item: GalleryItem) -> str:
@@ -3530,7 +3569,7 @@ class GalleryPage(QObject):
                 raise OSError("The video companion is not a regular file.")
             return str(clip)
 
-    def _video_companion_done(self, generation: int, identity: str, path, error) -> None:
+    def _video_companion_done(self, generation: int, identity: str, path, error, *, autoplay: bool = False) -> None:
         if self.runner.closed or generation != self._detail_generation or identity != self.selected_id:
             return
         available = error is None and bool(path)
@@ -3549,7 +3588,16 @@ class GalleryPage(QObject):
             if self._active:
                 feedback(self.page).notice("Video unavailable", message, "warning")
         elif not self.video_player.playing:
-            self.video_player.show_for_video(True)
+            if (
+                autoplay
+                and self._active
+                and self.mode == "Detail"
+                and self.video_player.autoplay
+                and not self._recycle_busy
+            ):
+                self._start_video(path)
+            else:
+                self.video_player.show_for_video(True)
 
     def _image_done(self, generation: int, identity: str, result, error) -> None:
         if generation != self._image_generation or identity != self.selected_id:
@@ -3619,11 +3667,42 @@ class GalleryPage(QObject):
         raw = self._widget("galleryRawMetadata")
         if error is not None or detail is None:
             raw.setPlainText(json.dumps({"identity": identity, "metadata_status": "unavailable"}, indent=2))
+            if self._selected() is not None and clip_summary(self._request(self._selected())):
+                self._widget("galleryModelIdentifier", QLabel).setText("Video · saved media details unavailable")
             return
         raw.setPlainText(detail.metadata_json)
         try:
             metadata = json.loads(detail.metadata_json)
         except (TypeError, ValueError):
+            if self._selected() is not None and clip_summary(self._request(self._selected())):
+                self._widget("galleryModelIdentifier", QLabel).setText("Video · saved media details unavailable")
+            return
+        clip = clip_summary(self._request(self._selected())) if self._selected() is not None else None
+        if clip:
+            video = metadata.get("video")
+            if not isinstance(video, dict):
+                self._widget("galleryModelIdentifier", QLabel).setText("Video · saved media details unavailable")
+                return
+            facts = ["Video"]
+            seconds = video.get("duration_seconds")
+            if type(seconds) in (int, float) and math.isfinite(seconds) and seconds >= 0:
+                value = duration_text(seconds)
+                facts.append(value)
+                self._widget("galleryAdditionalDurationValue", QLabel).setText(value)
+            width, height = video.get("width_px"), video.get("height_px")
+            if type(width) is int and type(height) is int and width > 0 and height > 0:
+                facts.append(f"{width} × {height}")
+            fps = video.get("fps")
+            if type(fps) in (int, float) and math.isfinite(fps) and fps > 0:
+                facts.append(f"{fps:g} fps")
+            if type(video.get("has_audio")) is bool:
+                facts.append("Audio" if video["has_audio"] else "No audio")
+            size = video.get("bytes")
+            if type(size) is int and size >= 0:
+                readable = _human_size(size)
+                facts.append(readable)
+                self._widget("galleryAdditionalFileSizeValue", QLabel).setText(readable)
+            self._widget("galleryModelIdentifier", QLabel).setText(" · ".join(facts))
             return
         duration = self._recorded_duration(metadata)
         if duration is not None:
@@ -3853,8 +3932,11 @@ class GalleryPage(QObject):
         self._submit_query(query, anchor=self._open_request, target_count=PAGE_SIZE, trigger="open-output")
 
     def show_view(self, mode: str, *, persist: bool = True) -> None:
+        entering_detail = mode == "Detail" and self.mode != "Detail"
         if mode != "Detail" and self.slideshow.active:
             self.slideshow.stop()
+        if mode != "Detail" and self.video_player.playing:
+            self.video_player.release(show_play=True)
         if mode not in self.modes:
             return
         if mode != self.mode:
@@ -3868,7 +3950,16 @@ class GalleryPage(QObject):
             if selected is None and self.items:
                 selected = self.items[0]
             if selected is not None:
+                already_presented = self._presented_item == selected
                 self.select(selected.identity, open_detail=False)
+                if (
+                    entering_detail
+                    and already_presented
+                    and self._active
+                    and self.video_player.autoplay
+                    and not self.video_player.playing
+                ):
+                    self._play_video()
             else:
                 self._clear_detail()
         self._widget("galleryThumbnailSizeLabel", QLabel).setText("Row density" if mode == "List" else "Thumbnail size")
@@ -4462,6 +4553,11 @@ class GalleryPage(QObject):
         elif action == "edit" and self._edit_callback is not None:
             self._edit_callback(result)
 
+    def _video_playback_changed(self, active: bool) -> None:
+        """Keep existing image overlays from covering the video's bottom controls."""
+        for name in ("galleryPositionOverlay", "galleryDimensionsOverlay", "galleryImageToolbar"):
+            self._widget(name).setVisible(not active)
+
     def _play_video(self) -> None:
         """Resolve the MP4 on a worker, then play it in Images without blocking Qt."""
         item = self._selected()
@@ -4475,14 +4571,25 @@ class GalleryPage(QObject):
                 or generation != self._detail_generation
                 or self.runner.closed
                 or not self._active
+                or self.mode != "Detail"
+                or self._recycle_busy
             ):
                 return
             if error is not None or not result:
                 self._selection_notice(f"Video unavailable: {error or 'it could not be read.'}")
                 return
-            self.video_player.start(result)
+            if not self.video_player.playing:
+                self._start_video(result)
 
         self.runner.submit(asyncio.to_thread(self._video_companion_path, item), done)
+
+    def _start_video(self, path: str) -> None:
+        """Open an already-resolved MP4 without repeating the companion check."""
+        try:
+            self.video_player.start(path)
+        except (OSError, RuntimeError, ImportError) as exc:
+            self.video_player.release(show_play=True)
+            self._selection_notice(f"Inline video unavailable: {exc}. Use Open video in player.")
 
     def _copy_path(self) -> None:
         self._read_action("copy")
@@ -4528,6 +4635,8 @@ class GalleryPage(QObject):
         self._widget("galleryDimensionsOverlay", QLabel).setText("—")
         self._widget("galleryModelValue", QLabel).setText("No saved output selected")
         self._widget("galleryModelIdentifier", QLabel).hide()
+        self._widget("galleryAdditionalFileSizeLabel", QLabel).setText("File size")
+        self._widget("galleryAdditionalDurationLabel", QLabel).setText("Provider duration")
         self._widget("galleryLoRALabel", QLabel).setText("LoRAs")
         self._widget("galleryLoRAChip1").hide()
         self._widget("galleryLoRAChip2").hide()
@@ -4580,6 +4689,7 @@ class GalleryPage(QObject):
             "view": self.mode,
             "thumbnail_scale_percents": dict(self._thumbnail_percents),
             "slideshow": self.slideshow.preferences(),
+            "video_autoplay": self.video_player.autoplay,
             "selected": self.selected_id,
             "auto_refresh": self._live_mode >= 1,
             "follow": self._live_mode == 2,
