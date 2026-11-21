@@ -41,12 +41,14 @@ VERSION = "2"
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MODEL = "ltx_2.3_22b_distilled_1.1_q6p.ckpt"
 PIKA_MODEL = "pika_h3_flex_ref2va_i8x.ckpt"
+MINIMAX_H3_MODEL = "minimax_h3_ref2va_i4x.ckpt"
+H3_REF2VA_MODELS = (PIKA_MODEL, MINIMAX_H3_MODEL)
 HEADER_BYTES = 68
 STALL_SECONDS = 90  # a frame writer that makes no progress for this long fails the run
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
 
 # Draw Things ModelZoo tables (read in its source; the response carries neither value).
-FPS_BY_FAMILY = {"ltx": 25, "wan": 16, "hunyuan": 30, "pika": 24}
+FPS_BY_FAMILY = {"ltx": 25, "wan": 16, "hunyuan": 30, "h3": 24}
 DEFAULT_FPS = 30
 AUDIO_RATE_BY_MODEL = (("ltx_2.3", 48000), ("ltx_2", 24000))
 DEFAULT_AUDIO_RATE = 24000
@@ -276,14 +278,16 @@ def resolve_defaults(args: argparse.Namespace, log: Log) -> None:
     preset = preset_for(args.model)
     if args.frames is None:
         native = preset.get("numFrames") if preset else None
-        args.frames = 22 if args.model == PIKA_MODEL else int(native) if native else 121
-        source = "Pika Ref2VA smoke default" if args.model == PIKA_MODEL else "model preset" if native else "POC default, no preset found"
+        args.frames = 22 if args.model in H3_REF2VA_MODELS else int(native) if native else 121
+        source = "H3 Ref2VA smoke default" if args.model in H3_REF2VA_MODELS else "model preset" if native else "POC default, no preset found"
         log.line(f"  frames {args.frames} ({source})", echo=True)
     else:
         log.line(f"  frames {args.frames} (argument)")
     if args.size is None:
         if args.model == PIKA_MODEL:
             args.requested_size, source = (768, 512), "Pika Ref2VA smoke default"
+        elif args.model == MINIMAX_H3_MODEL:
+            args.requested_size, source = (256, 384), "MiniMax H3 Ref2VA iOS baseline"
         elif family_of(args.model) == "ltx":
             args.requested_size, source = (320, 320), "POC default for LTX (small first run)"
         elif preset and preset.get("width") and preset.get("height"):
@@ -304,8 +308,8 @@ def resolve_defaults(args: argparse.Namespace, log: Log) -> None:
 
 
 def family_of(model: str) -> str:
-    if model == PIKA_MODEL:
-        return "pika"
+    if model in H3_REF2VA_MODELS:
+        return "h3"
     name = model.lower()
     for family in ("ltx", "wan", "hunyuan"):
         if name.startswith(family):
@@ -316,8 +320,8 @@ def family_of(model: str) -> str:
 def frame_rule(model: str, frames: int) -> str | None:
     """A warning when the count breaks the family's frame rule (the decode rounds it down), else None."""
     family = family_of(model)
-    if model == PIKA_MODEL and frames != 1 and (frames - 5) % 17:
-        return f"{frames} frames does not follow Pika H3's 1 or 17k+5 frame rule"
+    if family == "h3" and frames != 1 and (frames - 5) % 17:
+        return f"{frames} frames does not follow H3's 1 or 17k+5 frame rule"
     step = {"ltx": 8, "wan": 4, "hunyuan": 4}.get(family)
     if step and (frames - 1) % step:
         return (
@@ -523,7 +527,7 @@ class FrameSink:
 # -- request ---------------------------------------------------------------------------------------------------------
 
 
-def patch_configuration(configuration: bytes, frames: int, shift: float | None, *, pika: bool = False) -> bytes:
+def patch_configuration(configuration: bytes, frames: int, shift: float | None, *, h3: bool = False) -> bytes:
     """Set the POC frame count and selected checkpoint's experimental sampling fields."""
     import flatbuffers
     from drawthings_py.generated.dt_grpc.config_generated import GenerationConfiguration, GenerationConfigurationT
@@ -532,7 +536,7 @@ def patch_configuration(configuration: bytes, frames: int, shift: float | None, 
     table.numFrames = frames
     if shift is not None:
         table.shift = shift
-    if pika:
+    if h3:
         table.stochasticSamplingGamma = 1.0
         table.resolutionDependentShift = False
     builder = flatbuffers.Builder(0)
@@ -787,13 +791,15 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
             break
     if profile is None:
         profile, profile_name = profile_for(args.model, base_version), "family default"
+    h3 = args.model in H3_REF2VA_MODELS
     pika = args.model == PIKA_MODEL
-    if profile is None and not pika:
+    if profile is None and not h3:
         raise ValidationError(f"No bundled profile for {args.model}; cannot pick a sampler.")
-    if pika:
+    if h3:
         sampler = Sampler.TCD_TRAILING
         defaults = {"steps": 6, "guidance": 1.0, "shift": 4.0}
-        log.line("Pika Ref2VA POC settings: TCD Trailing, 6 steps, guidance 1, shift 4, "
+        label = "Pika H3 Flex" if pika else "MiniMax H3"
+        log.line(f"{label} Ref2VA POC settings: TCD Trailing, 6 steps, guidance 1, shift 4, "
                  "stochastic sampling 100%; audio shift 1 unavailable in pinned SDK", echo=True)
     else:
         sampler = profile.sampler
@@ -840,8 +846,8 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
             "working Draw Things gRPC run and below its native 480p tier. "
             "This remains an exploratory, potentially nonrepresentative paid run."
         )
-    if pika and not count:
-        raise ValidationError("Pika H3 Flex Ref2VA requires at least one -i reference image.")
+    if h3 and not count:
+        raise ValidationError("H3 Ref2VA requires at least one -i reference image.")
     if count > args.frames:
         raise ValidationError(f"{count} start images but only {args.frames} frames requested.")
     start_frames = await asyncio.to_thread(load_images, args.images, args.width, args.height, log) if count else None
@@ -893,25 +899,25 @@ async def generate(args, log: Log, found: Findings, ffmpeg: str | None, ffprobe:
             if args.model_specs is not None:
                 spec = custom_model_spec(args.model_specs, args.model)
                 log.line(f"using exact model description from {args.model_specs}", echo=True)
-            if pika and spec is None:
+            if h3 and spec is None:
                 raise ValidationError(
-                    "DT+ did not advertise the Pika checkpoint and no exact model description was available. "
-                    "Supply -spec custom.json before making a paid request."
+                    f"No model description available for {args.model}; "
+                    "supply -spec with an exact Draw Things model-description export."
                 )
             log.line(
                 f"model description for DT+: advertised by Echo {args.model in backend._model_specs}, sent {bool(spec)}"
             )
             wire = build_generation_message(request, None, base_version, spec)
             message = wire.message
-            message.configuration = patch_configuration(message.configuration, args.frames, args.shift, pika=pika)
+            message.configuration = patch_configuration(message.configuration, args.frames, args.shift, h3=h3)
             config = sent_configuration(message.configuration)
             log.line("GenConfig fields sent: " + json.dumps(config, sort_keys=True, default=str))
-            if pika:
+            if h3:
                 from drawthings_py.generated.dt_grpc.config_generated import GenerationConfiguration, SamplerType
 
                 raw = GenerationConfiguration.GetRootAs(message.configuration, 0)
                 if raw.Sampler() != SamplerType.TCDTrailing or abs(raw.StochasticSamplingGamma() - 1.0) > 0.001:
-                    raise ValidationError("Pika TCD Trailing/stochastic sampling settings were not serialized as requested.")
+                    raise ValidationError("H3 TCD Trailing/stochastic sampling settings were not serialized as requested.")
             for key, wanted in (
                 ("num_frames", args.frames),
                 ("steps", args.steps),
