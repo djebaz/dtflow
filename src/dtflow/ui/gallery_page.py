@@ -587,6 +587,7 @@ class GalleryPage(QObject):
             self._video_playback_changed,
             on_navigate=self.step,
             navigation_allowed=lambda: self._active and self.mode == "Detail" and not self.slideshow.active,
+            on_autoplay_changed=self._schedule_save,
         )
         self.video_player.play_button.clicked.connect(self._play_video)
         self.hover_card = GalleryHoverCard(self.surface)
@@ -1382,6 +1383,7 @@ class GalleryPage(QObject):
     def _restore_preferences(self) -> None:
         document = load_viewer(self.state_dir)
         self.slideshow.restore_preferences(document)
+        self.video_player.autoplay = document.get("video_autoplay") is True
         query_doc = document.get("query", {})
         try:
             stored_query = GalleryQuery(**query_doc)
@@ -1442,6 +1444,7 @@ class GalleryPage(QObject):
 
     def set_active(self, active: bool) -> None:
         first_activation = active and not self._active and not self.items
+        returning = active and not self._active
         self._active = active
         if not active:
             self.video_player.release(show_play=True)
@@ -1457,6 +1460,13 @@ class GalleryPage(QObject):
             # Catch up immediately on images added while another tab was open; the cheap
             # metadata check decides whether a read is needed.
             self._auto_refresh_tick()
+        if (
+            returning
+            and self.mode == "Detail"
+            and self.video_player.autoplay
+            and not self.video_player.playing
+        ):
+            self._play_video()
         if active and self._pending_page_jump is not None:
             self._pending_jump_timer.start()
 
@@ -3413,6 +3423,7 @@ class GalleryPage(QObject):
             return  # a queued seek does not decode intermediate page selections
         self._widget("galleryPositionOverlay", QLabel).setText(f"{position} / {self.total}")
         previous = self._presented_item
+        selected_video_entry = previous is None or previous.identity != item.identity
         if previous == item:
             return
         image_changed = (
@@ -3548,7 +3559,13 @@ class GalleryPage(QObject):
             self.copy_button.setEnabled(False)
             self.runner.submit(
                 asyncio.to_thread(self._video_companion_path, item),
-                lambda result, error: self._video_companion_done(detail_generation, item.identity, result, error),
+                lambda result, error: self._video_companion_done(
+                    detail_generation,
+                    item.identity,
+                    result,
+                    error,
+                    autoplay=self.video_player.autoplay and self._active and self.mode == "Detail" and selected_video_entry,
+                ),
             )
 
     def _video_companion_path(self, item: GalleryItem) -> str:
@@ -3560,7 +3577,7 @@ class GalleryPage(QObject):
                 raise OSError("The video companion is not a regular file.")
             return str(clip)
 
-    def _video_companion_done(self, generation: int, identity: str, path, error) -> None:
+    def _video_companion_done(self, generation: int, identity: str, path, error, *, autoplay: bool = False) -> None:
         if self.runner.closed or generation != self._detail_generation or identity != self.selected_id:
             return
         available = error is None and bool(path)
@@ -3579,7 +3596,10 @@ class GalleryPage(QObject):
             if self._active:
                 feedback(self.page).notice("Video unavailable", message, "warning")
         elif not self.video_player.playing:
-            self.video_player.show_for_video(True)
+            if autoplay and self._active and self.mode == "Detail" and self.video_player.autoplay:
+                self._start_video(path)
+            else:
+                self.video_player.show_for_video(True)
 
     def _image_done(self, generation: int, identity: str, result, error) -> None:
         if generation != self._image_generation or identity != self.selected_id:
@@ -3914,6 +3934,7 @@ class GalleryPage(QObject):
         self._submit_query(query, anchor=self._open_request, target_count=PAGE_SIZE, trigger="open-output")
 
     def show_view(self, mode: str, *, persist: bool = True) -> None:
+        entering_detail = mode == "Detail" and self.mode != "Detail"
         if mode != "Detail" and self.slideshow.active:
             self.slideshow.stop()
         if mode != "Detail" and self.video_player.playing:
@@ -3931,7 +3952,16 @@ class GalleryPage(QObject):
             if selected is None and self.items:
                 selected = self.items[0]
             if selected is not None:
+                already_presented = self._presented_item == selected
                 self.select(selected.identity, open_detail=False)
+                if (
+                    entering_detail
+                    and already_presented
+                    and self._active
+                    and self.video_player.autoplay
+                    and not self.video_player.playing
+                ):
+                    self._play_video()
             else:
                 self._clear_detail()
         self._widget("galleryThumbnailSizeLabel", QLabel).setText("Row density" if mode == "List" else "Thumbnail size")
@@ -4550,13 +4580,17 @@ class GalleryPage(QObject):
             if error is not None or not result:
                 self._selection_notice(f"Video unavailable: {error or 'it could not be read.'}")
                 return
-            try:
-                self.video_player.start(result)
-            except (OSError, RuntimeError, ImportError) as exc:
-                self.video_player.release(show_play=True)
-                self._selection_notice(f"Inline video unavailable: {exc}. Use Open video in player.")
+            self._start_video(result)
 
         self.runner.submit(asyncio.to_thread(self._video_companion_path, item), done)
+
+    def _start_video(self, path: str) -> None:
+        """Open an already-resolved MP4 without repeating the companion check."""
+        try:
+            self.video_player.start(path)
+        except (OSError, RuntimeError, ImportError) as exc:
+            self.video_player.release(show_play=True)
+            self._selection_notice(f"Inline video unavailable: {exc}. Use Open video in player.")
 
     def _copy_path(self) -> None:
         self._read_action("copy")
@@ -4656,6 +4690,7 @@ class GalleryPage(QObject):
             "view": self.mode,
             "thumbnail_scale_percents": dict(self._thumbnail_percents),
             "slideshow": self.slideshow.preferences(),
+            "video_autoplay": self.video_player.autoplay,
             "selected": self.selected_id,
             "auto_refresh": self._live_mode >= 1,
             "follow": self._live_mode == 2,

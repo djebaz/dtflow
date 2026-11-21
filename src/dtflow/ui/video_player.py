@@ -40,7 +40,14 @@ def clock(milliseconds: int) -> str:
 
 class VideoPlayer(QObject):
     def __init__(
-        self, surface: QWidget, on_problem, on_playback_changed=None, *, on_navigate=None, navigation_allowed=None
+        self,
+        surface: QWidget,
+        on_problem,
+        on_playback_changed=None,
+        *,
+        on_navigate=None,
+        navigation_allowed=None,
+        on_autoplay_changed=None,
     ) -> None:
         super().__init__(surface)
         self.surface = surface
@@ -48,13 +55,15 @@ class VideoPlayer(QObject):
         self._on_playback_changed = on_playback_changed
         self._on_navigate = on_navigate
         self._navigation_allowed = navigation_allowed
+        self._on_autoplay_changed = on_autoplay_changed
+        self.autoplay = False
         self._panel: QWidget | None = None
         self._player = None
         self._audio = None
         self._duration = 0
         self._muted = False
         self._video = None
-        # K toggles playback; S starts or resumes without pausing a playing video.
+        # K and S both toggle Play/Pause without taking focus from other widgets.
         # Space and Enter retain Qt's native focused-control behavior.
         self._play_shortcut = QShortcut(QKeySequence("K"), surface)
         self._start_shortcut = QShortcut(QKeySequence("S"), surface)
@@ -63,7 +72,7 @@ class VideoPlayer(QObject):
             shortcut.setAutoRepeat(False)
             shortcut.setEnabled(False)
         self._play_shortcut.activated.connect(self.toggle_play)
-        self._start_shortcut.activated.connect(self.play)
+        self._start_shortcut.activated.connect(self.toggle_play)
         self.play_button = QPushButton(surface)
         self.play_button.setObjectName("galleryPlayVideoButton")
         self.play_button.setIcon(QIcon(str(ICONS / "video-play.svg")))
@@ -124,7 +133,9 @@ class VideoPlayer(QObject):
         time = bar.findChild(QLabel, "videoPlaybackTime")
         mute = bar.findChild(QPushButton, "videoPlaybackMute")
         restart = bar.findChild(QPushButton, "videoPlaybackRestart")
+        autoplay = bar.findChild(QPushButton, "videoPlaybackAutoplay")
         close = bar.findChild(QPushButton, "videoPlaybackClose")
+        autoplay.setChecked(self.autoplay)
         slider.setRange(0, SLIDER_SCALE)
         slider.setEnabled(False)
         slider.setToolTip("Seek video. W/X: 1 second, Numpad 4/6: 10 seconds.")
@@ -165,7 +176,7 @@ class VideoPlayer(QObject):
             active = player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
             ended = player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia
             toggle.setIcon(QIcon(str(ICONS / ("video-pause.svg" if active else "video-play.svg"))))
-            description = "Pause video (K)" if active else "Replay video (K / S)" if ended else "Play video (K / S)"
+            description = "Pause video (K / S)" if active else "Replay video (K / S)" if ended else "Play video (K / S)"
             toggle.setToolTip(description)
             toggle.setAccessibleName(description)
 
@@ -193,6 +204,7 @@ class VideoPlayer(QObject):
         slider.sliderReleased.connect(lambda: seek(slider.value()))
         mute.clicked.connect(self.toggle_mute)
         restart.clicked.connect(self.restart)
+        autoplay.toggled.connect(self.set_autoplay)
         close.clicked.connect(lambda: self.release(show_play=True))
         player.positionChanged.connect(update_time)
         player.durationChanged.connect(duration_changed)
@@ -225,7 +237,7 @@ class VideoPlayer(QObject):
             self._player.play()
 
     def toggle_play(self) -> None:
-        """Toggle Play/Pause using the same start and resume path as S."""
+        """Toggle Play/Pause for both K and S."""
         if self._player is not None:
             from PySide6.QtMultimedia import QMediaPlayer
 
@@ -233,6 +245,12 @@ class VideoPlayer(QObject):
                 self._player.pause()
                 return
         self.play()
+
+    def set_autoplay(self, enabled: bool) -> None:
+        """Keep the selection-entry playback preference across viewer sessions."""
+        self.autoplay = enabled
+        if self._on_autoplay_changed is not None:
+            self._on_autoplay_changed()
 
     def seek_delta(self, milliseconds: int) -> None:
         """Seek within the recorded player duration."""

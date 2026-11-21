@@ -2846,6 +2846,11 @@ QWidget#galleryVideoControls QPushButton {
 }
 QWidget#galleryVideoControls QPushButton:hover { background: ${color.buttonHover}; }
 QWidget#galleryVideoControls QPushButton:focus { border-color: ${color.focus}; }
+QWidget#galleryVideoControls QPushButton#videoPlaybackAutoplay { padding: 3px 8px; }
+QWidget#galleryVideoControls QPushButton#videoPlaybackAutoplay:checked {
+  background: ${color.selection}; border-color: ${color.selectionBorder};
+  color: ${color.selectionText};
+}
 QLabel#videoPlaybackTime { color: ${color.text}; font-size: ${type.small}; padding: 0 4px; }
 QSlider#videoPlaybackSeek { min-height: 12px; }
 QSlider#videoPlaybackSeek::groove:horizontal { height: 4px; background: ${color.groove}; border-radius: 2px; }

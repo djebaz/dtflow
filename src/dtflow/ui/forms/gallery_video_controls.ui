@@ -48,6 +48,14 @@
       </widget>
      </item>
      <item>
+      <widget class="QPushButton" name="videoPlaybackAutoplay">
+       <property name="text"><string>Autoplay</string></property>
+       <property name="checkable"><bool>true</bool></property>
+       <property name="toolTip"><string>Play videos automatically from the beginning when opening Detail</string></property>
+       <property name="accessibleName"><string>Autoplay videos in Detail</string></property>
+      </widget>
+     </item>
+     <item>
       <widget class="QPushButton" name="videoPlaybackClose">
        <property name="text"><string/></property>
        <property name="toolTip"><string>Close player and return to poster</string></property>
