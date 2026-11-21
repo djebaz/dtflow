@@ -270,17 +270,25 @@ class VideoPlayer(QObject):
         keypad = bool(modifiers & Qt.KeyboardModifier.KeypadModifier)
         action = None
         if keypad and key in (Qt.Key.Key_4, Qt.Key.Key_Left):
-            action = lambda: self.seek_delta(-10000)
+
+            def action():
+                return self.seek_delta(-10000)
         elif keypad and key in (Qt.Key.Key_6, Qt.Key.Key_Right):
-            action = lambda: self.seek_delta(10000)
+
+            def action():
+                return self.seek_delta(10000)
         elif keypad and key in (Qt.Key.Key_0, Qt.Key.Key_Insert):
             action = self.restart
         elif not keypad and key in (Qt.Key.Key_Space, Qt.Key.Key_K):
             action = self.toggle_play
         elif not keypad and key == Qt.Key.Key_W:
-            action = lambda: self.seek_delta(-1000)
+
+            def action():
+                return self.seek_delta(-1000)
         elif not keypad and key == Qt.Key.Key_X:
-            action = lambda: self.seek_delta(1000)
+
+            def action():
+                return self.seek_delta(1000)
         elif not keypad and key == Qt.Key.Key_M:
             action = self.toggle_mute
         if action is None:

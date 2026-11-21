@@ -3455,9 +3455,7 @@ class GalleryPage(QObject):
         filename = _filename(item.path)
         self._widget("galleryAdditionalFilenameValue", QLabel).setText(filename)
         self._widget("galleryAdditionalProviderValue", QLabel).setText(item.backend_id or "Not recorded")
-        self._widget("galleryAdditionalFileSizeLabel", QLabel).setText(
-            "Video file size" if clip else "File size"
-        )
+        self._widget("galleryAdditionalFileSizeLabel", QLabel).setText("Video file size" if clip else "File size")
         self._widget("galleryAdditionalFileSizeValue", QLabel).setText(
             "Not recorded" if clip else _human_size(item.file_size)
         )
