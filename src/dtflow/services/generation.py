@@ -40,6 +40,7 @@ from dtflow.persistence.original_io import (
 from dtflow.core.output_layout import OutputLayout
 from dtflow.services.artifacts import save_artifacts, validate_result
 from dtflow.services.video_artifacts import require_video_destination
+from dtflow.services import video_encode
 from dtflow.services.assets import AssetService, AssetValidator
 from dtflow.services.budget import BufferBudget
 from dtflow.services.catalogue import Catalogue
@@ -364,6 +365,12 @@ class GenerationService:
                 )
             ) from exc
         if request.num_frames is not None:
+            if await settle(asyncio.to_thread(video_encode.find_tools)) is None:
+                raise BackendError(BackendFailure(
+                    ErrorCategory.VALIDATION, "ffmpeg_missing",
+                    video_encode.tools_problem() or "ffmpeg and ffprobe are unavailable.",
+                    request.request_id,
+                ))
             try:
                 await settle(asyncio.to_thread(require_video_destination, self.output, layout))
             except (OSError, ValueError) as exc:
@@ -439,6 +446,12 @@ class GenerationService:
                 if snapshot != request.image_inputs:
                     raise ValueError("Committed image inputs differ from the prepared attempt.")
             if request.num_frames is not None:
+                if await settle(asyncio.to_thread(video_encode.find_tools)) is None:
+                    raise BackendError(BackendFailure(
+                        ErrorCategory.VALIDATION, "ffmpeg_missing",
+                        "Video tools became unavailable before submission. No video was sent.",
+                        request.request_id,
+                    ))
                 try:
                     await settle(asyncio.to_thread(require_video_destination, self.output, layout))
                 except (OSError, ValueError) as exc:
@@ -447,8 +460,10 @@ class GenerationService:
                         "Video output storage became unavailable before submission. No video was sent.",
                         request.request_id,
                     )) from exc
-                diagnostic_event(log, "video.storage_ready", level=logging.DEBUG,
-                                 data={"request_id": request.request_id, "revalidated": True})
+                diagnostic_event(
+                    log, "video.storage_ready", level=logging.DEBUG,
+                    data={"request_id": request.request_id, "revalidated": True, "ffmpeg_ready": True, "ffprobe_ready": True},
+                )
             preparation("recording_submission_state")
             await self.store.transition(
                 attempt_id,
