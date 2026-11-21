@@ -54,7 +54,15 @@ from dtflow._diagnostic_reader import (
     segment_age,
     snapshot,
 )
-from dtflow.diagnostic_components import COMPONENTS
+
+# Frozen builds bundle the generated catalogue; source checkouts may omit it.
+try:
+    from dtflow.diagnostic_components import COMPONENTS
+except ModuleNotFoundError as exc:
+    if exc.name != "dtflow.diagnostic_components":
+        raise
+    # Session-discovered components still populate the selector dynamically.
+    COMPONENTS = ("dtflow", "dtflow.diagnostics", "dtflow.ui.gallery_perf", "dtflow.ui.performance")
 from dtflow.diagnostic_projection import characteristic_order, characteristics, stable_color_index
 from dtflow.persistence.settings import SettingsError, load_logs_preferences, save_logs_preferences
 from dtflow.logging_setup import LOGGER

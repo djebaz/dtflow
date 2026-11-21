@@ -37,7 +37,6 @@ jobs:
       artifact: ${{ steps.verify.outputs.artifact }}
       version: ${{ steps.verify.outputs.version }}
       commit: ${{ steps.source.outputs.commit }}
-      drive_files: ${{ steps.drive.outputs.files }}
     defaults:
       run:
         shell: pwsh
@@ -173,61 +172,27 @@ jobs:
             "Owner Windows smoke: pending. Build success is not runtime acceptance."
           ) | Add-Content $env:GITHUB_STEP_SUMMARY -Encoding utf8
 
-      # Use the uploader from this workflow revision, even when building an older tag/PR.
-      - name: Check out trusted Drive uploader
-        uses: actions/checkout@v7.0.1
+      - name: Upload verified build to GitHub Actions artifacts
+        uses: actions/upload-artifact@v4
         with:
-          ref: ${{ github.workflow_sha }}
-          path: trusted-workflow
-          sparse-checkout: tools/ci
-          persist-credentials: false
+          name: dtflow-windows-x64-${{ steps.source.outputs.commit }}
+          path: |
+            dist/${{ steps.verify.outputs.artifact }}
+            dist/SHA256SUMS.txt
+            dist/build-manifest.json
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
 
-      - name: Upload download-ready build to Google Drive
-        id: drive
-        shell: uv run --no-sync python {0}
+      - name: Link build downloads
         env:
-          REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
-          CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
-          CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-          ARTIFACT: ${{ steps.verify.outputs.artifact }}
-          SOURCE_COMMIT: ${{ steps.source.outputs.commit }}
+          ARTIFACT_NAME: dtflow-windows-x64-${{ steps.source.outputs.commit }}
         run: |
-          import hashlib
-          import json
-          import os
-          import re
-          import sys
-          from pathlib import Path
-
-          sys.path.insert(0, str(Path("trusted-workflow/tools/ci").resolve()))
-          from upload_ui_renders_to_drive import find_or_create_folder, get_access_token, upload_file
-
-          for name in ("REFRESH_TOKEN", "CLIENT_ID", "CLIENT_SECRET"):
-              if not os.environ.get(name):
-                  raise SystemExit(f"Google Drive OAuth secret {name} is not configured.")
-          names = (os.environ["ARTIFACT"], "SHA256SUMS.txt", "build-manifest.json")
-          if any(Path(name).name != name or not (Path("dist") / name).is_file() for name in names):
-              raise SystemExit("Expected three flat build files.")
-          token = get_access_token(*(os.environ[name] for name in ("REFRESH_TOKEN", "CLIENT_ID", "CLIENT_SECRET")))
-          root_id, _ = find_or_create_folder(token, "dtflow_windows_builds")
-          label = f"build-{os.environ['GITHUB_RUN_ID']}-{os.environ['GITHUB_RUN_ATTEMPT']}-{os.environ['SOURCE_COMMIT'][:7]}"
-          folder_id, folder_url = find_or_create_folder(token, label, root_id)
-          folder_url = folder_url or f"https://drive.google.com/drive/folders/{folder_id}"
-          files = []
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
-              summary.write(f"\n## Build downloads\n\nGoogle Drive folder: {folder_url}\n\n")
-              for name in names:
-                  path = Path("dist") / name
-                  with path.open("rb") as handle:
-                      digest = hashlib.file_digest(handle, "sha256").hexdigest()
-                  item = upload_file(token, path, folder_id, name)
-                  if not re.fullmatch(r"[a-zA-Z0-9_-]+", item["id"]):
-                      raise SystemExit("Google Drive returned an invalid file ID.")
-                  files.append({"name": name, "id": item["id"], "sha256": digest})
-                  summary.write(f"- [{name}]({item['view_url']}) — SHA256 `{digest}`\n")
-              summary.write("\nThree individual, link-readable files, like UI renders. No Actions artifact storage or automatic 14-day expiry.\n")
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"files={json.dumps(files)}\n")
+          @(
+            "## Build downloads"
+            "Download the verified EXE, SHA256SUMS.txt and build-manifest.json together from the run's Artifacts section."
+            "Artifact: $env:ARTIFACT_NAME (24-hour retention)."
+          ) | Add-Content $env:GITHUB_STEP_SUMMARY -Encoding utf8
 
   draft:
     name: Attach verified build to draft only
@@ -246,51 +211,11 @@ jobs:
           ref: ${{ needs.build.outputs.commit }}
           persist-credentials: false
 
-      - name: Download and verify individual build files from Google Drive
-        env:
-          REFRESH_TOKEN: ${{ secrets.GOOGLE_DRIVE_REFRESH_TOKEN }}
-          CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
-          CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
-          DRIVE_FILES: ${{ needs.build.outputs.drive_files }}
-          EXPECTED_ARTIFACT: ${{ needs.build.outputs.artifact }}
-        run: |
-          foreach ($name in @('REFRESH_TOKEN', 'CLIENT_ID', 'CLIENT_SECRET')) {
-            if (-not [Environment]::GetEnvironmentVariable($name)) {
-              throw "Google Drive OAuth secret $name is not configured."
-            }
-          }
-          $files = @($env:DRIVE_FILES | ConvertFrom-Json)
-          $expected = @($env:EXPECTED_ARTIFACT, 'SHA256SUMS.txt', 'build-manifest.json')
-          if ([IO.Path]::GetFileName($env:EXPECTED_ARTIFACT) -ne $env:EXPECTED_ARTIFACT -or
-              $files.Count -ne 3 -or @($files.name | Select-Object -Unique).Count -ne 3) {
-            throw "Expected three flat build files."
-          }
-          foreach ($file in $files) {
-            if ($file.name -cnotin $expected -or $file.id -notmatch '^[a-zA-Z0-9_-]+$' -or
-                $file.sha256 -notmatch '^[a-f0-9]{64}$') {
-              throw "Invalid Google Drive transfer identity."
-            }
-          }
-          New-Item -ItemType Directory -Path release-artifact -ErrorAction Stop | Out-Null
-          try {
-            $token = Invoke-RestMethod -Uri 'https://oauth2.googleapis.com/token' -Method Post -Body @{
-              grant_type = 'refresh_token'
-              refresh_token = $env:REFRESH_TOKEN
-              client_id = $env:CLIENT_ID
-              client_secret = $env:CLIENT_SECRET
-            } -TimeoutSec 30
-            if (-not $token.access_token) { throw "Missing access token." }
-            foreach ($file in $files) {
-              $destination = Join-Path release-artifact $file.name
-              Invoke-WebRequest -Uri "https://www.googleapis.com/drive/v3/files/$($file.id)?alt=media" `
-                -Headers @{ Authorization = "Bearer $($token.access_token)" } -OutFile $destination -TimeoutSec 300
-              if ((Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash.ToLowerInvariant() -ne $file.sha256) {
-                throw "Downloaded file checksum mismatch."
-              }
-            }
-          } catch {
-            throw "Google Drive authentication/download/checksum verification failed; no release assets were attached."
-          }
+      - name: Download verified GitHub Actions artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dtflow-windows-x64-${{ needs.build.outputs.commit }}
+          path: release-artifact
 
       - name: Verify and attach without replacing or publishing
         env:
