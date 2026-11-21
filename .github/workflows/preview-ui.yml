@@ -4,14 +4,13 @@ run-name: >-
   Preview · ${{ github.event_name == 'pull_request' && format('PR #{0}', github.event.pull_request.number)
   || inputs.pr != '' && format('PR #{0}', inputs.pr) || format('branch {0}', github.ref_name) }}
 
-# Automatic PR requests are temporarily paused because Actions credits are exhausted.
-# Uncomment the block below to restore them; workflow_dispatch remains available.
-# Only PRs with preview-relevant changes start this Action. The path filter
-# also applies to preview:PART/preview:ALL label events on docs-only PRs;
-# explicit workflow_dispatch remains available for those cases.
+# Automatic requests run only when a PR becomes Ready for review or a
+# preview:PART/preview:ALL label is added. Opening, reopening, and new commits
+# never automatically request a preview. Manual dispatch remains available.
+# Preview-relevant path filtering also applies to label events.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    types: [ready_for_review, labeled]
     # Keep aligned with shared + preview in tools/ci/action_dependencies.json.
     # GitHub matches the cumulative PR changed-file list (not only the last push).
     paths:
