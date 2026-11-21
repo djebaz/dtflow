@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ui version="4.0">
+ <class>GalleryVideoControls</class>
+ <widget class="QWidget" name="galleryVideoControls">
+  <layout class="QHBoxLayout" name="galleryVideoControlRow">
+   <property name="leftMargin"><number>330</number></property>
+   <property name="topMargin"><number>4</number></property>
+   <property name="rightMargin"><number>56</number></property>
+   <property name="bottomMargin"><number>4</number></property>
+   <item><widget class="QPushButton" name="videoPlaybackToggle"><property name="text"><string>Pause</string></property></widget></item>
+   <item><widget class="QSlider" name="videoPlaybackSeek"><property name="orientation"><enum>Qt::Horizontal</enum></property><property name="minimum"><number>0</number></property><property name="maximum"><number>1000</number></property></widget></item>
+   <item><widget class="QLabel" name="videoPlaybackTime"><property name="text"><string>0:00 / 0:00</string></property></widget></item>
+   <item><widget class="QPushButton" name="videoPlaybackMute"><property name="text"><string>Mute</string></property></widget></item>
+   <item><widget class="QPushButton" name="videoPlaybackClose"><property name="text"><string>Close</string></property></widget></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ui version="4.0">
+ <class>VideoPanel</class>
+ <widget class="QFrame" name="videoPanel">
+  <property name="role" stdset="0"><string>card</string></property>
+  <layout class="QVBoxLayout" name="videoPanelLayout">
+   <property name="leftMargin"><number>10</number></property>
+   <property name="topMargin"><number>8</number></property>
+   <property name="rightMargin"><number>10</number></property>
+   <property name="bottomMargin"><number>8</number></property>
+   <item>
+    <layout class="QHBoxLayout" name="videoFramesRow">
+     <item><widget class="QLabel" name="videoFramesLabel"><property name="text"><string>Frames</string></property><property name="buddy"><cstring>videoFramesSpinBox</cstring></property></widget></item>
+     <item><widget class="QSpinBox" name="videoFramesSpinBox"><property name="accessibleName"><string>Number of video frames</string></property><property name="minimum"><number>9</number></property><property name="maximum"><number>361</number></property></widget></item>
+     <item><widget class="QLabel" name="videoDurationLabel"><property name="role" stdset="0"><string>secondary</string></property><property name="text"><string /></property></widget></item>
+    </layout>
+   </item>
+   <item>
+    <layout class="QHBoxLayout" name="videoStartRow">
+     <item><widget class="QLabel" name="videoStartTitle"><property name="text"><string>Start image</string></property></widget></item>
+     <item><widget class="QPushButton" name="videoChooseStartButton"><property name="text"><string>Choose…</string></property><property name="toolTip"><string>Choose one optional start image. Leave empty for text to video.</string></property></widget></item>
+     <item><widget class="QPushButton" name="videoClearStartButton"><property name="text"><string>Clear</string></property></widget></item>
+     <item><widget class="QLabel" name="videoStartLabel"><property name="text"><string>None (text to video)</string></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+    </layout>
+   </item>
+   <item><widget class="QLabel" name="videoCostNote"><property name="text"><string>A video takes minutes and can use a large part of the monthly allowance. DT+ does not report what a run costs, so no cost is shown.</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+   <item><widget class="QLabel" name="videoProblemLabel"><property name="text"><string /></property><property name="wordWrap"><bool>true</bool></property><property name="state" stdset="0"><string>warning</string></property></widget></item>
+  </layout>
+ </widget>
+ <resources/>
+ <connections/>
+</ui>

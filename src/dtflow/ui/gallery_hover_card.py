@@ -4,6 +4,8 @@ Presentation only: it renders the already loaded GalleryItem and never reads met
 touches the backend or changes zoom, pan or navigation.
 """
 
+import json
+
 from PySide6.QtCore import QEvent, QObject, QSize, Qt, QTimer
 from PySide6.QtGui import QCursor, QIcon, QTextOption
 from PySide6.QtWidgets import (
@@ -19,6 +21,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow.core.gallery import GalleryItem
+from dtflow.core.video import clip_summary
 from dtflow.services.lora_naming import display_label
 from dtflow.ui.gallery_detail_preview import ASSETS
 from dtflow.ui.prompt_tags import PromptTagHighlighter, stored_runs
@@ -33,6 +36,14 @@ PROMPT_POINT_SIZE = 10.5
 PROMPT_MIN_POINT_SIZE = 8.0
 TOOLBAR_GAP = 8
 LORA_UNKNOWN_TIP = "No persisted LoRA application/compatibility evidence is available in the saved request."
+
+
+def _request_of(item: GalleryItem) -> dict:
+    try:
+        value = json.loads(item.request_json)
+        return value if isinstance(value, dict) else {}
+    except (TypeError, ValueError):
+        return {}
 
 
 class _ElidedLabel(QLabel):
@@ -179,7 +190,10 @@ class GalleryHoverCard(QFrame):
             row = self.lora_rows.takeAt(0).widget()
             if row is not None:
                 row.deleteLater()
-        self.lora_label.setText("LoRAs" if item.loras else "LoRAs · none")
+        clip = clip_summary(_request_of(item))
+        self.lora_label.setText(
+            ("▶ Video · " + clip[0] + "  ·  " if clip else "") + ("LoRAs" if item.loras else "LoRAs · none")
+        )
         for identifier, weight in item.loras:
             self.lora_rows.addWidget(self._chip(identifier, weight))
 

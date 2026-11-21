@@ -295,8 +295,24 @@ class ResolvedGenerationRequest:
     strength: float = 1.0
     image_inputs: ImageInputSnapshot | None = None
     pose_control: object | None = None
+    # Video (absent for images): frame count, and one optional start image (managed file path and its SHA-256).
+    num_frames: int | None = None
+    start_image: str | None = None
+    start_image_sha256: str | None = None
 
     def __post_init__(self) -> None:
+        if self.num_frames is not None:
+            from dtflow.core.video import check_request_fields
+
+            if type(self.num_frames) is not int or self.operation != "txt2img" or self.pose_control is not None:
+                raise ValidationError("A video request is text-to-video or one start image, never an image edit.")
+            if (self.batch_size, self.batch_count) != (1, 1) or self.loras:
+                raise ValidationError("A video request makes one clip and takes no LoRAs yet.")
+            check_request_fields(self.model_id, self.num_frames, self.start_image)
+            if (self.start_image is None) != (self.start_image_sha256 is None):
+                raise ValidationError("A start image needs its SHA-256.")
+        elif self.start_image is not None or self.start_image_sha256 is not None:
+            raise ValidationError("A start image belongs to a video request.")
         for name in ("request_id", "model_id"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():
@@ -648,6 +664,7 @@ class BackendEvent:
     total: int | None = None
     artifact: ImageArtifact | None = None
     failure: BackendFailure | None = None
+    received_bytes: int | None = None
 
 
 EventSink = Callable[[BackendEvent], None]

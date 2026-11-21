@@ -37,6 +37,7 @@ __all__ = [
     "configured_directory",
     "default_directory",
     "dev_enabled",
+    "development_mode",
     "perf_enabled",
     "sanitize",
 ]
@@ -134,14 +135,6 @@ def _prune(directory: Path, keep: str) -> None:
                 pass
 
 
-_DEVELOPMENT = False
-
-
-def development_mode() -> bool:
-    """Whether this process runs with the explicit ``-x/--dev`` diagnostic mode; it never changes generation."""
-    return _DEVELOPMENT
-
-
 def configure_logging(
     *,
     directory: Path | None = None,
@@ -158,8 +151,6 @@ def configure_logging(
         result = _configure_logging(
             directory=directory, dev=dev, build=build, backend=backend, session=session, report_error=report_error
         )
-        global _DEVELOPMENT
-        _DEVELOPMENT = bool(dev)
         return result
     finally:
         _CONFIGURATION.release()
@@ -249,6 +240,11 @@ def _configure_logging(*, directory, dev, build, backend, session, report_error)
 def dev_enabled() -> bool:
     """Development mode changes diagnostic detail only."""
     return logging.getLogger(LOGGER).isEnabledFor(logging.DEBUG)
+
+
+def development_mode() -> bool:
+    """Compatibility query for GUI diagnostics; does not import Qt."""
+    return dev_enabled()
 
 
 def perf_enabled() -> bool:

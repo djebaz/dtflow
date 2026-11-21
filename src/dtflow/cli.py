@@ -1120,7 +1120,11 @@ def run_gui_command(
 ) -> int:
     """Qt is imported only here, so every other command runs without it."""
     try:
+        # Install before QtMultimedia initializes; Qt-specific imports stay in the UI package.
+        from dtflow.ui.qt_multimedia_logging import install_qt_multimedia_logging
         from dtflow.ui.splash import GuiUnavailable, run_gui_with_splash
+
+        install_qt_multimedia_logging()
 
         startup.mark("qt imports")
     except ImportError:

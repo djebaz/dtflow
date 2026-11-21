@@ -6,6 +6,7 @@ The resolved seed is serialized through the public ``GenConfig.to_fbs(seed)`` pa
 
 from __future__ import annotations
 
+import hashlib
 import json
 import struct
 from dataclasses import dataclass
@@ -22,10 +23,12 @@ from drawthings_py.generated.dt_grpc.config_generated import (
 
 from dtflow.backends.drawthings.errors import error
 from dtflow.backends.drawthings.image_inputs import encode_image_inputs
+from dtflow.backends.drawthings.video_wire import start_image_tensor, with_num_frames
 from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.image_operations import ImageOperationPermit
 from dtflow.core.model_profiles import exact_model_description_digest, exact_model_spec, profile_for
 from dtflow.core.models import ErrorCategory, Metadata, ResolvedGenerationRequest, ResourceLimits, Sampler
+from dtflow.core.video import video_profile
 
 # Provider sampler names; drawthings-py silently substitutes a default for unknown names, so the result is verified.
 SAMPLER_NAME = {
@@ -188,6 +191,10 @@ def build_generation_message(
     # Flow models (Flux, ...) need version-specific fields that a bare configuration leaves at library defaults.
     profile = profile_for(request.model_id, base_version)
     extras = dict(profile.extras) if profile else {}
+    if request.num_frames is not None:
+        # A video model never borrows another family's values: its own entry or nothing.
+        own = video_profile(request.model_id)
+        extras = dict(own.extras) if own else {}
     if image_operation:
         extras.update(mask_blur=0.0, mask_blur_outset=0, preserve_original_after_inpaint=False)
     config = GenConfig(
@@ -218,6 +225,8 @@ def build_generation_message(
             target_blocks=[],
         )
     configuration = config.to_fbs(request.seed)
+    if request.num_frames is not None:
+        configuration = with_num_frames(configuration, request.num_frames)
     if "guidance_embed" in extras:
         configuration = with_guidance_embed(configuration, extras["guidance_embed"])
     effective = verify_wire_configuration(request, configuration, extras)
@@ -228,6 +237,10 @@ def build_generation_message(
         configuration=configuration,
         user=CLIENT_NAME,
     )
+    video_tensor = start_image_tensor(request) if request.start_image else None
+    if video_tensor is not None:
+        message.image = hashlib.sha256(video_tensor).digest()
+        message.contents = [video_tensor]
     override = custom_lora_override(request)
     control_nets = b""
     if request.pose_control is not None:
@@ -316,6 +329,8 @@ def verify_wire_configuration(
         for (f, w, m), (name, weight, mode) in zip(sent, wanted, strict=True)
     ):
         mismatches.append("loras")
+    if request.num_frames is not None and decoded.get("num_frames") != request.num_frames:
+        mismatches.append("num_frames")
     if not _same_float32(decoded.get("guidance"), request.guidance):
         mismatches.append("guidance")
     if not _same_float32(raw.Strength(), request.strength):
