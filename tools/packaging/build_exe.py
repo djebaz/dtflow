@@ -18,6 +18,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 BUILDINFO = ROOT / "src" / "dtflow" / "_buildinfo.py"
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from ffmpeg_bundle import DEFAULT_PROVIDER  # noqa: E402
+
 ARCHES = {"amd64": "x64", "x86_64": "x64", "arm64": "arm64", "aarch64": "arm64"}
 
 
@@ -46,8 +49,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--ffmpeg-provider",
         choices=("gyan", "tas", "unpins", "imageio", "imageio-mini"),
-        default="gyan",
-        help="Windows FFmpeg: gyan default; tas, unpins, imageio, or imageio-mini (minimal ffprobe) experimental",
+        default=DEFAULT_PROVIDER,
+        help="Windows FFmpeg: imageio-mini default (same as the Actions workflow); gyan, tas, unpins or imageio optional",
     )
     args = parser.parse_args(argv)
     try:
@@ -63,7 +66,7 @@ def main(argv: list[str] | None = None) -> int:
         )
     windows = platform.system() == "Windows"
     ffmpeg_bundle = None
-    if not windows and args.ffmpeg_provider != "gyan":
+    if not windows and args.ffmpeg_provider != DEFAULT_PROVIDER:
         parser.error("--ffmpeg-provider is available only for Windows builds.")
     if windows:
         if ARCHES.get(platform.machine().lower()) != "x64":
