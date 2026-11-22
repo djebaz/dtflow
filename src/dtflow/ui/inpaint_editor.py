@@ -69,6 +69,8 @@ class InpaintEditor(QObject):
         self._support = None
         self._support_revision = 0
         self._source_path = None
+        self._restore_source_pending = None  # remembered Inpaint image stays unloaded outside visible Inpaint
+        self._generate_visible = False
         self._result_path = None
         self._run_source = None  # the source the running edit was taken from
         self.script_handoff = None  # injected UI-only navigation; never generation dispatch
@@ -298,6 +300,18 @@ class InpaintEditor(QObject):
     def active(self):
         return self.page.inpaintModeButton.isChecked()
 
+    def set_generate_visible(self, visible: bool) -> None:
+        """Restore the saved source only when Inpaint is the active Generate workspace mode."""
+        self._generate_visible = visible
+        self._activate_saved_source()
+
+    def _activate_saved_source(self) -> None:
+        if not (self._restore_source_pending and self._generate_visible and self.active):
+            return
+        source = self._restore_source_pending
+        self._restore_source_pending = None
+        self.replace_source(source, quiet=True)
+
     def sync_mode(self):
         active = self.active
         self.canvas.cancel_stroke()
@@ -314,6 +328,7 @@ class InpaintEditor(QObject):
         self._steps_note()
         self._controls()
         self.refresh_capability()
+        self._activate_saved_source()
 
     def set_busy(self, busy):
         """Another run cannot start now. The editor itself stays editable: a running edit keeps its own snapshot."""
@@ -561,6 +576,7 @@ class InpaintEditor(QObject):
     def replace_source(self, path, *, quiet=False, button=None):
         if self._loading:
             return
+        self._restore_source_pending = None
         recorded_path = path.item.path if isinstance(path, GalleryEditSource) else str(path)
         windows_path = PureWindowsPath(recorded_path)
         filename = windows_path.name if windows_path.drive or "\\" in recorded_path else Path(recorded_path).name
@@ -618,6 +634,7 @@ class InpaintEditor(QObject):
         def remove():
             self._source = None
             self._source_path = None
+            self._restore_source_pending = None
             self._result_path = None
             self._coverage = 0
             self._set_analysis(None)
@@ -715,12 +732,15 @@ class InpaintEditor(QObject):
             form.selectModeButton.setChecked(True)
         source = document.get("source")
         if isinstance(source, str) and Path(source).is_file():
-            self.replace_source(source, quiet=True)
+            # Remember the path for the next session even if Inpaint is never opened this time.
+            self._source_path = source
+            self._restore_source_pending = source
         if document.get("mode") == "inpaint":
             self.page.inpaintModeButton.setChecked(True)
 
     def edit_saved_image(self, path):
         """Images handoff: load a saved output as the source, after the usual discard consent."""
+        self._restore_source_pending = None  # this explicit source supersedes any saved, unopened image
         self.page.inpaintModeButton.setChecked(True)
         self.replace_source(path)
 
