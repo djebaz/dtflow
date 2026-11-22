@@ -102,8 +102,11 @@ text stays in `backend.api_failed`. Quota exhaustion is never inferred.
   attempt is already recorded as possibly submitted by then.
 - A DT+ call that sends a later `second_pass` signpost after its last sampling step is already admitted past its slot;
   the open-call cap bounds this.
-- Inpaint, Controlnet and video from Generate and other non-queue callers do not take part yet (#559).
+- Other non-queue callers (CLI `generate`, scripts) do not take part.
+- Inpaint, Controlnet and video clicks (#559) are the same one-item queues as an image: `run_generate(..., job)` stages the
+  edit or pose through `create_edit_queue`/`create_pose_queue` (now taking `origin` and `queue_id`), and a video uses the
+  ordinary video queue path (own lease, spool and FFmpeg limits unchanged, slot freed at sampling complete). Generate's
+  status line words a queued video's phase and elapsed time; the header bar shows the queue.
 - A Generate click's request is not claimed until a slot is free, so the dispatcher (not the call) reports the wait; a
-  click that finds no owner here and another process owning dispatch is saved paused and not run. While a click runs, the
-  global progress bar shows that click; other running queues show again in Queues and on the bar when it ends.
+  click that finds no owner here and another process owning dispatch is saved paused and not run.
 - Preflight diagnostics (`run_generation`'s advisory LoRA check) are not shown for a queued single image.
