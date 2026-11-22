@@ -147,10 +147,10 @@ def test_generate_keeps_the_event_loop_responsive_and_saves_the_final_image(wind
     use(gate=gate)
     page = window.generation_page
     page.generateButton.click()
-    assert not page.generateButton.isEnabled()
+    assert page.generateButton.isEnabled()  # every click is its own queue (#558): another one may follow at once
     assert window.progress_strip.rows["run"].activityStopButton.isEnabled()
     qtbot.wait(50)  # the GUI thread keeps processing events while the generation is held open
-    assert not page.generateButton.isEnabled()
+    assert page.generateButton.isEnabled()
     window.runner._loop.call_soon_threadsafe(gate.set)
     qtbot.waitUntil(settled(window), timeout=5000)
     assert page.generationStatusLabel.text().startswith("Saved")

@@ -971,7 +971,7 @@ class GenerationPage:
         queue, Generate stays available and queues the request behind it (``queue_behind``)."""
         dispatching = self._activity.dispatching
         button = self.page.generateButton
-        blocked = self._busy or self._generating
+        blocked = self._busy or (self._generating and not self._queued_run)
         no_model = self._model_missing() or not self._backend()[0]
         button.setEnabled(not blocked and not no_model)
         if hasattr(self, "retryButton"):
@@ -1148,8 +1148,8 @@ class GenerationPage:
         if self.inpaint.active and edit is None:
             self.inpaint.generate()
             return False
-        if self._busy or self._generating:
-            return False
+        if self._busy or (self._generating and not self._queued_run):
+            return False  # an earlier queued click may still wait or run: each click is its own queue (#558)
         if self._relink_pending:
             self._status(
                 Presentation(

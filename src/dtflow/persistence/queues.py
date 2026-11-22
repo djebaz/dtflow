@@ -616,6 +616,31 @@ class QueueMixin:
                 )
             return _release_queued(db, now, reason)
 
+    async def enqueue_paused(self, queue_ids: Sequence[str]) -> None:
+        """Put these paused queues, still holding pending items, up next for the owner that has just opened the order."""
+
+        def run() -> None:
+            with self._txn() as db:
+                for queue_id in queue_ids:
+                    row = db.execute("SELECT state FROM queues WHERE queue_id=?", (queue_id,)).fetchone()
+                    if row is None or row["state"] != "paused":
+                        continue
+                    if (
+                        db.execute(
+                            "SELECT 1 FROM queue_items WHERE queue_id=? AND state='pending' LIMIT 1", (queue_id,)
+                        ).fetchone()
+                        is None
+                    ):
+                        continue
+                    now = self._now()
+                    db.execute(
+                        "UPDATE queues SET state='queued', up_next=?, updated_at_utc=? WHERE queue_id=?",
+                        (_last_up_next(db) + 1, now, queue_id),
+                    )
+                    self._event(db, queue_id, "enqueued", now)
+
+        await self._run(run)
+
     async def pause_started(self, queue_id: str) -> None:
         """A queue claimed for a start that never ran (its backend would not open) is paused again, nothing else moved."""
         await self._run(

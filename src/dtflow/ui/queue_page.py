@@ -345,7 +345,8 @@ class QueuePage:
         self._event_relay = EventRelay(self._queue_backend_event, page)
         self._advance_relay = EventRelay(self._advanced, page)
         self._overlap_relay = EventRelay(self._overlapped, page)
-        self._manual: _ManualRun | None = None  # the Generate click this page dispatches, if any (#558)
+        self._manual: _ManualRun | None = None  # the Generate click Generate shows, if any (#558)
+        self._manual_runs: dict[str, _ManualRun] = {}  # every click's queue not yet reported, shown or not
         self._manual_queues: set[str] = set()  # queues Generate created: Generate reports them, not the queue strip
         self._manual_relay = EventRelay(self._manual_delivered, page)
         self._overlapping: set[str] = set()  # queues auto-started early by this window's dispatch
@@ -544,6 +545,7 @@ class QueuePage:
         """The owner is only ending after Generate reported its click's queue: nothing else of this window runs."""
         return (
             self._manual is None
+            and not self._manual_runs
             and self._dispatching in self._manual_queues
             and self._overlapping <= self._manual_queues
         )
@@ -2766,20 +2768,20 @@ class QueuePage:
             )
         self.refresh()
 
-    # -- one Generate click (#558) ---------------------------------------------------------------------------------
+    # -- Generate clicks (#558) ------------------------------------------------------------------------------------
     def run_generate(self, request, name, endpoint, asset_ids, sink) -> None:
         """Generate's single image as a visible one-item queue on the shared dispatch path.
 
         With this window dispatching, the queue waits up next and the owner starts it at once, ahead of ordinary queue
         work; otherwise it is saved paused and this window dispatches it. Another process's ownership is reported, never
-        duplicated.
+        duplicated. Every click is its own queue: earlier ones keep running and settle in Queues, and ``sink`` (Generate)
+        follows only the latest.
         """
         backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
         owner_here = self.dispatching_here
         # Named before anything exists, so the queue's first event or result can never arrive unrecognised.
         queue_id = uuid4().hex
-        self._manual = _ManualRun(sink, queue_id)
-        self._manual_queues.add(queue_id)
+        self._start_manual(_ManualRun(sink, queue_id))
 
         async def work():
             await self._create(
@@ -2787,55 +2789,75 @@ class QueuePage:
             )
             return await self._manual_ready(queue_id)
 
-        self._runner.submit(work(), self._manual_created)
+        self._runner.submit(work(), lambda result, failure: self._manual_created(queue_id, result, failure))
 
     def retry_generate(self, queue_id: str, sink) -> None:
         """Retry the Generate queue's item in place: same item and settings, a new request and attempt."""
-        owner_here = self.dispatching_here
-        self._manual = _ManualRun(sink, queue_id)
+        self._start_manual(_ManualRun(sink, queue_id))
 
         async def work():
             await retry_queue_item(self._state, queue_id, 1)
-            return await self._manual_ready(queue_id, enqueue=owner_here)
+            return await self._manual_ready(queue_id)
 
-        self._runner.submit(work(), self._manual_created)
+        self._runner.submit(work(), lambda result, failure: self._manual_created(queue_id, result, failure))
 
-    async def _manual_ready(self, queue_id: str, *, enqueue: bool = False):
-        if enqueue:
-            try:
-                await change_queue_order(self._state, queue_id, "enqueue")
-            except QueueError:
-                pass  # no queue is dispatching any more: the callback dispatches it from this window
+    def _start_manual(self, run: _ManualRun) -> None:
+        self._manual = run  # Generate shows this one from now on; an earlier click carries on unattended
+        self._manual_runs[run.queue_id] = run
+        self._manual_queues.add(run.queue_id)
+
+    def _finish_manual(self, run: _ManualRun, outcome, failure) -> None:
+        """A click's queue ended: Generate hears of it only while it is the one Generate shows."""
+        self._manual_runs.pop(run.queue_id, None)
+        if self._manual is run:
+            self._manual = None
+            run.sink.finished(outcome, failure)
+
+    async def _manual_ready(self, queue_id: str):
         view = (await read_queue_views(self._state, queue_id))[0]
         return queue_id, view["items"][0]["request_id"], view["status"]
 
-    def _manual_created(self, result, failure) -> None:
-        manual = self._manual
-        if manual is None:
+    def _manual_created(self, queue_id: str, result, failure) -> None:
+        run = self._manual_runs.get(queue_id)
+        if run is None:
             return
         if failure is not None:
-            self._manual = None
-            manual.sink.finished(None, failure)
+            self._finish_manual(run, None, failure)
             return
-        queue_id, request_id, _ = result
-        manual.ready = True
-        manual.sink.created(queue_id, request_id)
+        _, request_id, status = result
+        run.ready = True
+        if self._manual is run:
+            run.sink.created(queue_id, request_id)
         if not self.dispatching_here:
             # No owner here (it may have ended after the status was read): nothing else would start this queue.
             self._dispatch(queue_id, resume_fallback=None)
-        if manual.stopping:
+        elif status != "queued":
+            # Saved paused beside an owner that started meanwhile (or a Retry): put it up next for that owner.
+            async def enqueue():
+                try:
+                    await change_queue_order(self._state, queue_id, "enqueue")
+                    return True
+                except QueueError:
+                    return False
+
+            self._runner.submit(enqueue(), lambda queued, _: self._manual_enqueued(queue_id, queued))
+        if run.stopping and self._manual is run:
             self.stop_generate()
         self.refresh()
 
+    def _manual_enqueued(self, queue_id: str, queued: bool) -> None:
+        if not queued and queue_id in self._manual_runs and not self.dispatching_here:
+            self._dispatch(queue_id, resume_fallback=None)  # the owner ended first; ending also hands it back (below)
+
     def stop_generate(self) -> None:
-        """Stop Generate's queue only: cancel it while it waits up next, else post the cancel to its owner."""
-        manual = self._manual
-        if manual is None:
+        """Stop the click Generate shows, only: cancel it while it waits up next, else post the cancel to its owner."""
+        run = self._manual
+        if run is None:
             return
-        if not manual.ready:
-            manual.stopping = True  # applied as soon as the queue exists
+        if not run.ready:
+            run.stopping = True  # applied as soon as the queue exists
             return
-        queue_id = manual.queue_id
+        queue_id = run.queue_id
 
         async def work():
             try:
@@ -2845,26 +2867,20 @@ class QueuePage:
                 await post_queue_control(self._state, queue_id, "cancel")
                 return False
 
-        self._runner.submit(work(), self._manual_stopped)
+        self._runner.submit(work(), lambda waiting, failure: self._manual_stopped(run, waiting, failure))
 
-    def _manual_stopped(self, waiting, failure) -> None:
-        manual = self._manual
-        if manual is None:
-            return
+    def _manual_stopped(self, run: _ManualRun, waiting, failure) -> None:
         if failure is not None:
             self._message(present_generation_failure(failure))
             return
         if waiting:  # it never started, so no owner will report its end
-            self._manual = None
-            manual.sink.finished(None, None)
+            self._finish_manual(run, None, None)
         self.refresh()
 
     def _manual_delivered(self, delivery: _ManualDelivery) -> None:
-        """A Generate queue's result, or the end of a queue's task; only this click's queue counts."""
-        manual = self._manual
-        if manual is None:
-            return
-        if delivery.queue_id != manual.queue_id:
+        """A click's saved result, or the end of a queue's task; only queues Generate created count."""
+        run = self._manual_runs.get(delivery.queue_id)
+        if run is None:
             return
         if delivery.ended and delivery.error is None:
             # A queue's end also follows a finished run, possibly after Retry started the next: only an item that
@@ -2872,21 +2888,37 @@ class QueuePage:
             async def item_state():
                 return (await read_queue_views(self._state, delivery.queue_id))[0]["items"][0]["state"]
 
-            self._runner.submit(
-                item_state(), lambda state, failure: self._manual_ended(delivery.queue_id, state, failure)
-            )
+            self._runner.submit(item_state(), lambda state, failure: self._manual_ended(run, state, failure))
             return
-        self._manual = None
-        manual.sink.finished(delivery.outcome, delivery.error)
+        self._finish_manual(run, delivery.outcome, delivery.error)
 
-    def _manual_ended(self, queue_id: str, state, failure) -> None:
-        manual = self._manual
-        if manual is None or manual.queue_id != queue_id:
+    def _manual_ended(self, run: _ManualRun, state, failure) -> None:
+        if self._manual_runs.get(run.queue_id) is not run:
             return
         if failure is None and state in ("pending", "running"):
             return
-        self._manual = None
-        manual.sink.finished(None, failure)
+        self._finish_manual(run, None, failure)
+
+    def _manual_handed_back(self, failure) -> None:
+        """The owner ended while clicks' queues had not reported: they were restored paused, or none could start."""
+        runs = [run for run in self._manual_runs.values() if run.ready]
+        if not runs:
+            return
+        if isinstance(failure, StateBusyError):
+            for run in runs:
+                self._manual_runs.pop(run.queue_id, None)
+                if self._manual is run:
+                    self._manual = None
+                    run.sink.refused(
+                        Presentation(
+                            "warning",
+                            "Dispatch is owned by another process",
+                            "The request is saved paused in Queues; press Start there when it stops. Nothing was sent.",
+                        )
+                    )
+            return
+        first, *rest = runs
+        self._dispatch(first.queue_id, resume_fallback=None, waiting=tuple(run.queue_id for run in rest))
 
     async def _assets_in_use(self, request, asset_ids) -> tuple[str, ...]:
         """The selected receipts whose LoRA the request still names: one removed in the composer is not bound."""
@@ -3292,9 +3324,10 @@ class QueuePage:
         if self._runner.closed:
             return
         event = wrapped.event
-        manual = self._manual
-        if manual is not None and wrapped.queue_id == manual.queue_id:
-            manual.sink.event(event)  # a Generate click's queue shows its progress and previews in Generate
+        if wrapped.queue_id in self._manual_queues:
+            manual = self._manual
+            if manual is not None and wrapped.queue_id == manual.queue_id:
+                manual.sink.event(event)  # the click Generate shows: progress and previews appear in Generate
             return
         if event.kind in ("assets_restored", "assets_failed", "assets_inconclusive"):
             if event.stage:
@@ -3395,7 +3428,7 @@ class QueuePage:
         self._dispatch(view["queue_id"], resume_fallback=view["queue_id"] if self._started(view) else None)
 
     @profile_slow_gui_callback("queue.dispatch")
-    def _dispatch(self, queue_id: str, *, resume_fallback: str | None) -> None:
+    def _dispatch(self, queue_id: str, *, resume_fallback: str | None, waiting: tuple[str, ...] = ()) -> None:
         """Make this window the dispatch owner of ``queue_id`` (an explicit Start or Start now)."""
         self._resume_fallback = resume_fallback
         self._dispatching = queue_id
@@ -3408,6 +3441,7 @@ class QueuePage:
                 self._state,
                 queue_id,
                 saved=saved,
+                waiting=waiting,
                 on_event=lambda item_id, event: self._event_relay(_QueueBackendEvent(queue_id, item_id, event)),
                 on_next=lambda settled, following: self._advance_relay(_QueueAdvance(settled, following)),
                 on_overlap=lambda started: self._overlap_relay(_QueueOverlap(started)),
@@ -3499,20 +3533,7 @@ class QueuePage:
             )
         self._render()
         self.refresh()
-        manual = self._manual
-        if manual is not None and manual.ready:
-            # The owner ended before Generate's queue reported: it was restored paused, or no owner could start.
-            if isinstance(failure, StateBusyError):
-                self._manual = None
-                manual.sink.refused(
-                    Presentation(
-                        "warning",
-                        "Dispatch is owned by another process",
-                        "The request is saved paused in Queues; press Start there when it stops. Nothing was sent.",
-                    )
-                )
-            else:
-                self._dispatch(manual.queue_id, resume_fallback=None)
+        self._manual_handed_back(failure)
 
     def cancel_run(self) -> None:
         """Stop the locally owned run shown globally, independently of the selected queue."""

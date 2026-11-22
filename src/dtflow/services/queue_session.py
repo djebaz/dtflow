@@ -502,6 +502,7 @@ async def dispatch_queue(
     on_next: Callable[[dict[str, Any], str], None] | None = None,
     on_overlap: Callable[[str], None] | None = None,
     manual: ManualSink | None = None,
+    waiting: tuple[str, ...] = (),
     auto_play: bool = True,
 ) -> dict[str, Any]:
     """Make this process the dispatch owner and run the queue until it finishes or is cancelled, then auto-play.
@@ -516,7 +517,8 @@ async def dispatch_queue(
 
     A single Generate request (#558) waiting up next starts at once, beside whatever runs, and its provider calls take
     the next free slot ahead of ordinary queue work. ``manual`` receives that queue's events, saved result or failure,
-    and the end of every queue this owner starts (the receiver picks its own).
+    and the end of every queue this owner starts (the receiver picks its own). ``waiting`` names further paused
+    Generate queues to put up next at once.
     """
     policy = timeouts or TimeoutPolicy()
     store = SQLiteAttempts(state)
@@ -562,6 +564,8 @@ async def dispatch_queue(
         owned = True
         if auto_play:
             await store.open_up_next()
+            if waiting:
+                await store.enqueue_paused(waiting)  # Generate clicks handed back together: up next for this owner
         start(queue_id)
         final: dict[str, Any] = {}
         while True:

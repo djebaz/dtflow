@@ -64,6 +64,7 @@ batch keeps its origin but has ordinary priority. No schema change: the marker i
 - **Presentation.** Only this queue enables live previews (`preview_images`) and keeps Generate's output layout and
   its trigger-prefix switch (`generate`). Its events (real queue and item), saved result or failure, and end go to
   Generate through `ManualSink`; other queues keep the existing relay untouched.
+- **Several clicks.** Each click is its own queue with manual priority (`_manual_runs` by queue id); Generate follows only the latest (`_manual`), events and results of earlier ones are dropped from Generate and live in Queues. If the owner ends first, all unreported clicks are handed back together (`waiting`) and dispatched again.
 - **Stop and Retry.** Stop cancels this queue only (a waiting one at once, a started one through a posted control; the
   service records the local-stop evidence, read beside the owner by `read_attempt_record`). Retry is the queue's own
   in-place item retry (`retry_queue_item`): same item, recorded settings and seed, a new request and attempt, the
