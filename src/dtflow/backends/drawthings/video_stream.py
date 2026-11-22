@@ -643,8 +643,8 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
         try:
             # Each step is best effort and none may skip the next: the spool handle must be closed before rmtree.
             for step in (
+                lambda: asyncio.to_thread(sink.finish, abort=True),  # FFmpeg is gone before its slot is released
                 slot.aclose,
-                lambda: asyncio.to_thread(sink.finish, abort=True),
                 lambda: video_encode.run_worker(spool.delete),
             ):
                 try:
