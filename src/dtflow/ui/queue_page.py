@@ -982,12 +982,14 @@ class QueuePage:
                     if phases:
                         phase_names = {
                             "preparing": "preparing",
-                            "waiting": "waiting for local resources",
+                            "waiting": "waiting for local video resources",
                             "cloud": "DT+ Cloud processing",
                             "sampling": "sampling",
                             "second_pass": "second pass",
                             "receiving": "receiving",
+                            "encoder_wait": "waiting for a local video encoder",
                             "encoding": "finalizing",
+                            "verifying": "finalizing",
                             "saving": "saving",
                         }
                         counts = {}
