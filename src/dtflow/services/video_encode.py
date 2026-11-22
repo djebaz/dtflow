@@ -1,15 +1,18 @@
 """ffmpeg and ffprobe work for video generation: frame sink, audio mux, probe, tool discovery.
 
 Proven by the video POC on DT+ (libx264 high 4.1, yuv420p, faststart, AAC mux). Everything here blocks, so callers run
-it in worker threads. Frozen Windows builds use their packaged tools exclusively;
-source development resolves them from ``PATH``. No console window opens on Windows.
+it in worker threads. Frozen Windows builds use their packaged tools exclusively; Windows source development uses
+the same pinned provider staged by ``tools/packaging/ffmpeg_bundle.py`` (never ``PATH``); other platforms use ``PATH``.
+No console window opens on Windows.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextvars
+import importlib.util
 import json
+import logging
 import os
 import queue
 import shutil
@@ -25,6 +28,8 @@ from pathlib import Path
 from dtflow.core.models import MAX_QUEUE_CONCURRENCY
 from dtflow.services.video_resources import MP4_LIMIT
 
+log = logging.getLogger(__name__)
+
 _VIDEO_WORKERS = ThreadPoolExecutor(max_workers=MAX_QUEUE_CONCURRENCY, thread_name_prefix="dtflow-video")
 
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
@@ -39,31 +44,104 @@ async def run_worker(function, *args, **kwargs):
     )
 
 
+PROVIDER_ENV = "DTFLOW_FFMPEG_PROVIDER"
+_SETUP_COMMAND = "uv run python tools/packaging/ffmpeg_bundle.py"
+_verified: set[str] = set()
+_announced: set[tuple[str, str]] = set()
+
+
+def _source_windows() -> bool:
+    return os.name == "nt" and not getattr(sys, "frozen", False)
+
+
+def _bundle_module():
+    """Load the packaging module that pins and verifies the providers (source checkouts only)."""
+    path = Path(__file__).resolve().parents[3] / "tools" / "packaging" / "ffmpeg_bundle.py"
+    if not path.is_file():
+        return None
+    spec = importlib.util.spec_from_file_location("dtflow_ffmpeg_bundle", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("dtflow_ffmpeg_bundle", module)
+    spec.loader.exec_module(module)
+    return module
+
+
+def selected_provider() -> str:
+    """The pinned provider for Windows source runs: ``imageio-mini`` unless explicitly overridden."""
+    value = os.environ.get(PROVIDER_ENV, "").strip()
+    return value or "imageio-mini"
+
+
+def _staged_folder() -> Path | str:
+    """The selected provider's staged ``bin`` folder, or a problem message."""
+    provider = selected_provider()
+    module = _bundle_module()
+    if module is None:
+        return "The pinned FFmpeg setup script is missing; run DTFlow from a complete source checkout."
+    if provider not in module.PROVIDERS:
+        return f"Unknown {PROVIDER_ENV} value {provider!r}; use one of: {', '.join(module.PROVIDERS)}."
+    return module.stage_dir(provider) / "bin"
+
+
+def _setup_hint(provider: str) -> str:
+    suffix = "" if provider == "imageio-mini" else f" --provider {provider}"
+    return f"Run `{_SETUP_COMMAND}{suffix}` once to stage the pinned FFmpeg and ffprobe."
+
+
 def find_tools() -> tuple[str, str] | None:
-    """Use bundled frozen executables, or ordinary PATH tools in source development."""
+    """Use bundled frozen executables, the staged pinned provider on Windows source runs, or PATH elsewhere."""
     if getattr(sys, "frozen", False):
         base = getattr(sys, "_MEIPASS", None)
         if base is None:
             return None
         folder = Path(base) / "ffmpeg"
-        ffmpeg, ffprobe = folder / "ffmpeg.exe", folder / "ffprobe.exe"
-        return (str(ffmpeg), str(ffprobe)) if ffmpeg.is_file() and ffprobe.is_file() else None
-    ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
-    return (ffmpeg, ffprobe) if ffmpeg and ffprobe else None
+    elif _source_windows():
+        folder = _staged_folder()
+        if isinstance(folder, str):
+            return None
+    else:
+        ffmpeg, ffprobe = shutil.which("ffmpeg"), shutil.which("ffprobe")
+        return (ffmpeg, ffprobe) if ffmpeg and ffprobe else None
+    ffmpeg, ffprobe = folder / "ffmpeg.exe", folder / "ffprobe.exe"
+    return (str(ffmpeg), str(ffprobe)) if ffmpeg.is_file() and ffprobe.is_file() else None
 
 
 def tools_problem() -> str | None:
-    """A cheap path check for UI presentation (never starts a subprocess on Qt)."""
+    """A cheap path check for UI presentation (never starts a subprocess or hashes files on Qt)."""
     if find_tools() is not None:
         return None
     if getattr(sys, "frozen", False):
         return "This DTFlow build is missing its bundled FFmpeg tools. Reinstall a complete Windows build."
+    if _source_windows():
+        folder = _staged_folder()
+        if isinstance(folder, str):
+            return folder
+        return f"Pinned FFmpeg ({selected_provider()}) is not staged at {folder}. {_setup_hint(selected_provider())}"
     return "ffmpeg and ffprobe were not found on PATH; install them before generating video."
+
+
+def _staging_problem() -> str | None:
+    """Verify the staged provider's manifest and file hashes once per process (worker thread only)."""
+    provider = selected_provider()
+    if provider in _verified:
+        return None
+    try:
+        _bundle_module().staged_record(provider)
+    except (OSError, ValueError, KeyError) as exc:
+        return f"Staged FFmpeg ({provider}) failed verification: {str(exc).rstrip('.')}. {_setup_hint(provider)}"
+    _verified.add(provider)
+    return None
+
+
+def _first_line(text: str) -> str:
+    return text.strip().splitlines()[0] if text.strip() else "unknown"
 
 
 def tools_readiness_problem() -> str | None:
     """Verify usable H.264/AAC encoding and probing on the generation worker before submission."""
     if (problem := tools_problem()) is not None:
+        return problem
+    if _source_windows() and (problem := _staging_problem()) is not None:
         return problem
     ffmpeg, ffprobe = find_tools()
     try:
@@ -75,6 +153,16 @@ def tools_readiness_problem() -> str | None:
         return "FFmpeg or ffprobe could not start; generation was not submitted."
     if " libx264 " not in encoders.stdout or " aac " not in encoders.stdout:
         return "FFmpeg lacks the H.264 (libx264) or AAC encoder required for video generation."
+    if (ffmpeg, ffprobe) not in _announced:
+        _announced.add((ffmpeg, ffprobe))
+        mode = (
+            "frozen"
+            if getattr(sys, "frozen", False)
+            else f"source:{selected_provider()}"
+            if _source_windows()
+            else "path"
+        )
+        log.info("video tools (%s) ffmpeg=%s ffprobe=%s | %s", mode, ffmpeg, ffprobe, _first_line(probe_version.stdout))
     return None
 
 

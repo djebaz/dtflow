@@ -1,11 +1,13 @@
 """Stage pinned Windows FFmpeg distributions for the canonical PyInstaller build.
 
-Selection is explicit at build time. Neither provider downloads at app startup,
-changes DTFlow's encoder commands, or falls back to another provider.
+Selection is explicit. Nothing downloads at app startup, changes DTFlow's encoder
+commands, or falls back to another provider. Run this file directly to stage (or
+reuse and re-verify) one provider for Windows source development.
 """
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -18,6 +20,7 @@ from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[2]
 VERSION = "8.1.2"
+DEFAULT_PROVIDER = "imageio-mini"
 TOOLS = ("ffmpeg.exe", "ffprobe.exe")
 TAS_DLLS = (
     "avcodec-62.dll",
@@ -223,7 +226,7 @@ def _stage_imageio(
                 shutil.copyfileobj(src, dst)
 
 
-def prepare(provider: str = "gyan") -> dict:
+def prepare(provider: str = DEFAULT_PROVIDER) -> dict:
     """Stage verified binaries and license files for one explicitly selected provider."""
     spec = _spec(provider)
     stage = stage_dir(provider)
@@ -321,7 +324,7 @@ def prepare(provider: str = "gyan") -> dict:
     }
 
 
-def staged_record(provider: str = "gyan") -> dict:
+def staged_record(provider: str = DEFAULT_PROVIDER) -> dict:
     """Verify staged contents and provenance without a second network request."""
     spec = _spec(provider)
     stage = stage_dir(provider)
@@ -366,3 +369,30 @@ def staged_record(provider: str = "gyan") -> dict:
         if sha256(stage / "licenses" / relative) != digest:
             raise ValueError(f"Staged license file {relative} differs from the recorded bundle.")
     return record
+
+
+def main(argv: list[str] | None = None) -> int:
+    """Stage or reuse one pinned provider under ignored ``tmp/packaging`` for source development."""
+    parser = argparse.ArgumentParser(description="Stage pinned Windows FFmpeg/FFprobe for source development.")
+    parser.add_argument("--provider", choices=tuple(PROVIDERS), default=DEFAULT_PROVIDER)
+    args = parser.parse_args(argv)
+    try:
+        try:
+            record = staged_record(args.provider)
+            action = "reused (verified)"
+        except (OSError, ValueError, KeyError):
+            record = prepare(args.provider)["record"]
+            action = "staged"
+    except (OSError, ValueError, shutil.Error) as exc:
+        parser.error(f"Cannot stage verified FFmpeg: {exc}")
+    print(
+        f"FFmpeg {record['version']} / FFprobe {record['ffprobe_version']}, provider {args.provider} {action}: "
+        f"{stage_dir(args.provider) / 'bin'}"
+    )
+    if args.provider != DEFAULT_PROVIDER:
+        print(f"Run DTFlow with DTFLOW_FFMPEG_PROVIDER={args.provider} to use it.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

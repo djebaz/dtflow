@@ -12,12 +12,12 @@ from pathlib import Path
 
 from PyInstaller.archive.readers import CArchiveReader
 
-from ffmpeg_bundle import stage_dir, staged_record
+from ffmpeg_bundle import DEFAULT_PROVIDER, stage_dir, staged_record
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def verify(commit: str, tag: str, provider: str = "gyan") -> dict:
+def verify(commit: str, tag: str, provider: str = DEFAULT_PROVIDER) -> dict:
     actual_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     if actual_commit != commit:
         raise ValueError("Checkout no longer matches the selected source commit.")
@@ -87,7 +87,7 @@ def main() -> None:
     parser.add_argument("-c", "--commit", required=True, help="expected full checkout commit")
     parser.add_argument("-t", "--tag", default="", help="optional release tag matching the application version")
     parser.add_argument(
-        "--ffmpeg-provider", choices=("gyan", "tas", "unpins", "imageio", "imageio-mini"), default="gyan"
+        "--ffmpeg-provider", choices=("gyan", "tas", "unpins", "imageio", "imageio-mini"), default=DEFAULT_PROVIDER
     )
     args = parser.parse_args()
     record = verify(args.commit, args.tag, args.ffmpeg_provider)
