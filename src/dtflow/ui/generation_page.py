@@ -1115,8 +1115,7 @@ class GenerationPage:
         if self._queued_run:
             if reported:
                 self._queued_steps = (completed, total)
-            if stage != self._queued_stage:
-                self._queued_stage, self._queued_stage_since = stage, time.monotonic()
+            self._queued_stage, self._queued_stage_since = stage, time.monotonic()  # every report restarts the count
             self._show_queued_stage()
             return
         if not reported:
