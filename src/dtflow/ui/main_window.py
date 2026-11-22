@@ -1260,6 +1260,8 @@ class MainWindow:
         self.gallery.set_active(images_active)
         self._place_export_panel()
         self._responsive_workspace()
+        if self.form.workspaceStack.currentWidget() is self.generation_page:
+            self.generation.controlnet.activate_if_visible()
 
     def _retire_activity_presentation(self) -> None:
         """Unsubscribe before Qt destroys the activity overlay's child widgets."""
