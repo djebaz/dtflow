@@ -34,7 +34,10 @@ queues, Scripts and Workflows.
   posted but not yet applied): before its attempt is created, and again after the buffer budget and image snapshot, just
   before the attempt is marked submitted. If the queue is no longer running nothing is sent and the item returns to
   pending (`queue.item_returned`). On the second check the prepared attempt is kept as `cancelled` (not submitted,
-  nothing started) and the pending item takes a new request identity; on the first no attempt exists yet. An automatic retry that finds its queue no
+  nothing started) and the pending item takes a new request identity; on the first no attempt exists yet. If the owner
+  dies between the two writes, restart reconciliation finishes that one step for a cancelled attempt whose failure code is
+  `held_before_submission` (item pending under a new identity, attempt untouched); every other cancelled or unknown
+  attempt still settles its item as before and nothing is replayed. An automatic retry that finds its queue no
   longer running sends nothing either: the item settles with its first failure. A retry waits for a slot after its delay,
   not during it.
 - Script and Workflow runs keep their own child limit (`reserve_script_child(..., shared=True)` drops only the global

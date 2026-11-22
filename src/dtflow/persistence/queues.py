@@ -1032,6 +1032,22 @@ class QueueMixin:
                 db.execute(
                     "UPDATE queue_items SET state='pending', updated_at_utc=? WHERE item_id=?", (now, item["item_id"])
                 )
+            elif _held_before_submission(attempt):
+                # The dispatcher ended the attempt as definitely not submitted and died before returning the item:
+                # finish that one step (the attempt keeps its identity, the pending item gets a new one).
+                record["request_id"] = uuid4().hex
+                db.execute(
+                    "UPDATE queue_items SET state='pending', request_json=?, attempt_id=NULL, updated_at_utc=?"
+                    " WHERE item_id=?",
+                    (json.dumps(record, allow_nan=False), now, item["item_id"]),
+                )
+                QueueMixin._event(
+                    db,
+                    item["queue_id"],
+                    "item_returned",
+                    now,
+                    {"item_id": item["item_id"], "previous_attempt_id": attempt["attempt_id"], "recovered": True},
+                )
             else:
                 db.execute(
                     "UPDATE queue_items SET state=?, attempt_id=?, failure_json=?, updated_at_utc=? WHERE item_id=?",
@@ -1046,6 +1062,16 @@ class QueueMixin:
             QueueMixin._event(db, item["queue_id"], "reconciled", now, {"item_id": item["item_id"]})
         db.execute("UPDATE queues SET state='paused', updated_at_utc=? WHERE state='running'", (now,))
         _release_queued(db, now, "restart")
+
+
+def _held_before_submission(attempt) -> bool:
+    """Only this exact end: a cancelled attempt the dispatcher recorded as held before submission (nothing was sent)."""
+    if attempt["state"] != "cancelled" or not attempt["failure_json"]:
+        return False
+    try:
+        return json.loads(attempt["failure_json"]).get("code") == "held_before_submission"
+    except (TypeError, ValueError, AttributeError):
+        return False
 
 
 def _reconcile_script_item(db: sqlite3.Connection, item, record: dict, now: str) -> None:
