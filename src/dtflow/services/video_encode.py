@@ -21,7 +21,7 @@ import subprocess
 import sys
 import threading
 from collections import deque
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -307,8 +307,9 @@ class TensorSpool:
 
     CHECK_EVERY = 16 * 1024 * 1024  # re-check free space after this much growth beyond the admission estimate
 
-    def __init__(self, path: Path, estimate: int, headroom: int):
-        self.path, self.estimate, self.headroom = Path(path), estimate, headroom
+    def __init__(self, path: Path, estimate: int, grow: Callable[[int], None]):
+        """``grow(chunk)`` raises OSError unless the disk can take ``chunk`` more bytes beyond the estimate."""
+        self.path, self.estimate, self.grow = Path(path), estimate, grow
         self.count = 0
         self.size = 0
         self._file = None
@@ -324,8 +325,7 @@ class TensorSpool:
         if self.size > self._checked:
             # The reservation is an estimate, not a cap: a larger legitimate clip continues while space remains.
             self._checked = self.size + self.CHECK_EVERY
-            if shutil.disk_usage(self.path.parent).free < self.headroom + self.CHECK_EVERY:
-                raise OSError("Not enough free disk space to keep the received frames.")
+            self.grow(self.CHECK_EVERY)
 
     def finish_writing(self) -> None:
         if self._file is not None:
@@ -345,6 +345,7 @@ class TensorSpool:
                 yield tensor
 
     def delete(self) -> None:
+        """Close the handle, then remove the file (an open handle blocks deleting the directory on Windows)."""
         self.finish_writing()
         self.path.unlink(missing_ok=True)
 
@@ -426,6 +427,12 @@ class FrameSink:
             if _size_limit_reached(self.partial):
                 raise VideoSizeLimitError("Video reached its local MP4 size limit.") from None
             raise EncodeError(f"The frame writer made no progress for {STALL_SECONDS} s.") from None
+
+    def interrupt(self) -> None:
+        """Kill ffmpeg at once so a blocked writer or a long encode ends; finish(abort=True) still does the cleanup."""
+        proc = self._proc
+        if proc is not None and proc.poll() is None:
+            proc.kill()
 
     def finish(self, *, abort: bool = False) -> None:
         """Close the writer and ffmpeg; abort (or any failure) kills ffmpeg and removes the half-written file."""

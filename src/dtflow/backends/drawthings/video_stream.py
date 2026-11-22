@@ -14,8 +14,9 @@ import asyncio
 import logging
 import struct
 import tempfile
+import threading
 import time
-from contextlib import AsyncExitStack
+from contextlib import AsyncExitStack, closing
 from dataclasses import replace
 from pathlib import Path
 
@@ -44,10 +45,10 @@ from dtflow.diagnostics import api_error_data, event as diagnostic_event
 from dtflow.services import video_encode
 from dtflow.services.video_resources import (
     AUDIO_LIMIT,
-    DISK_HEADROOM,
     MP4_LIMIT,
     SPOOL_RESERVE,
     TENSOR_LIMIT,
+    grow_video_spool,
     recheck_video_storage,
 )
 
@@ -80,18 +81,22 @@ def _tensor_size(tensor: bytes) -> tuple[int, int] | None:
     return width, height
 
 
-def _encode_spool(spool: video_encode.TensorSpool, sink: video_encode.FrameSink) -> bytes:
+def _encode_spool(spool: video_encode.TensorSpool, sink: video_encode.FrameSink, stop: threading.Event) -> bytes:
     """Feed the spooled tensors, in order, through the encoder and return the poster PNG (worker thread).
 
-    The first frame's decode also makes the poster; ffmpeg starts here, not while receiving.
+    The first frame's decode also makes the poster; ffmpeg starts here, not while receiving. ``stop`` is set when the
+    item is cancelled: the loop then ends at the next frame.
     """
     poster = None
     try:
-        for tensor in spool.read():
-            width, height, rgb = _frame_rgb(tensor)
-            if poster is None:
-                poster = encode_png(rgb, width, height, 3)
-            sink.put(width, height, rgb)
+        with closing(spool.read()) as tensors:
+            for tensor in tensors:
+                if stop.is_set():
+                    raise video_encode.EncodeError("Local encoding was cancelled.")
+                width, height, rgb = _frame_rgb(tensor)
+                if poster is None:
+                    poster = encode_png(rgb, width, height, 3)
+                sink.put(width, height, rgb)
     except OSError as exc:
         raise video_encode.EncodeError(
             f"The received frame data could not be read back ({type(exc).__name__})."
@@ -100,6 +105,25 @@ def _encode_spool(spool: video_encode.TensorSpool, sink: video_encode.FrameSink)
     if poster is None:
         raise video_encode.EncodeError("No frames were available to encode.")
     return poster
+
+
+async def _encode_cancellably(spool: video_encode.TensorSpool, sink: video_encode.FrameSink) -> bytes:
+    """Run the encode worker; on cancellation stop it and kill ffmpeg so it ends promptly, then re-raise."""
+    stop = threading.Event()
+    task = asyncio.ensure_future(video_encode.run_worker(_encode_spool, spool, sink, stop))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        stop.set()
+        sink.interrupt()
+        while not task.done():  # the worker returns within a frame once ffmpeg is gone
+            try:
+                await asyncio.wait({task})
+            except asyncio.CancelledError:
+                pass
+        if not task.cancelled():
+            task.exception()  # retrieved: its error is the cancellation itself
+        raise
 
 
 def _audio_raw(data: bytes, target: Path) -> int:
@@ -168,7 +192,9 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
     stream = None
     work = Path(tempfile.mkdtemp(prefix="dtflow-video-"))
     sink = video_encode.FrameSink(ffmpeg, playback_fps(request.model_id), work / "video.mp4.partial")
-    spool = video_encode.TensorSpool(work / "frames.spool", SPOOL_RESERVE, DISK_HEADROOM)
+    spool = video_encode.TensorSpool(
+        work / "frames.spool", SPOOL_RESERVE, lambda chunk: grow_video_spool(request.request_id, chunk)
+    )
     slot = AsyncExitStack()  # holds the local encoder slot from the wait until the encode and audio mux end
     frames = 0
     received = 0
@@ -384,7 +410,7 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
                 codec_threads=video_encode.effective_threads(),
                 max_encoders=video_encode.policy_encoders() or "unlimited",
             )
-            poster = await settle(video_encode.run_worker(_encode_spool, spool, sink))
+            poster = await _encode_cancellably(spool, sink)
             await settle(video_encode.run_worker(spool.delete))
             trace(
                 "encode_finished",
@@ -615,11 +641,16 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
     finally:
         backend._active -= 1
         try:
-            try:
-                await slot.aclose()
-                await settle(asyncio.to_thread(sink.finish, abort=True))
-            except Exception:
-                pass
+            # Each step is best effort and none may skip the next: the spool handle must be closed before rmtree.
+            for step in (
+                slot.aclose,
+                lambda: asyncio.to_thread(sink.finish, abort=True),
+                lambda: video_encode.run_worker(spool.delete),
+            ):
+                try:
+                    await settle(step())
+                except Exception:
+                    pass
         finally:
             if not keep:
                 import shutil
