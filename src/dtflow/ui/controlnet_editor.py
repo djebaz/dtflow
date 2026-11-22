@@ -133,6 +133,7 @@ class ControlnetEditor(QObject):
         self._wanted_control = None  # a remembered control, applied once the inventory lists it
         self._paths = {}  # the last photo and the last body map, kept apart so switching between them restores each
         self._restore_source_pending = False  # no saved source work until visible Generate → ControlNet
+        self._generate_visible = False  # the legacy generationPage stays hidden in the workspace shell
         self._pending_person = None
         self._strength = 0.7
         self._notice = ""
@@ -209,9 +210,14 @@ class ControlnetEditor(QObject):
     def active(self):
         return self.page.controlnetModeButton.isChecked()
 
+    def set_generate_visible(self, visible: bool) -> None:
+        """Track the active workspace; Generate content is reparented out of the hidden legacy page."""
+        self._generate_visible = visible
+        self.activate_if_visible()
+
     def activate_if_visible(self) -> None:
-        """Load a remembered pose source once, only while Generate → ControlNet is actually visible."""
-        if not (self._restore_source_pending and self.active and self.page.isVisible()):
+        """Load a remembered pose source once, only while Generate → ControlNet is active in the workspace."""
+        if not (self._restore_source_pending and self.active and self._generate_visible):
             return
         self._restore_source_pending = False
         remembered = self._paths.get(self._kind)
