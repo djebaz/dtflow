@@ -60,7 +60,12 @@ def fake(monkeypatch):
 
 
 def settled(window):
-    return lambda: window.generation_page.generateButton.isEnabled() and not window.activity.generating
+    # A single image runs as a one-item queue (#558): settled also means its dispatch ended and released the state.
+    return lambda: (
+        window.generation_page.generateButton.isEnabled()
+        and not window.activity.generating
+        and not window.activity.dispatching
+    )
 
 
 def test_offline_inpaint_mode_and_mask_history_do_not_dispatch(window, qtbot, tmp_path):
@@ -155,7 +160,8 @@ def test_generate_keeps_the_event_loop_responsive_and_saves_the_final_image(wind
     assert page.openOutputFolderButton.isEnabled()
     assert page.resultPreviewLabel.property("designation") == "final"
     assert "field.prompt: override" in page.effectiveRequestBrowser.toPlainText()
-    # The state lock is released between operations, so another owner can open the directory now.
+    # The one-item queue's dispatch ends right after the result; the lock is then free for another owner.
+    qtbot.waitUntil(lambda: not window.activity.dispatching, timeout=3000)
     other, opened = SQLiteAttempts(window.state_dir), []
     window.runner.submit(other.open(), lambda result, failure: opened.append(failure))
     qtbot.waitUntil(lambda: bool(opened), timeout=3000)
@@ -258,7 +264,7 @@ def test_state_busy_is_reported_without_dispatch(window, qtbot):
     page = window.generation_page
     page.generateButton.click()
     qtbot.waitUntil(settled(window), timeout=5000)
-    assert page.generationStatusLabel.text().startswith("State is busy")
+    assert page.generationStatusLabel.text().startswith("Dispatch is owned by another process")
     window.runner.submit(owner.aclose(), lambda *_: None)
     qtbot.wait(100)
 

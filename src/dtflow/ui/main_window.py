@@ -552,6 +552,7 @@ class MainWindow:
             )
         )
         self.generation.queue_behind = self.queue.queue_behind
+        self.generation.queue_run = self.queue  # one Generate image runs as a one-item queue (#558)
         self.generation.queue_images = self._queue_images
         form.backendCombo.addItems(BACKENDS)
         form.backendCombo.view().setRowHidden(form.backendCombo.findText("fake"), True)
@@ -1513,22 +1514,27 @@ class MainWindow:
         if marker != self._last_run_marker:
             self._last_run_marker = marker
             self.gallery.notify_changed()
-        if not (self.activity.generating or self.activity.dispatching):
+        generating = self.activity.generating  # a Generate click's queue runs under Generate's own presentation
+        if not (generating or self.activity.dispatching) or (not generating and self.queue.generate_settling):
             self.progress_strip.finish("run")
             return
-        run_identity = "generation" if self.activity.generating else f"queue:{state.queue_id}"
+        run_identity = "generation" if generating else f"queue:{state.queue_id}"
         row = self.progress_strip.rows.get("run")
         if row is not None and row.property("runIdentity") != run_identity:
             self.progress_strip.finish("run")
         if "run" not in self.progress_strip.rows:
-            label = "Generation" if self.activity.generating else "Queue progress"
+            label = "Generation" if generating else "Queue progress"
             self.progress_strip.finish("generation-result")
             self.progress_strip.finish("queue-result")
             self.progress_strip.start(
                 "run",
                 label,
-                self.generation.cancel if self.activity.generating else self.queue.cancel_run,
-                stop_text="Stop waiting locally" if self.activity.generating else "Stop after current image",
+                self.generation.cancel if generating else self.queue.cancel_run,
+                stop_text=(
+                    ("Stop waiting locally" if not self.generation.queued_run else "Stop")
+                    if generating
+                    else "Stop after current image"
+                ),
             )
             self.progress_strip.rows["run"].setProperty("runIdentity", run_identity)
         self.progress_strip.update(

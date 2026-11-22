@@ -25,7 +25,7 @@ queues, Scripts and Workflows.
   work reports it (`want`); a call may take the next slot only if no waiting call or ready queue ranks ahead of it.
 - Script and Workflow child generations, automatic retries and a video returning from its local-resource wait **wait in
   rank order** (`acquire`). Queues rank by start order (older first); a manual class (`PRIORITY_MANUAL`) sorts before
-  them for later use.
+  them (see below).
 - Up next queues stay reorderable until they start. The next one starts early when every live queue is open, the newest
   one is still running and the pool has capacity nobody wants (`spare`: a free slot, no waiting call, no ready queue). A
   queue that has work but cannot use a slot (repairing assets, a Script/Workflow at its child limit) does not count as
@@ -42,6 +42,32 @@ queues, Scripts and Workflows.
   not during it.
 - Script and Workflow runs keep their own child limit (`reserve_script_child(..., shared=True)` drops only the global
   count); a Workflow that asks for a wider run widens the pool and never narrows it.
+
+## One Generate click (#558)
+
+An ordinary single-image Generate click is a one-item queue on this same path, not a second route. The Queues page
+creates it (`run_generate`) with the queue event `origin` = `generate`; **origin and priority are separate**: priority
+is derived (origin `generate` **and** exactly one item, `persistence.queues.is_manual`), so a Generate-origin Repeat
+batch keeps its origin but has ordinary priority. No schema change: the marker is a queue event, read with the queue.
+
+- **Starting.** With this window's owner running, the queue is inserted up next and the owner's loop starts it at once,
+  out of order and beside whatever runs (`claim_queued(manual=True)`, polled with the owner's 0.5 s cycle; one query).
+  With no owner here it is saved paused and this window dispatches it (`StateBusyError` from another process is
+  reported to Generate; the request stays paused in Queues, nothing is dispatched twice). If the owner ends before it
+  started, the owner's end hands it back paused and the window dispatches it again, so an explicit Generate is never
+  left parked. A start-up failure of this queue (backend would not open) pauses only that queue and reaches Generate;
+  it neither releases other waiting queues nor ends early starts.
+- **Priority.** `_dispatch_one` ranks it `PRIORITY_MANUAL`: the pool serves it before any not-yet-submitted ordinary
+  work, older Up next queues included. Active calls are never interrupted and the pool limits and open-call cap are the
+  same. While every slot is busy the dispatcher says so once (`waiting_provider_slot`, "Waiting for an available
+  generation slot"); nothing is sent and no provider deadline runs.
+- **Presentation.** Only this queue enables live previews (`preview_images`) and keeps Generate's output layout and
+  its trigger-prefix switch (`generate`). Its events (real queue and item), saved result or failure, and end go to
+  Generate through `ManualSink`; other queues keep the existing relay untouched.
+- **Stop and Retry.** Stop cancels this queue only (a waiting one at once, a started one through a posted control; the
+  service records the local-stop evidence, read beside the owner by `read_attempt_record`). Retry is the queue's own
+  in-place item retry (`retry_queue_item`): same item, recorded settings and seed, a new request and attempt, the
+  earlier attempt kept, then the queue goes up next again (or is dispatched here).
 
 ## Video
 
@@ -70,4 +96,8 @@ text stays in `backend.api_failed`. Quota exhaustion is never inferred.
   attempt is already recorded as possibly submitted by then.
 - A DT+ call that sends a later `second_pass` signpost after its last sampling step is already admitted past its slot;
   the open-call cap bounds this.
-- Generate's single manual run, Inpaint and other non-queue callers do not take part yet (#558, #559).
+- Inpaint, Controlnet and video from Generate and other non-queue callers do not take part yet (#559).
+- A Generate click's request is not claimed until a slot is free, so the dispatcher (not the call) reports the wait; a
+  click that finds no owner here and another process owning dispatch is saved paused and not run. While a click runs, the
+  global progress bar shows that click; other running queues show again in Queues and on the bar when it ends.
+- Preflight diagnostics (`run_generation`'s advisory LoRA check) are not shown for a queued single image.

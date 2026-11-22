@@ -53,7 +53,8 @@ from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per
 from dtflow.persistence.gallery_snapshot import schedule_publish
 from dtflow.persistence.inventory_cache import load_inventory, save_inventory
 from dtflow.persistence.settings import load_dtplus_concurrency
-from dtflow.persistence.store import PersistenceError, SQLiteAttempts
+from dtflow.persistence.queues import read_attempt_record
+from dtflow.persistence.store import PersistenceError, SQLiteAttempts, StateBusyError
 from dtflow.services.assets import AssetService, possible_missing_asset
 from dtflow.services.credentials import EnvironmentCredentials, resolve_credentials
 from dtflow.services.generation import GenerationService
@@ -460,7 +461,11 @@ async def run_generation(
         )
         _preparation_event(on_event, request, "retrying")
         await asyncio.sleep(AUTO_RETRY_DELAY)
-    backend_id = service.backend.capabilities.backend_id
+    return outcome_of(result, service.backend.capabilities.backend_id, request, diagnostics)
+
+
+def outcome_of(result, backend_id: str, request: ResolvedGenerationRequest, diagnostics=()) -> GenerationOutcome:
+    """The saved result of one generation as Generate shows it; the queue path (#558) builds the same value."""
     final = next((x.encoded for x in result.backend_result.artifacts if x.designation == Designation.FINAL), None)
     if result.display_image is not None:
         final = result.display_image
@@ -988,20 +993,23 @@ async def read_attempt(state: Path, request_id: str) -> AttemptEvidence | None:
     store = SQLiteAttempts(state)
     try:
         await store.open()
-        for record in await store.inspect():
-            if record["request_id"] == request_id:
-                failure = record["failure"] or {}
-                return AttemptEvidence(
-                    record["attempt_id"],
-                    record["state"],
-                    record["submission_stage"],
-                    record["remote_outcome"],
-                    tuple(record["artifacts"]),
-                    failure.get("code"),
-                )
-        return None
+        record = next((r for r in await store.inspect() if r["request_id"] == request_id), None)
+    except StateBusyError:
+        # A dispatch owner (a Generate click's one-item queue, #558) still holds the state: read beside it.
+        record = await asyncio.to_thread(read_attempt_record, Path(state), request_id)
     finally:
         await store.aclose()
+    if record is None:
+        return None
+    failure = record["failure"] or {}
+    return AttemptEvidence(
+        record["attempt_id"],
+        record["state"],
+        record["submission_stage"],
+        record["remote_outcome"],
+        tuple(record["artifacts"]),
+        failure.get("code"),
+    )
 
 
 async def check_loras(

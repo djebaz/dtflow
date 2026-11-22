@@ -71,6 +71,7 @@ WORKFLOW_ACTIONS = ("workflow_branch", "workflow_retry")
 SCRIPT_ACTIONS = ("script_answer", "script_cancel_form")
 BRANCH_DECISIONS = ("continue", "stop")
 MAX_ITEMS = MAX_QUEUE_ITEMS
+MANUAL_ORIGIN = "generate"  # the queue event that records a queue was created by Generate
 
 QUEUE_SCHEMA = (
     """CREATE TABLE IF NOT EXISTS queues (
@@ -220,6 +221,7 @@ def _insert_paused(
     composer_source=None,
     kind: str = "generation",
     records: Sequence[dict[str, Any]] | None = None,
+    origin: str | None = None,
 ) -> str:
     """Insert one paused (or, behind a live owner, queued) queue with pending items in the caller's transaction."""
     queue_id = uuid4().hex
@@ -257,9 +259,18 @@ def _insert_paused(
             raise QueueError("Composer source exceeds the 1 MiB limit; nothing was created.")
         # Queue-only evidence, committed atomically with its items. Never copied into image metadata or logs.
         QueueMixin._event(db, queue_id, "composer_source", now, composer_source)
+    if origin is not None:
+        # Where the request came from, kept apart from priority: priority also needs the queue to hold exactly one item.
+        QueueMixin._event(db, queue_id, "origin", now, {"origin": origin})
     if up_next:
         QueueMixin._event(db, queue_id, "enqueued", now)
     return queue_id
+
+
+def is_manual(queue: dict[str, Any]) -> bool:
+    """A single Generate click (#558): one item that came from Generate. It takes the next free provider slot ahead of
+    ordinary queue work; a Generate-origin batch keeps its origin but not this priority."""
+    return queue.get("origin") == MANUAL_ORIGIN and len(queue.get("items", ())) == 1
 
 
 def _last_up_next(db: sqlite3.Connection) -> int:
@@ -348,14 +359,22 @@ class QueueMixin:
     # -- creation -------------------------------------------------------------------------------------------------
 
     async def create_queue(
-        self, backend: dict[str, Any], cap: int, requests: Sequence[ResolvedGenerationRequest], *, composer_source=None
+        self,
+        backend: dict[str, Any],
+        cap: int,
+        requests: Sequence[ResolvedGenerationRequest],
+        *,
+        composer_source=None,
+        origin: str | None = None,
     ) -> str:
-        return await self._run(self._create_queue, backend, cap, tuple(requests), composer_source)
+        return await self._run(self._create_queue, backend, cap, tuple(requests), composer_source, origin)
 
-    def _create_queue(self, backend, cap, requests, composer_source=None) -> str:
+    def _create_queue(self, backend, cap, requests, composer_source=None, origin=None) -> str:
         _check_new_queue(requests)
         with self._txn() as db:
-            return _insert_paused(db, backend, cap, requests, self._now(), composer_source=composer_source)
+            return _insert_paused(
+                db, backend, cap, requests, self._now(), composer_source=composer_source, origin=origin
+            )
 
     async def create_script_queue(self, backend: dict[str, Any], record: dict[str, Any]) -> str:
         return await self._run(self._create_script_queue, backend, record)
@@ -515,7 +534,7 @@ class QueueMixin:
             and tail["backend_key"] == row["backend_key"]
         )
 
-    async def claim_queued(self, overlap_after: str | None = None) -> str | None:
+    async def claim_queued(self, overlap_after: str | None = None, *, manual: bool = False) -> str | None:
         """Auto-play: atomically start the first up-next queue, or close the order when none waits.
 
         Picking and starting happen in one transaction, so a Pause, Cancel or reorder made before it is respected, and
@@ -524,11 +543,32 @@ class QueueMixin:
         With ``overlap_after`` (a queue that is still running) the first waiting queue on the same backend starts early;
         the caller has already established that the shared provider pool has spare capacity nobody wants. A paused or
         cancelled queue never overlaps, and nothing else changes: the order stays open.
-        """
-        return await self._run(self._claim_queued, overlap_after)
 
-    def _claim_queued(self, overlap_after: str | None = None) -> str | None:
+        With ``manual`` only a waiting single Generate request qualifies (#558), wherever it stands in the order and
+        whatever runs: it starts at once and takes the next free slot. Nothing else changes, and the order stays open.
+        """
+        return await self._run(self._claim_queued, overlap_after, manual)
+
+    def _claim_queued(self, overlap_after: str | None = None, manual: bool = False) -> str | None:
         with self._txn() as db:
+            if manual:
+                row = db.execute(
+                    """SELECT q.queue_id FROM queues q WHERE q.state='queued' AND q.kind='generation'
+                    AND EXISTS (SELECT 1 FROM queue_events e WHERE e.queue_id=q.queue_id AND e.kind='origin'
+                        AND json_extract(e.detail_json, '$.origin')=?)
+                    AND (SELECT COUNT(*) FROM queue_items i WHERE i.queue_id=q.queue_id)=1
+                    ORDER BY q.up_next, q.created_at_utc LIMIT 1""",
+                    (MANUAL_ORIGIN,),
+                ).fetchone()
+                if row is None:
+                    return None
+                now = self._now()
+                db.execute(
+                    "UPDATE queues SET state='running', up_next=NULL, updated_at_utc=? WHERE queue_id=?",
+                    (now, row["queue_id"]),
+                )
+                self._event(db, row["queue_id"], "started", now, {"by": "priority"})
+                return row["queue_id"]
             row = db.execute(
                 "SELECT queue_id, backend_key, cap, kind FROM queues WHERE state='queued' ORDER BY up_next, created_at_utc"
                 " LIMIT 1"
@@ -566,6 +606,15 @@ class QueueMixin:
                     (now, current),
                 )
             return _release_queued(db, now, reason)
+
+    async def pause_started(self, queue_id: str) -> None:
+        """A queue claimed for a start that never ran (its backend would not open) is paused again, nothing else moved."""
+        await self._run(
+            lambda: self._db().execute(
+                "UPDATE queues SET state='paused', updated_at_utc=? WHERE queue_id=? AND state='running'",
+                (self._now(), queue_id),
+            )
+        )
 
     async def has_pending(self, queue_id: str) -> bool:
         """Cheap read: is the queue running with an item it could hand out? (A dispatcher's demand for provider slots.)"""
@@ -1330,6 +1379,7 @@ def insert_queue(
     *,
     up_next: bool = False,
     composer_source: dict | None = None,
+    origin: str | None = None,
 ) -> str:
     """Add one queue while another owner holds the state (a running dispatch or generation).
 
@@ -1352,6 +1402,7 @@ def insert_queue(
                 datetime.now(UTC).isoformat(),
                 up_next=live,
                 composer_source=composer_source,
+                origin=origin,
             )
             connection.execute("COMMIT")
         except BaseException:
@@ -1799,6 +1850,29 @@ def read_queue_requests(directory: Path, queue_id: str) -> tuple[dict[str, Any],
         connection.close()
 
 
+def read_attempt_record(directory: Path, request_id: str) -> dict[str, Any] | None:
+    """The recorded attempt created for ``request_id``, read beside a live owner without taking the state (#558)."""
+    connection = _shared_connection(directory, readonly=True)
+    try:
+        row = connection.execute(
+            "SELECT attempt_id, state, submission_stage, remote_outcome, artifacts_json, failure_json FROM attempts"
+            " WHERE request_id=?",
+            (request_id,),
+        ).fetchone()
+        if row is None:
+            return None
+        return {
+            "attempt_id": row["attempt_id"],
+            "state": row["state"],
+            "submission_stage": row["submission_stage"],
+            "remote_outcome": row["remote_outcome"],
+            "artifacts": json.loads(row["artifacts_json"] or "[]"),
+            "failure": json.loads(row["failure_json"] or "null"),
+        }
+    finally:
+        connection.close()
+
+
 def read_queue_composer_source(directory: Path, queue_id: str) -> dict | None:
     """Optional immutable composer input, separate from resolved item requests and image metadata."""
     connection = _shared_connection(directory, readonly=True)
@@ -2133,6 +2207,14 @@ def _read(connection: sqlite3.Connection, queue_id: str | None) -> tuple[dict[st
                     (queue_id,),
                 )
             ]
+            queue["origin"] = next(
+                (
+                    e["detail"].get("origin")
+                    for e in queue["events"]
+                    if e["kind"] == "origin" and isinstance(e["detail"], dict)
+                ),
+                None,
+            )
         queues.append(queue)
     return tuple(queues)
 
