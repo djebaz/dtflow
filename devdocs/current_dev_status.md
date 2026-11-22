@@ -1,10 +1,14 @@
 # Current development status
 
+## In review: bounded video queues (#546, PR #547; 2026-11-21)
+
+Ordinary DT+ video items can be captured from Generate Repeat or the independent composer, retaining optional source bytes durably. The existing rolling dispatcher and Connection 1–10 default own concurrency; per-item phases use the existing table/activity bar and bounded item-keyed GUI relay. Shared resource admission, payload/process/disk policy and zero automatic video retries are implemented; **source/static checks are not Windows/provider acceptance**. All behavioral ACs, especially 2/5/10-clip resource/failure/Stop evidence, remain pending. See the [plan](plans/2026-11-21-video-queues.md) and [limits](guides/queues.md#video-resource-policy).
+
 Updated 2026-11-21 for Queue pose editor PR #522; prior release/feature evidence below retains its recorded scope. [6.4.0](https://github.com/djebaz/dtflow/releases/tag/v6.4.0) is published. See [6.4.1 notes](releases/v6.4.1.md) and its [release audit](plans/2026-11-16-release-6.4.1.md) for the next release scope and build gates.
 
-## In review: video UX alignment (#540, PR #545; 2026-11-21)
+## Merged: video UX alignment (#540, PR #545; 2026-11-21)
 
-Video controls reuse Generate's shared section-card design, 12 px body padding and one control row (Duration/readout left, cover-filled source thumbnail/red × badge right), without reserved blank warning height. Source/Width/Height hover and keyboard focus expose the live centered crop without replacing the result. Draft validation notifies Generate availability; second-pass progress uses only that pass's reported counts. Static validation is separate from pending Windows/DPI, restart and backend acceptance; see the [desktop guide](guides/desktop.md#generate).
+Video controls reuse Generate's shared section-card design, 12 px body padding and one control row (Duration/readout left, cover-filled source thumbnail/red × badge right), without reserved blank warning height. Source/Width/Height hover and keyboard focus expose the live centered crop without replacing the result. Draft validation notifies Generate availability; second-pass progress uses only that pass's reported counts. The owner confirmed all PR ACs passed, with exact-head CI/Preview on `7f15b25f` before squash merge `39369d30`; that acceptance does not certify this subsequent video-queue change or a new packaged release. See the [desktop guide](guides/desktop.md#generate).
 
 ## Unreleased: Windows video packaging (#529, PR #533)
 

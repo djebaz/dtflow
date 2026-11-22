@@ -311,6 +311,14 @@ class ResolvedGenerationRequest:
             check_request_fields(self.model_id, self.num_frames, self.start_image)
             if (self.start_image is None) != (self.start_image_sha256 is None):
                 raise ValidationError("A start image needs its SHA-256.")
+            if self.start_image is not None and (
+                not isinstance(self.start_image, str)
+                or not self.start_image.strip()
+                or not isinstance(self.start_image_sha256, str)
+                or len(self.start_image_sha256) != 64
+                or any(char not in "0123456789abcdef" for char in self.start_image_sha256)
+            ):
+                raise ValidationError("A video start image needs a non-empty path and exact lowercase SHA-256.")
         elif self.start_image is not None or self.start_image_sha256 is not None:
             raise ValidationError("A start image belongs to a video request.")
         for name in ("request_id", "model_id"):

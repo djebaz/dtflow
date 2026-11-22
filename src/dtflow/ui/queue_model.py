@@ -1,6 +1,7 @@
 """Table model over queue item rows: stable order, in-place updates, never re-sorted."""
 
 from html import escape
+from dataclasses import replace
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, QPointF, QRectF, Qt
 from PySide6.QtGui import QColor, QIcon, QPainter, QPen, QPixmap
 
@@ -77,9 +78,11 @@ def _tooltip(row: ItemRow, column: int) -> str:
         )
         return f"<table>{lines}</table>"
     if column == 4:
+        if row.num_frames is not None:
+            return f"{row.sampler}\n{row.operation_text}\n{row.edit_text}"
         return f"{row.sampler}\n{row.operation_text}" if row.pose_control is not None else row.sampler
     if column == STATUS_COLUMN:
-        return row.item_id
+        return f"{row.state_text}\n{row.item_id}" if row.num_frames is not None else row.item_id
     return DURATION_HEADER + " (observed)"
 
 
@@ -141,6 +144,21 @@ class QueueItemModel(QAbstractTableModel):
 
     def row_at(self, index: int) -> ItemRow | None:
         return self._rows[index] if 0 <= index < len(self._rows) else None
+
+    def set_live_stage(self, item_id: str, stage: str) -> None:
+        """Update only an admitted running row, on the GUI thread; terminal state remains durable authority."""
+        for index, row in enumerate(self._rows):
+            if (
+                row.item_id == item_id
+                and row.num_frames is not None
+                and row.state == "running"
+                and row.live_stage != stage
+            ):
+                rows = list(self._rows)
+                rows[index] = replace(row, live_stage=stage)
+                self._rows = tuple(rows)
+                self.dataChanged.emit(self.index(index, 5), self.index(index, 5))
+                break
 
     def row_of(self, item_id: str) -> int:
         return next((index for index, row in enumerate(self._rows) if row.item_id == item_id), -1)

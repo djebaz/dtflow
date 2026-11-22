@@ -253,6 +253,9 @@ class ItemRow:
     script_preview_identity: str | None = None  # true child gallery identity; never a parent attempt
     is_final: bool = False  # a workflow image a Save node kept; display-only (blue outline)
     pose_control: dict | None = None  # exact recorded control, never inferred from the item operation
+    num_frames: int | None = None
+    has_start_image: bool = False
+    live_stage: str = ""  # window-owned transient observation; never persisted as an outcome
 
     @property
     def dimensions_text(self) -> str:
@@ -260,6 +263,8 @@ class ItemRow:
 
     @property
     def operation_text(self) -> str:
+        if self.num_frames is not None:
+            return "Image to video" if self.has_start_image else "Text to video"
         if self.pose_control is not None:
             pose = self.pose_control
             label = str(pose.get("checkpoint", "Union Pro")).rsplit("/", 1)[-1]
@@ -308,6 +313,10 @@ class ItemRow:
 
     @property
     def edit_text(self) -> str:
+        if self.num_frames is not None:
+            from dtflow.core.video import duration_seconds
+
+            return f"Video · {duration_seconds(self.model, self.num_frames):.2f} s · {self.num_frames} frames"
         if self.pose_control is not None:
             return f"Pose · {self.pose_control['strength']:g}"
         if self.operation == "txt2img":
@@ -321,6 +330,8 @@ class ItemRow:
 
     @property
     def state_text(self) -> str:
+        if self.num_frames is not None and self.state == "running" and self.live_stage:
+            return self.live_stage
         return "no result" if self.state == "unknown" else self.state.replace("_", " ")
 
 
@@ -637,6 +648,8 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 decode_runs(item.get("prompt") or "", item.get("prompt_runs")),
                 is_script_parent=bool(item.get("script")),
                 pose_control=item.get("pose_control"),
+                num_frames=item.get("num_frames"),
+                has_start_image=item.get("has_start_image", False),
                 script_preview_path=script_preview[0] if script_preview else None,
                 script_preview_identity=script_preview[1] if script_preview else None,
             )

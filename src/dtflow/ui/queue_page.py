@@ -245,6 +245,10 @@ class _QueueBackendEvent:
     def sequence(self) -> int:
         return self.event.sequence
 
+    @property
+    def transient_key(self) -> tuple[str, str, str]:
+        return self.queue_id, self.item_id, self.event.kind
+
 
 class QueuePage:
     def __init__(
@@ -306,6 +310,7 @@ class QueuePage:
         self._open_workflow_hook = None  # set_open_workflow_hook(fn(queue_id)) shows a workflow run in Workflows
         self._run_progress: dict[tuple[str, str], tuple[int, int]] = {}
         self._run_stages: dict[tuple[str, str], str] = {}
+        self._video_progress: dict[tuple[str, str], object] = {}
         self._run_stage_started: dict[tuple[str, str], float] = {}
         self._countdown = QueueCountdown()
         self._event_relay = EventRelay(self._queue_backend_event, page)
@@ -520,13 +525,18 @@ class QueuePage:
     def _refresh_script_run(self) -> None:
         """The running script's or workflow's steps are read for the global bar whichever queue is selected."""
         run = self._dispatching
+        # A queue with observed video clips is read too, so its running items are known whichever queue is selected.
+        video = run is not None and any(owner == run for owner, _ in self._video_progress)
         if (
             run is None
             or self._reading_run
-            or (self._views.get(run) or {}).get("kind")
-            not in (
-                "script",
-                "workflow",
+            or (
+                (self._views.get(run) or {}).get("kind")
+                not in (
+                    "script",
+                    "workflow",
+                )
+                and not video
             )
         ):
             self._run_detail = None
@@ -590,6 +600,7 @@ class QueuePage:
             and (detail_running is None or self._detail["queue_id"] != key[0] or key[1] in detail_running)
         }
         self._run_stages = {key: value for key, value in self._run_stages.items() if key in valid_keys}
+        self._video_progress = {key: value for key, value in self._video_progress.items() if key in valid_keys}
         self._run_stage_started = {key: value for key, value in self._run_stage_started.items() if key in valid_keys}
         if self._dispatching is not None:
             active = self._views.get(self._dispatching)
@@ -645,7 +656,14 @@ class QueuePage:
             page.queueEventBrowser.clear()
         else:
             self._render_header(view)
-            self.model.apply(item_rows(detail) if detail is not None else ())
+            self.model.apply(
+                tuple(
+                    replace(row, live_stage=self._run_stages.get((view["queue_id"], row.item_id), ""))
+                    for row in item_rows(detail)
+                )
+                if detail is not None
+                else ()
+            )
             self._apply_item_filter()
             self._select_default_item()
             browser = page.queueEventBrowser
@@ -837,11 +855,29 @@ class QueuePage:
         running_items = [item for item in items if item["state"] == "running"]
         detail = f"Queue {queue_id[:8]} · {summary.headline}"
         waiting = len(up_next_ids(self._views.values())) if dispatching_here else 0
-        stage = wide = ""
+        stage = wide = count = ""
+        fraction = None
 
         if phase == "running":
             # The ring counts settled items, which is meaningful however many items run at once.
             completed, total = summary.settled, summary.total
+            # Observed clips of this queue, even when it is not the one shown on screen (then no item list is read);
+            # when the list is read, only items it still shows as running count.
+            running_ids = {item["item_id"] for item in running_items} if shown is not None else None
+            video_fractions = sorted(
+                video.fraction()
+                for (owner, item_id), video in self._video_progress.items()
+                if owner == queue_id and (running_ids is None or item_id in running_ids)
+            )
+            if running_ids is None:
+                # Without a read item list, settled clips may still be remembered: never count more than are running.
+                video_fractions = video_fractions[: max(0, running)]
+            if video_fractions:
+                # Running clips add their estimated share to the settled items; the counts stay settled/total.
+                # Whole percents only: the run state is compared for equality, and a value that moved with every call
+                # would make each presentation trigger another one.
+                fraction = min(1.0, round((summary.settled + sum(video_fractions)) / max(1, summary.total), 2))
+                count = f"{summary.settled}/{summary.total}"
             detail += f" Progress: {summary.settled}/{summary.total}."
             # Only the currently running item may supply the single-item stage/progress.
             # Historical callbacks for other items must not take over the status.
@@ -873,11 +909,35 @@ class QueuePage:
                 stage_started = self._run_stage_started.get(key)
                 if stage_started is not None:
                     stage += f" · {int(max(0, monotonic() - stage_started))}s"
-                if progress:
+                if progress and key not in self._video_progress:
                     step, steps = progress[0]
                     stage += f" · step {step}/{steps}"
             if running:
                 wide = f"Queue {queue_id[:8]} · {stage} · {summary.settled}/{summary.total}"
+                if len(running_items) > 1:
+                    phases = [
+                        f"#{item['position']} {self._run_stages.get((queue_id, item['item_id']), 'Starting')}"
+                        for item in running_items
+                        if (queue_id, item["item_id"]) in self._video_progress
+                    ]
+                    if phases:
+                        phase_names = {
+                            "preparing": "preparing",
+                            "waiting": "waiting",
+                            "sampling": "sampling",
+                            "second_pass": "second pass",
+                            "receiving": "receiving",
+                            "encoding": "finalizing",
+                            "saving": "saving",
+                        }
+                        counts = {}
+                        for item in running_items:
+                            video = self._video_progress.get((queue_id, item["item_id"]))
+                            if video is not None:
+                                label = phase_names.get(video.phase, "preparing")
+                                counts[label] = counts.get(label, 0) + 1
+                        wide += " · " + " · ".join(f"{count} {label}" for label, count in counts.items())
+                        detail += " " + "; ".join(phases)
             if view.get("kind") == "script":
                 # A script is one item whose step count is known only as it runs: show steps, never "0/1 items".
                 script = next((item.get("script") for item in items if item.get("script")), None)
@@ -933,7 +993,8 @@ class QueuePage:
             remaining = self._countdown.remaining(view, monotonic())
             elapsed, eta = elapsed_text(view), eta_text(view, remaining=remaining)
             stage_timed = len(running_items) == 1 and (queue_id, running_items[0]["item_id"]) in self._run_stage_started
-            if elapsed or eta or stage_timed:
+            video_live = any(owner == queue_id for owner, _ in self._video_progress)
+            if elapsed or eta or stage_timed or video_live:
                 if not self._timing_timer.isActive() and not self._runner.closed:
                     self._timing_timer.start()
             else:
@@ -956,6 +1017,8 @@ class QueuePage:
                 stage=stage,
                 wide=wide,
                 queued=waiting,
+                fraction=fraction,
+                count=count,
             )
         )
 
@@ -1566,6 +1629,15 @@ class QueuePage:
             pose = isinstance(self._edit_source(), PoseJob)
         if pose:
             return f"Uses {source}. Provider: {name}. Start sends the pose map to DT+ Cloud and may use credits."
+        from dtflow.core.video import is_video_model
+
+        video = (
+            self._draft[0].num_frames is not None
+            if plan and self._draft is not None
+            else (not plan and is_video_model(self._live_choices().get("model", "")))
+        )
+        if video:
+            return f"Uses {source}. DT+ video: up to 10 concurrent clips, from Connection's default. Start may use credits; Retry is manual."
         return f"Uses {source}. Provider: {name}. A cloud run may use credits."
 
     def _set_draft(self, request, name, endpoint, asset_ids, job) -> None:
@@ -2046,6 +2118,13 @@ class QueuePage:
         ]
         if loras:
             parts.append(f"{loras} LoRA{'s' if loras != 1 else ''}")
+        if request.num_frames is not None:
+            from dtflow.core.video import duration_seconds
+
+            parts.append(
+                f"Video · {duration_seconds(request.model_id, request.num_frames):.2f} s · {request.num_frames} frames"
+            )
+            parts.append("Image to video · one start image" if request.start_image else "Text to video")
         pose = self._draft_job.control if isinstance(self._draft_job, PoseJob) else request.pose_control
         if pose is not None:
             parts.append(
@@ -3037,6 +3116,8 @@ class QueuePage:
     def _queue_backend_event(self, wrapped: _QueueBackendEvent) -> None:
         from dtflow.ui.progress_stages import event_stage
 
+        if self._runner.closed:
+            return
         event = wrapped.event
         if event.kind in ("assets_restored", "assets_failed", "assets_inconclusive"):
             if event.stage:
@@ -3061,9 +3142,20 @@ class QueuePage:
             self._dispatch_started = True
         key = (wrapped.queue_id, wrapped.item_id)
         label = event_stage(event)
+        if event.stage in ("waiting_video_resources", "video_preparing") and key not in self._video_progress:
+            from dtflow.ui.video_progress import VideoProgress
+
+            self._video_progress[key] = VideoProgress()
+        video = self._video_progress.get(key)
+        if video is not None and video.observe(event):
+            label = video.text
+            if video.done is None or video.total is None:
+                self._run_progress.pop(key, None)
         if label and label != self._run_stages.get(key):
             self._run_stages[key] = label
-            self._run_stage_started[key] = monotonic()
+            self._run_stage_started[key] = (
+                (video.sent_at if video.sent_at is not None else video.started) if video is not None else monotonic()
+            )
         if (
             event.kind == "progress"
             and type(event.completed) is int
@@ -3074,8 +3166,13 @@ class QueuePage:
             self._run_progress[key] = (max(0, event.completed), event.total)
         elif event.kind == "terminal":
             self._run_progress.pop(key, None)
-            self._run_stages.pop(key, None)
-            self._run_stage_started.pop(key, None)
+            if video is None:
+                self._run_stages.pop(key, None)
+                self._run_stage_started.pop(key, None)
+            # Video's terminal event precedes durable MP4/poster saving. Retain its Saving phase
+            # until the ordinary read-side reconciliation sees the item settle.
+        if self._detail is not None and self._detail["queue_id"] == wrapped.queue_id:
+            self.model.set_live_stage(wrapped.item_id, label or "")
         self._publish_run_state()
 
     def trigger_run_control(self) -> None:
