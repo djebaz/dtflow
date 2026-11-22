@@ -30,6 +30,7 @@ from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.gallery_snapshot import schedule_publish
 from dtflow.persistence.queues import (
+    backend_key,
     change_up_next,
     delete_idle_queues,
     delete_paused_queues,
@@ -54,6 +55,7 @@ from dtflow.services.assets import AssetService
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs, snapshot_image_inputs
 from dtflow.services.planning import Plan, PlanError, expand_plan
+from dtflow.services.provider_admission import ProviderAdmission, QueueAdmission
 from dtflow.services.queue import QueueDispatcher
 from dtflow.services.script_item import ScriptItemRunner
 from dtflow.services.workflow_item import WorkflowItemRunner
@@ -493,7 +495,8 @@ async def dispatch_queue(
     owned, reason = False, "stopped"
     chain: list[tuple[str, asyncio.Task]] = []  # dispatch order; the head is the oldest queue still unsettled
     claimed: set[str] = set()  # queues this owner auto-started and has not seen settle
-    limits: dict[str, int] = {}  # each open queue's backend maximum, known once its backend is open
+    backends: dict[str, str] = {}  # each open queue's provider pool key, known once its backend is open
+    admission = ProviderAdmission()  # one pool per backend, shared by every queue this owner dispatches
     overlap_open = True
 
     def start(next_id: str) -> None:
@@ -501,7 +504,19 @@ async def dispatch_queue(
             (
                 next_id,
                 asyncio.create_task(
-                    _dispatch_one(store, state, next_id, policy, saved, out, on_settle, on_event, limits)
+                    _dispatch_one(
+                        store,
+                        state,
+                        next_id,
+                        policy,
+                        saved,
+                        out,
+                        on_settle,
+                        on_event,
+                        backends,
+                        admission,
+                        admission.next_rank(),
+                    )
                 ),
             )
         )
@@ -553,7 +568,7 @@ async def dispatch_queue(
                     chain.pop(0)
                     final = head.result()
                     claimed.discard(head_id)
-                    limits.pop(head_id, None)
+                    backends.pop(head_id, None)
                     if not auto_play:
                         return final
                     schedule_publish(state, reason="queue_settled")
@@ -569,13 +584,18 @@ async def dispatch_queue(
                         start(following)
                     continue
                 if auto_play and overlap_open:
-                    # Cross-queue overlap: once the newest unsettled queue has handed out its last item, a free slot on
-                    # the shared backend is reused by the next up-next queue. The combined cap is still enforced item by
-                    # item at claim.
+                    # Cross-queue overlap: once the newest unsettled queue has handed out its last item, capacity on the
+                    # shared backend that no started queue wants is used by the next up-next queue. Its items then
+                    # take slots from the same pool, in queue order.
                     live = [(qid, task) for qid, task in chain if not task.done()]
-                    if live and live[-1][0] in limits and await store.overlap_ready(live[-1][0]):
+                    if (
+                        live
+                        and all(qid in backends for qid, _ in live)
+                        and admission.spare(backends[live[-1][0]])
+                        and await store.overlap_ready(live[-1][0])
+                    ):
                         tail_id = live[-1][0]
-                        overlapping = await claim(overlap_after=tail_id, limit=limits[tail_id])
+                        overlapping = await claim(overlap_after=tail_id)
                         if overlapping is not None:
                             diagnostic_event(
                                 log,
@@ -612,7 +632,9 @@ async def dispatch_queue(
             schedule_publish(state, reason="queue_session_end")
 
 
-async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, on_event, limits=None) -> dict[str, Any]:
+async def _dispatch_one(
+    store, state, queue_id, policy, saved, out, on_settle, on_event, backends=None, admission=None, rank=None
+) -> dict[str, Any]:
     """One queue on the open owner: its own recorded backend session, closed before the next queue starts."""
     backend = None
     try:
@@ -669,6 +691,7 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
         backend = session.create_backend(selection, timeouts=policy, saved=saved, preview_images=False, **image_options)
         async with asyncio.timeout(policy.connect):
             await backend.open()
+        key = backend_key(recorded)
         service = GenerationService(
             backend,
             store,
@@ -677,6 +700,11 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
             assets=session.asset_validator(backend, state),
             input_state=state if permits or has_pose else None,
             preview_images=False,
+            admission=(
+                QueueAdmission(admission.pool(key, backend.capabilities.max_concurrency), rank)
+                if admission is not None
+                else None
+            ),
         )
         if on_event is not None and isinstance(service.assets, AssetService):
 
@@ -719,8 +747,8 @@ async def _dispatch_one(store, state, queue_id, policy, saved, out, on_settle, o
                 "concurrency": backend.capabilities.max_concurrency,
             },
         )
-        if limits is not None:
-            limits[queue_id] = backend.capabilities.max_concurrency
+        if backends is not None:
+            backends[queue_id] = key
         if queue.get("kind") == "script":  # a separate runner: a script bug must not enter the generation loop
             return await ScriptItemRunner(store, service, state, on_settle=on_settle).run(queue_id)
         if workflow:  # likewise separate: one item is a whole graph run

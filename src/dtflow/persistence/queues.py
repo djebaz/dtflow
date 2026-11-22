@@ -499,16 +499,12 @@ class QueueMixin:
             db.execute("INSERT OR REPLACE INTO queue_dispatch (owner, started_at_utc) VALUES (1, ?)", (self._now(),))
 
     async def overlap_ready(self, tail_id: str) -> bool:
-        """Cheap read-only look: has ``tail_id`` handed out its last item while a same-backend queue waits?"""
+        """Cheap read-only look: is ``tail_id`` running while a same-backend queue waits up next?"""
         return await self._run(self._overlap_ready, tail_id)
 
     def _overlap_ready(self, tail_id: str) -> bool:
         db = self._db()
-        tail = db.execute(
-            "SELECT backend_key, state, (SELECT COUNT(*) FROM queue_items WHERE queue_id=q.queue_id"
-            " AND state='pending') AS pending FROM queues q WHERE queue_id=?",
-            (tail_id,),
-        ).fetchone()
+        tail = db.execute("SELECT backend_key, state FROM queues WHERE queue_id=?", (tail_id,)).fetchone()
         row = db.execute(
             "SELECT backend_key FROM queues WHERE state='queued' ORDER BY up_next, created_at_utc LIMIT 1"
         ).fetchone()
@@ -516,23 +512,22 @@ class QueueMixin:
             tail is not None
             and row is not None
             and tail["state"] == "running"
-            and not tail["pending"]
             and tail["backend_key"] == row["backend_key"]
         )
 
-    async def claim_queued(self, overlap_after: str | None = None, limit: int | None = None) -> str | None:
+    async def claim_queued(self, overlap_after: str | None = None) -> str | None:
         """Auto-play: atomically start the first up-next queue, or close the order when none waits.
 
         Picking and starting happen in one transaction, so a Pause, Cancel or reorder made before it is respected, and
         a queue can never join after the owner found the order empty.
 
-        With ``overlap_after`` (a running queue whose items are all claimed) the first waiting queue starts early, only
-        while a slot is free on their shared backend (reservations below ``min(cap, limit)``, ``limit`` being the
-        backend's own maximum); otherwise nothing changes and the order stays open.
+        With ``overlap_after`` (a queue that is still running) the first waiting queue on the same backend starts early;
+        the caller has already established that the shared provider pool has spare capacity nobody wants. A paused or
+        cancelled queue never overlaps, and nothing else changes: the order stays open.
         """
-        return await self._run(self._claim_queued, overlap_after, limit)
+        return await self._run(self._claim_queued, overlap_after)
 
-    def _claim_queued(self, overlap_after: str | None = None, limit: int | None = None) -> str | None:
+    def _claim_queued(self, overlap_after: str | None = None) -> str | None:
         with self._txn() as db:
             row = db.execute(
                 "SELECT queue_id, backend_key, cap, kind FROM queues WHERE state='queued' ORDER BY up_next, created_at_utc"
@@ -545,19 +540,8 @@ class QueueMixin:
             else:
                 if row is None:
                     return None
-                tail = db.execute(
-                    "SELECT backend_key, state, (SELECT COUNT(*) FROM queue_items WHERE queue_id=q.queue_id"
-                    " AND state='pending') AS pending FROM queues q WHERE queue_id=?",
-                    (overlap_after,),
-                ).fetchone()
-                if (
-                    tail is None
-                    or tail["state"] != "running"
-                    or tail["pending"]
-                    or tail["backend_key"] != row["backend_key"]
-                    or limit is None
-                    or self._reserved(db, row["backend_key"]) >= _lane_bound(row, limit)
-                ):
+                tail = db.execute("SELECT backend_key, state FROM queues WHERE queue_id=?", (overlap_after,)).fetchone()
+                if tail is None or tail["state"] != "running" or tail["backend_key"] != row["backend_key"]:
                     return None
             now = self._now()
             db.execute(
@@ -583,18 +567,116 @@ class QueueMixin:
                 )
             return _release_queued(db, now, reason)
 
-    async def claim_next(self, queue_id: str, limit: int) -> tuple[str, Any] | None:
-        """Reserve the next eligible item, or None when paused, capped or exhausted."""
+    async def has_pending(self, queue_id: str) -> bool:
+        """Cheap read: is the queue running with an item it could hand out? (A dispatcher's demand for provider slots.)"""
+        return await self._run(self._has_pending, queue_id)
+
+    def _has_pending(self, queue_id: str) -> bool:
+        return (
+            self._db()
+            .execute(
+                "SELECT 1 FROM queues q WHERE queue_id=? AND state='running'"
+                " AND EXISTS (SELECT 1 FROM queue_items WHERE queue_id=q.queue_id AND state='pending')",
+                (queue_id,),
+            )
+            .fetchone()
+            is not None
+        )
+
+    async def can_submit(self, queue_id: str) -> bool:
+        """Read-only, just before a claimed item's attempt is created: is the queue still running, counting a Pause or
+        Cancel posted but not yet applied? (Resume after Pause counts too.)"""
+        return await self._run(self._can_submit, queue_id)
+
+    def _can_submit(self, queue_id: str) -> bool:
+        db = self._db()
+        queue = db.execute("SELECT state FROM queues WHERE queue_id=?", (queue_id,)).fetchone()
+        if queue is None:
+            return False
+        state = queue["state"]
+        for control in db.execute(
+            "SELECT action FROM queue_controls WHERE queue_id=? AND applied_at_utc IS NULL ORDER BY control_id",
+            (queue_id,),
+        ):
+            if control["action"] == "pause" and state == "running":
+                state = "paused"
+            elif control["action"] == "resume" and state == "paused":
+                state = "running"
+            elif control["action"] == "cancel":
+                state = "cancelled"
+        return state == "running"
+
+    async def return_item(self, item_id: str, request: ResolvedGenerationRequest) -> None:
+        """Return a claimed item whose prepared attempt was ended as cancelled before anything was sent to pending, under
+        a new request identity (the cancelled attempt keeps the old one), with an ``item_returned`` event."""
+        await self._run(self._return_item, item_id, json.dumps(asdict(request), allow_nan=False))
+
+    def _return_item(self, item_id: str, encoded: str) -> None:
+        with self._txn() as db:
+            item = db.execute(
+                "SELECT queue_id, position, request_json, state FROM queue_items WHERE item_id=?", (item_id,)
+            ).fetchone()
+            if item is None or item["state"] != "running":
+                raise QueueError("The item no longer holds its reservation.")
+            previous = json.loads(item["request_json"])["request_id"]
+            attempt = db.execute("SELECT attempt_id FROM attempts WHERE request_id=?", (previous,)).fetchone()
+            now = self._now()
+            db.execute(
+                "UPDATE queue_items SET state='pending', request_json=?, attempt_id=NULL, updated_at_utc=?"
+                " WHERE item_id=?",
+                (encoded, now, item_id),
+            )
+            self._event(
+                db,
+                item["queue_id"],
+                "item_returned",
+                now,
+                {
+                    "item_id": item_id,
+                    "position": item["position"],
+                    "previous_attempt_id": attempt["attempt_id"] if attempt else None,
+                    "previous_request_id": previous,
+                },
+            )
+
+    async def unclaim_item(self, item_id: str) -> None:
+        """Return a claimed item that never got an attempt to pending (what restart reconciliation does for it)."""
+        await self._run(self._unclaim_item, item_id)
+
+    def _unclaim_item(self, item_id: str) -> None:
+        with self._txn() as db:
+            db.execute(
+                "UPDATE queue_items SET state='pending', updated_at_utc=? WHERE item_id=? AND state='running'"
+                " AND NOT EXISTS (SELECT 1 FROM attempts WHERE request_id="
+                "json_extract(queue_items.request_json, '$.request_id'))",
+                (self._now(), item_id),
+            )
+
+    async def claim_next(self, queue_id: str, limit: int | None) -> tuple[str, Any] | None:
+        """Reserve the next eligible item, or None when paused, capped or exhausted.
+
+        ``limit`` is the backend's own maximum when the database bounds the claims. A dispatch owner with provider
+        admission passes None: the provider pool bounds generations, and the database keeps only the one item a
+        script or workflow queue may run."""
         return await self._run(self._claim_next, queue_id, limit)
 
-    def _claim_next(self, queue_id: str, limit: int):
+    def _claim_next(self, queue_id: str, limit: int | None):
         with self._txn() as db:
             queue = db.execute("SELECT * FROM queues WHERE queue_id=?", (queue_id,)).fetchone()
             if queue is None:
                 raise QueueError("Unknown queue.")
             if queue["state"] != "running":
                 return None
-            if self._reserved(db, queue["backend_key"]) >= _lane_bound(queue, limit):
+            if limit is not None:
+                if self._reserved(db, queue["backend_key"]) >= _lane_bound(queue, limit):
+                    return None
+            elif (
+                queue["kind"] in (KIND_SCRIPT, KIND_WORKFLOW)
+                and db.execute(
+                    "SELECT COUNT(*) FROM queue_items WHERE queue_id=? AND state='running'", (queue_id,)
+                ).fetchone()[0]
+                >= queue["cap"]
+            ):
                 return None
             decode = {KIND_SCRIPT: script_request_from_record, KIND_WORKFLOW: workflow_request_from_record}.get(
                 queue["kind"], request_from_record
@@ -674,15 +756,18 @@ class QueueMixin:
         return parents + children["total"] - children["parents"]
 
     async def reserve_script_child(
-        self, queue_id: str, attempt_id: str, max_concurrent: int, backend_limit: int
+        self, queue_id: str, attempt_id: str, max_concurrent: int, backend_limit: int, shared: bool = False
     ) -> bool:
         """Atomically claim a script child lane without bypassing normal queue reservations.
 
         False means the lane is busy; the caller may poll, but must stop polling on Stop.
-        Child work is never submitted before the caller also links its attempt to the run."""
-        return await self._run(self._reserve_script_child, queue_id, attempt_id, max_concurrent, backend_limit)
+        Child work is never submitted before the caller also links its attempt to the run. With ``shared`` (provider
+        admission) the run's own limit is the only bound here: the provider pool orders each child's generation."""
+        return await self._run(self._reserve_script_child, queue_id, attempt_id, max_concurrent, backend_limit, shared)
 
-    def _reserve_script_child(self, queue_id: str, attempt_id: str, max_concurrent: int, backend_limit: int) -> bool:
+    def _reserve_script_child(
+        self, queue_id: str, attempt_id: str, max_concurrent: int, backend_limit: int, shared: bool = False
+    ) -> bool:
         if not 1 <= max_concurrent <= 10 or not 1 <= backend_limit <= MAX_QUEUE_CONCURRENCY:
             raise QueueError("Invalid script concurrency bound.")
         with self._txn() as db:
@@ -701,7 +786,7 @@ class QueueMixin:
             active = len(lanes)
             # The first child uses the parent reservation; further children need a free global lane.
             if active >= min(max_concurrent, backend_limit) or (
-                active > 0 and self._reserved(db, queue["backend_key"]) >= backend_limit
+                active > 0 and not shared and self._reserved(db, queue["backend_key"]) >= backend_limit
             ):
                 return False
             if attempt_id not in lanes:
@@ -947,6 +1032,22 @@ class QueueMixin:
                 db.execute(
                     "UPDATE queue_items SET state='pending', updated_at_utc=? WHERE item_id=?", (now, item["item_id"])
                 )
+            elif _held_before_submission(attempt):
+                # The dispatcher ended the attempt as definitely not submitted and died before returning the item:
+                # finish that one step (the attempt keeps its identity, the pending item gets a new one).
+                record["request_id"] = uuid4().hex
+                db.execute(
+                    "UPDATE queue_items SET state='pending', request_json=?, attempt_id=NULL, updated_at_utc=?"
+                    " WHERE item_id=?",
+                    (json.dumps(record, allow_nan=False), now, item["item_id"]),
+                )
+                QueueMixin._event(
+                    db,
+                    item["queue_id"],
+                    "item_returned",
+                    now,
+                    {"item_id": item["item_id"], "previous_attempt_id": attempt["attempt_id"], "recovered": True},
+                )
             else:
                 db.execute(
                     "UPDATE queue_items SET state=?, attempt_id=?, failure_json=?, updated_at_utc=? WHERE item_id=?",
@@ -961,6 +1062,16 @@ class QueueMixin:
             QueueMixin._event(db, item["queue_id"], "reconciled", now, {"item_id": item["item_id"]})
         db.execute("UPDATE queues SET state='paused', updated_at_utc=? WHERE state='running'", (now,))
         _release_queued(db, now, "restart")
+
+
+def _held_before_submission(attempt) -> bool:
+    """Only this exact end: a cancelled attempt the dispatcher recorded as held before submission (nothing was sent)."""
+    if attempt["state"] != "cancelled" or not attempt["failure_json"]:
+        return False
+    try:
+        return json.loads(attempt["failure_json"]).get("code") == "held_before_submission"
+    except (TypeError, ValueError, AttributeError):
+        return False
 
 
 def _reconcile_script_item(db: sqlite3.Connection, item, record: dict, now: str) -> None:

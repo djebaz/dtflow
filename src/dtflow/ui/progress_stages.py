@@ -30,6 +30,7 @@ def event_stage(event: BackendEvent) -> str:
             "encoding_request": "Encoding generation request",
             "wire_validated": "Request validated",
             "waiting_execution_lane": "Waiting for a free slot",
+            "waiting_provider_slot": "Waiting for a free slot",
             "connecting_backend": "Connecting",
             "preparing_grpc_metadata": "Preparing request headers",
         }.get(event.stage, "Preparing request")

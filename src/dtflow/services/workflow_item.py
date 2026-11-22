@@ -308,7 +308,8 @@ class WorkflowItemRunner:
 
     async def run(self, queue_id: str) -> dict[str, Any]:
         """Run the queue's one item to its end; a paused queue with nothing active keeps polling for a posted Resume."""
-        limit = self.service.backend.capabilities.max_concurrency
+        # With provider admission the shared pool bounds generations; this item only holds its own run.
+        limit = None if self.service.admission is not None else self.service.backend.capabilities.max_concurrency
         await self.store.apply_controls(queue_id)
         await self.store.set_running(queue_id)
         while True:
@@ -456,6 +457,8 @@ class _Execution:
         widen = getattr(backend, "set_concurrency", None)
         if widen is not None:
             widen(limit)  # a Draw Things session runs as many generations together as this run asks for
+            if self.runner.service.admission is not None:
+                self.runner.service.admission.pool.widen(limit)  # the shared pool never narrows under a live run
         self.lanes = max(1, min(limit, backend.capabilities.max_concurrency, 10))
         self.total = asyncio.Semaphore(limit)  # every running step, local or generative, takes one
         self.slots = {
@@ -1019,7 +1022,9 @@ class _Execution:
         try:
             while True:
                 try:
-                    reserved = await self.store.reserve_script_child(self.queue_id, lane, self.lanes, self.lanes)
+                    reserved = await self.store.reserve_script_child(
+                        self.queue_id, lane, self.lanes, self.lanes, shared=self.runner.service.admission is not None
+                    )
                 except QueueError:
                     reserved = False  # paused or settling queue: wait, Stop ends the wait
                 if reserved:

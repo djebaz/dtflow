@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,6 +27,8 @@ from dtflow.core.models import (
     TimeoutPolicy,
     ValidationError,
 )
+from dtflow.core import provider_phase
+from dtflow.core.provider_phase import OVERLAP
 from dtflow.core.storage import AttemptStore
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import ATTEMPT
@@ -47,6 +49,7 @@ from dtflow.services.catalogue import Catalogue
 from dtflow.services.events import EventBuffer
 from dtflow.services.image_artifacts import save_image_artifacts
 from dtflow.services.image_inputs import snapshot_image_inputs
+from dtflow.services.provider_admission import Permit, QueueAdmission
 from dtflow.services.preflight import checkpoint_exact_version, preflight_loras, raise_if_blocked
 from dtflow.services.timeline import GenerationTimeline
 
@@ -74,6 +77,15 @@ def _buffer_reservation(request: ResolvedGenerationRequest, caps, prepared_input
     return reservation
 
 
+class SubmissionHeld(Exception):
+    """The caller's check said no (its queue was paused or cancelled) and nothing was sent. ``attempt_id`` names the
+    prepared attempt this call had already created and has ended as cancelled; None when no attempt exists yet."""
+
+    def __init__(self, attempt_id: str | None = None):
+        super().__init__(attempt_id)
+        self.attempt_id = attempt_id
+
+
 class GenerationService:
     """Own orchestration only; adapters, persistence and presentation are injected."""
 
@@ -89,7 +101,9 @@ class GenerationService:
         assets: AssetValidator | None = None,
         input_state: Path | None = None,
         preview_images: bool = True,
+        admission: QueueAdmission | None = None,
     ):
+        self.admission = admission
         self.assets = assets
         self.catalogue = (
             Catalogue(assets.state) if isinstance(assets, AssetService) and assets.state is not None else None
@@ -101,7 +115,10 @@ class GenerationService:
         if type(preview_images) is not bool:
             raise ValidationError("Preview image policy must be a boolean.")
         self.preview_images = preview_images
-        self.budget = budget or BufferBudget(backend.capabilities.limits.buffer_budget)
+        # With provider admission, calls past their sampling phase overlap the active ones; each holds its reservation.
+        self.budget = budget or BufferBudget(
+            backend.capabilities.limits.buffer_budget * (OVERLAP if admission is not None else 1)
+        )
         # Serialize validation/saving while admitted backend requests may overlap.
         self._buffers = asyncio.Semaphore(1)
 
@@ -167,8 +184,17 @@ class GenerationService:
         prepared_inputs: PreparedImageInputs | None = None,
         attempt_id: str | None = None,
         layout: OutputLayout | None = None,
+        permit: Permit | None = None,
+        may_submit: Callable[[], Awaitable[bool]] | None = None,
     ) -> SavedGeneration:
-        """``attempt_id`` lets a caller that records the attempt elsewhere first (script runs) name it up front.
+        """``may_submit`` is asked twice: after preparation and before the attempt exists, and again as close to the
+        provider as the flow allows (after the buffer budget and image snapshot, just before the attempt is marked
+        submitted). False raises :class:`SubmissionHeld`; nothing is sent, and a prepared attempt is ended as cancelled.
+
+        ``permit`` is the provider slot the queue dispatcher reserved when it claimed the item; without one, a call
+        under admission waits its turn for a slot. The call closes it (idempotent) however it ends.
+
+        ``attempt_id`` lets a caller that records the attempt elsewhere first (script runs) name it up front.
 
         ``layout`` names the run folder and file-name label the outputs are saved under (issue #296).
 
@@ -177,37 +203,50 @@ class GenerationService:
         plus short digests telling whether the prompt and the other settings repeated. It only observes."""
 
         async def run(sink):
-            if request.num_frames is not None:
-                from dtflow.services.video_resources import video_admission
-                from dtflow.services.video_queue import check_source, validate_video
+            held = permit
+            try:
+                if request.num_frames is not None:
+                    from dtflow.services.video_resources import video_admission
+                    from dtflow.services.video_queue import check_source, validate_video
 
-                validate_video(
-                    request, "cloud" if self.backend.capabilities.backend_id == "drawthings-cloud" else "other"
-                )
-                if sink is not None:
-                    sink(
-                        BackendEvent(
-                            request.request_id,
-                            0,
-                            "preparing",
-                            datetime.now(UTC).isoformat(),
-                            stage="waiting_video_resources",
-                        )
+                    validate_video(
+                        request, "cloud" if self.backend.capabilities.backend_id == "drawthings-cloud" else "other"
                     )
-                async with video_admission(request, self.output) as lease:
-                    try:
-                        await settle(asyncio.to_thread(check_source, request))
-                    except (OSError, ValueError) as exc:
-                        raise BackendError(
-                            BackendFailure(
-                                ErrorCategory.VALIDATION,
-                                "video_source_unavailable",
-                                "The selected video source is missing, changed or unreadable. Nothing was submitted.",
+                    if held is not None:
+                        held.provider_done(
+                            "local_wait"
+                        )  # waiting for local video resources must not hold a provider slot
+                    if sink is not None:
+                        sink(
+                            BackendEvent(
                                 request.request_id,
+                                0,
+                                "preparing",
+                                datetime.now(UTC).isoformat(),
+                                stage="waiting_video_resources",
                             )
-                        ) from exc
-                    return await self._generate(request, sink, prepared_inputs, attempt_id, layout, lease)
-            return await self._generate(request, sink, prepared_inputs, attempt_id, layout)
+                        )
+                    async with video_admission(request, self.output) as lease:
+                        try:
+                            await settle(asyncio.to_thread(check_source, request))
+                        except (OSError, ValueError) as exc:
+                            raise BackendError(
+                                BackendFailure(
+                                    ErrorCategory.VALIDATION,
+                                    "video_source_unavailable",
+                                    "The selected video source is missing, changed or unreadable. Nothing was submitted.",
+                                    request.request_id,
+                                )
+                            ) from exc
+                        held = await self._take_slot(held, request, sink)
+                        return await self._generate(
+                            request, sink, prepared_inputs, attempt_id, layout, held, lease, may_submit
+                        )
+                held = await self._take_slot(held, request, sink)
+                return await self._generate(request, sink, prepared_inputs, attempt_id, layout, held, None, may_submit)
+            finally:
+                if held is not None:
+                    held.close()
 
         if not timing_enabled():
             return await run(on_event)
@@ -225,6 +264,30 @@ class GenerationService:
         timeline.finish(None)
         return saved
 
+    async def _take_slot(
+        self, permit: Permit | None, request: ResolvedGenerationRequest, on_event: EventSink | None
+    ) -> Permit | None:
+        """Hold a provider slot before anything durable exists; only a call that must wait says so."""
+        if self.admission is None:
+            return None
+
+        def waiting() -> None:
+            if on_event is not None:
+                on_event(
+                    BackendEvent(
+                        request.request_id,
+                        0,
+                        "preparing",
+                        datetime.now(UTC).isoformat(),
+                        stage="waiting_provider_slot",
+                    )
+                )
+
+        if permit is None:
+            return await self.admission.acquire(waiting)
+        await permit.reacquire(waiting)
+        return permit
+
     async def _generate(
         self,
         request: ResolvedGenerationRequest,
@@ -232,7 +295,9 @@ class GenerationService:
         prepared_inputs: PreparedImageInputs | None,
         attempt_id: str | None,
         layout: OutputLayout | None,
+        permit: Permit | None = None,
         video_lease=None,
+        may_submit: Callable[[], Awaitable[bool]] | None = None,
     ) -> SavedGeneration:
         def preparation(stage: str) -> None:
             if on_event is not None:
@@ -428,6 +493,8 @@ class GenerationService:
                         request.request_id,
                     )
                 ) from exc
+        if may_submit is not None and not await may_submit():
+            raise SubmissionHeld
         reserved = False
         if attempt_id is None:
             attempt_id = uuid4().hex
@@ -456,6 +523,7 @@ class GenerationService:
         events = EventBuffer(preview_bytes=caps.limits.preview_bytes)
         backend_submitted_at: float | None = None
         backend_terminal_at: float | None = None
+        cloud = caps.backend_id == "drawthings-cloud"
 
         def receive(event: BackendEvent) -> None:
             nonlocal last_sequence, backend_submitted_at, backend_terminal_at
@@ -471,6 +539,17 @@ class GenerationService:
                 backend_submitted_at = observed_at
             elif event.kind == "terminal":
                 backend_terminal_at = observed_at
+            if (
+                permit is not None
+                and cloud
+                and event.kind == "progress"
+                and event.stage == "sampling"
+                and event.total
+                and (event.completed or 0) >= event.total
+            ):
+                permit.provider_done(
+                    "sampling_complete"
+                )  # DT+ finished sampling; the next call may start while this downloads
             events(event)
             if on_event is not None:
                 on_event(event)
@@ -527,6 +606,26 @@ class GenerationService:
                         "ffprobe_ready": True,
                     },
                 )
+            if may_submit is not None and not await may_submit():
+                failure = BackendFailure(
+                    ErrorCategory.CANCELLATION,
+                    "held_before_submission",
+                    "The queue was paused or cancelled before this was sent; nothing was sent.",
+                    request.request_id,
+                    SubmissionStage.NOT_SUBMITTED,
+                    RemoteOutcome.NOT_STARTED,
+                    cancellation=CancellationEvidence(True, True, False, False),
+                )
+                await self.store.transition(
+                    attempt_id,
+                    ("prepared",),
+                    "cancelled",
+                    SubmissionStage.NOT_SUBMITTED,
+                    RemoteOutcome.NOT_STARTED,
+                    failure=failure,
+                )
+                state = "cancelled"
+                raise SubmissionHeld(attempt_id)
             preparation("recording_submission_state")
             await self.store.transition(
                 attempt_id,
@@ -540,7 +639,10 @@ class GenerationService:
             # clip waiting for a local encoder (cancellable) must not expire here (#550).
             total_timeout = None if request.num_frames is not None else self.timeouts.total
             async with asyncio.timeout(total_timeout):
-                result = await self.backend.generate(request, on_event=receive)
+                with provider_phase.bound(permit.provider_done if permit is not None else None):
+                    result = await self.backend.generate(request, on_event=receive)
+                if permit is not None:
+                    permit.provider_done("returned")
             stage = SubmissionStage.TERMINAL_OBSERVED
             if result.backend_id != caps.backend_id:
                 raise ValueError("Result backend identity does not match.")
@@ -663,6 +765,8 @@ class GenerationService:
                     recorded_outcome,
                     failure=failure,
                 )
+            raise
+        except SubmissionHeld:
             raise
         except BackendError as exc:
             failure = exc.failure

@@ -49,7 +49,8 @@ class ScriptItemRunner:
 
     async def run(self, queue_id: str) -> dict[str, Any]:
         """Run the queue's one item to its end; a paused queue with nothing active keeps polling for a posted Resume."""
-        limit = self.service.backend.capabilities.max_concurrency
+        # With provider admission the shared pool bounds generations; this item only holds its own run.
+        limit = None if self.service.admission is not None else self.service.backend.capabilities.max_concurrency
         await self.store.apply_controls(queue_id)
         await self.store.set_running(queue_id)
         while True:
@@ -132,7 +133,9 @@ class ScriptItemRunner:
                 backend_limit = self.service.backend.capabilities.max_concurrency
 
                 def reserve_child(attempt, concurrency):
-                    return self.store.reserve_script_child(queue_id, attempt, concurrency, backend_limit)
+                    return self.store.reserve_script_child(
+                        queue_id, attempt, concurrency, backend_limit, shared=self.service.admission is not None
+                    )
 
                 def release_child(attempt):
                     return self.store.release_script_child(queue_id, attempt)

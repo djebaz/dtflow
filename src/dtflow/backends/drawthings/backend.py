@@ -53,6 +53,7 @@ from dtflow.core.models import (
     ValidationError,
     eligible_model_ids,
 )
+from dtflow.core import provider_phase
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event, timing_enabled, timing_level
 
@@ -89,6 +90,7 @@ class DrawThingsBackend:
 
     backend_id = BACKEND_ID
     max_concurrency = 1
+    lane_factor = 1  # adapter lane = max_concurrency * lane_factor (the cloud lets finished-sampling calls overlap)
     unlisted_model_bridge = True
 
     def __init__(
@@ -111,7 +113,7 @@ class DrawThingsBackend:
         self._closing = False
         self._closed = False
         self._active = 0
-        self._lane = asyncio.Semaphore(self.max_concurrency)
+        self._lane = asyncio.Semaphore(self.max_concurrency * self.lane_factor)
         self._inventory: InventorySnapshot | None = None
         self._stale_reason: str | None = None
         self._model_specs: dict[str, dict] = {}
@@ -134,7 +136,7 @@ class DrawThingsBackend:
         if self._active:
             raise ValidationError("Concurrency cannot change while a generation is running.")
         self.max_concurrency = value
-        self._lane = asyncio.Semaphore(value)
+        self._lane = asyncio.Semaphore(value * self.lane_factor)
 
     @classmethod
     def validate_image_permits(cls, endpoint, image_permits, image_inputs_loader, allow_image_probe):
@@ -666,6 +668,7 @@ class DrawThingsBackend:
                                     raise self._reject(request, exc.code, stage, finals) from exc
                                 finals.append(artifact)
                                 emit("artifact_received", artifact=artifact)
+                    provider_phase.provider_done()  # the stream is closed: only local work remains
                     if log.isEnabledFor(logging.DEBUG):
                         for label in ("initial_metadata", "trailing_metadata"):
                             items = getattr(stream, label, None)
