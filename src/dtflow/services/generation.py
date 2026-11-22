@@ -28,6 +28,7 @@ from dtflow.core.models import (
     ValidationError,
 )
 from dtflow.core import provider_phase
+from dtflow.core.preview_gate import PreviewGate
 from dtflow.core.provider_phase import OVERLAP
 from dtflow.core.storage import AttemptStore
 from dtflow.core.tasks import settle
@@ -100,7 +101,7 @@ class GenerationService:
         budget: BufferBudget | None = None,
         assets: AssetValidator | None = None,
         input_state: Path | None = None,
-        preview_images: bool = True,
+        preview_images: bool | PreviewGate = True,
         admission: QueueAdmission | None = None,
     ):
         self.admission = admission
@@ -112,8 +113,8 @@ class GenerationService:
         self.timeouts = timeouts or TimeoutPolicy()
         self.saver = saver
         self.input_state = Path(input_state) if input_state is not None else None
-        if type(preview_images) is not bool:
-            raise ValidationError("Preview image policy must be a boolean.")
+        if type(preview_images) is not bool and not isinstance(preview_images, PreviewGate):
+            raise ValidationError("Preview image policy must be a boolean or a preview gate.")
         self.preview_images = preview_images
         # With provider admission, calls past their sampling phase overlap the active ones; each holds its reservation.
         self.budget = budget or BufferBudget(
@@ -531,7 +532,10 @@ class GenerationService:
             if event.request_id != request.request_id or event.sequence <= last_sequence:
                 raise ValueError("Backend event identity/order is invalid.")
             last_sequence = event.sequence
-            if event.kind == "preview" and not self.preview_images:
+            if event.kind == "preview" and not (
+                self.preview_images is True
+                or (isinstance(self.preview_images, PreviewGate) and self.preview_images.visible(request.request_id))
+            ):
                 return  # no unused image retention or forwarding, including injected/non-Draw-Things adapters
             if event.artifact and len(event.artifact.encoded) > caps.limits.artifact_bytes:
                 raise ValueError("Event artifact exceeds the limit.")

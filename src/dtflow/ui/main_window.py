@@ -554,6 +554,10 @@ class MainWindow:
         self.generation.queue_behind = self.queue.queue_behind
         self.generation.queue_run = self.queue  # one Generate image runs as a one-item queue (#558)
         self.generation.queue_images = self._queue_images
+        self.queue.set_grid(self.generation.grid)  # a Generate batch (#560) shows as tiles in Generate
+        self.queue.grid_started = self.generation.show_grid
+        self.generation.grid_dismissed = self.queue.grid_closed
+        self.generation.grid.openRequested.connect(self._open_output_in_images)
         form.backendCombo.addItems(BACKENDS)
         form.backendCombo.view().setRowHidden(form.backendCombo.findText("fake"), True)
         form.backendCombo.setPlaceholderText("Select a provider")
@@ -1625,7 +1629,7 @@ class MainWindow:
         """Generate image with Images above 1 (#279): a Repeat queue of single-image items, started now or, behind
         running work, added up next. The Queues page reports the outcome like the Queue popover does."""
         start, _, _ = self.queue.quick_state()
-        self.queue.quick_create("start" if start else "add", count=count)
+        self.queue.quick_create("start" if start else "add", count=count, from_generate=True)
         self.remember()
 
     def remember(self, *_, background: bool = True) -> None:

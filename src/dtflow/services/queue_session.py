@@ -26,6 +26,7 @@ from dtflow.core.models import (
     TimeoutPolicy,
     ValidationError,
 )
+from dtflow.core.preview_gate import PreviewGate
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.gallery_snapshot import schedule_publish
@@ -37,6 +38,7 @@ from dtflow.persistence.queues import (
     delete_queue,
     insert_queue,
     insert_script_queue,
+    is_generate_batch,
     is_manual,
     post_control,
     read_queue_requests,
@@ -516,6 +518,7 @@ async def dispatch_queue(
     manual: ManualSink | None = None,
     waiting: tuple[str, ...] = (),
     auto_play: bool = True,
+    preview_gate: PreviewGate | None = None,
 ) -> dict[str, Any]:
     """Make this process the dispatch owner and run the queue until it finishes or is cancelled, then auto-play.
 
@@ -545,7 +548,18 @@ async def dispatch_queue(
     def start(next_id: str) -> None:
         task = asyncio.create_task(
             _dispatch_one(
-                store, state, next_id, policy, saved, out, on_settle, on_event, backends, admission, manual_sink=manual
+                store,
+                state,
+                next_id,
+                policy,
+                saved,
+                out,
+                on_settle,
+                on_event,
+                backends,
+                admission,
+                manual_sink=manual,
+                preview_gate=preview_gate,
             )
         )
         if manual is not None:
@@ -686,7 +700,18 @@ async def dispatch_queue(
 
 
 async def _dispatch_one(
-    store, state, queue_id, policy, saved, out, on_settle, on_event, backends=None, admission=None, manual_sink=None
+    store,
+    state,
+    queue_id,
+    policy,
+    saved,
+    out,
+    on_settle,
+    on_event,
+    backends=None,
+    admission=None,
+    manual_sink=None,
+    preview_gate=None,
 ) -> dict[str, Any]:
     """One queue on the open owner: its own recorded backend session, closed before the next queue starts."""
     backend = None
@@ -748,9 +773,11 @@ async def _dispatch_one(
                 else {}
             ),
         }
-        # Only a Generate click shows live preview images; ordinary queues, workflows and scripts consume none.
+        # A Generate click shows live preview images, and a Generate batch (#560) the ones its visible grid tiles ask
+        # for; ordinary queues, workflows and scripts consume none.
+        previews = manual or (preview_gate if preview_gate is not None and is_generate_batch(queue) else False)
         backend = session.create_backend(
-            selection, timeouts=policy, saved=saved, preview_images=manual, **image_options
+            selection, timeouts=policy, saved=saved, preview_images=previews, **image_options
         )
         async with asyncio.timeout(policy.connect):
             await backend.open()
@@ -763,7 +790,7 @@ async def _dispatch_one(
             timeouts=policy,
             assets=session.asset_validator(backend, state),
             input_state=state if permits or has_pose else None,
-            preview_images=manual,
+            preview_images=previews,
             admission=(
                 QueueAdmission(admission.pool(key, backend.capabilities.max_concurrency), rank)
                 if admission is not None

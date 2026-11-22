@@ -130,4 +130,4 @@ class QueuePopover(QObject):
         self.hide()
         if plan and self._capture_generate_plan and not self._queue.use_generate_settings(pose_only=True):
             return  # invalid current inputs must not submit the old captured pose instead
-        self._queue.quick_create(action, count=None if plan else self.repeat_spin.value())
+        self._queue.quick_create(action, count=None if plan else self.repeat_spin.value(), from_generate=True)

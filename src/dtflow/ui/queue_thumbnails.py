@@ -54,11 +54,11 @@ class QueueThumbnails(QObject):
 
     changed = Signal(str)  # a pixmap for this path arrived
 
-    def __init__(self, runner, state: Path, parent=None):
+    def __init__(self, runner, state: Path, parent=None, *, preview_cap: int = MAX_PREVIEW_PIXMAPS):
         super().__init__(parent)
         self._runner, self._state = runner, Path(state)
         self._view = parent if isinstance(parent, QTableView) else None
-        self._stores = {ROW_SIDE: (OrderedDict(), MAX_ROW_PIXMAPS), PREVIEW_SIDE: (OrderedDict(), MAX_PREVIEW_PIXMAPS)}
+        self._stores = {ROW_SIDE: (OrderedDict(), MAX_ROW_PIXMAPS), PREVIEW_SIDE: (OrderedDict(), preview_cap)}
         self._waiting: deque = deque()
         self._queued: set[tuple[str, str | None]] = set()
         self._failed: set[tuple[str, str | None]] = set()

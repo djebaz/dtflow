@@ -24,7 +24,7 @@ from PySide6.QtCore import QSize, Qt, QTimer, QUrl
 from PySide6.QtGui import QDesktopServices, QIcon, QStandardItem, QStandardItemModel
 from PySide6.QtWidgets import QApplication, QFormLayout, QListWidgetItem, QMenu, QPlainTextEdit, QWidget
 
-from dtflow.core.models import BackendEvent, LoRASelection, ValidationError
+from dtflow.core.models import BackendEvent, Designation, LoRASelection, ValidationError
 from dtflow.core.request_records import request_from_record
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry
@@ -95,6 +95,7 @@ from dtflow.ui.queue_model import ITEM_ID_ROLE, QueueItemModel
 from dtflow.ui.queue_thumbnails import HoverPreview, QueueThumbnails
 from dtflow.ui.queue_templates import QueueTemplates
 from dtflow.ui.queue_pose import QueuePoseEditor
+from dtflow.ui.generation_grid import GridItem
 from dtflow.ui.queue_presenter import (
     FILTERS,
     item_counts,
@@ -331,10 +332,14 @@ class QueuePage:
         self._detail: dict | None = None
         self._run_detail: dict | None = None  # the dispatched script queue's items, when it is not the selected one
         self._reading_run = False
+        self._grid = None  # the Generate grid (#560), set_grid
+        self._grid_queue: str | None = None  # the one Generate batch the grid shows
+        self._grid_reading = False
         self._varied: dict[str, dict] = {}  # items never change after creation, so their variation is read once
         self._resume_fallback: str | None = None
         self._list_key: tuple | None = None
         self._output_folder: Path | None = None
+        self.grid_started = lambda queue_id, items: None  # the window shows the Generate grid for this batch
         self._images_hook = None  # set_images_hook wires Open in Images to the Images workspace
         self._open_workflow_hook = None  # set_open_workflow_hook(fn(queue_id)) shows a workflow run in Workflows
         self._run_progress: dict[tuple[str, str], tuple[int, int]] = {}
@@ -672,6 +677,7 @@ class QueuePage:
             self._sync()
         else:
             self._render()
+        self._refresh_grid()
         if busy or self.page.queueWorkspace.isVisible():
             self._timer.start(POLL_MS if busy else IDLE_POLL_MS)
         else:
@@ -1269,6 +1275,59 @@ class QueuePage:
     def set_open_workflow_hook(self, hook) -> None:
         """``hook(queue_id)`` switches to Workflows and follows that workflow queue's run (steps, Retry, pauses)."""
         self._open_workflow_hook = hook
+
+    # -- the Generate batch grid (#560) ----------------------------------------------------------------------------
+    def set_grid(self, grid) -> None:
+        """The Generate output grid: this page feeds it the one current Generate batch's durable state and previews."""
+        self._grid = grid
+        grid.shown.connect(self._refresh_grid)
+
+    def _grid_begin(self, queue_id: str, count: int) -> None:
+        """A Generate batch exists: it becomes the grid's only queue, with a waiting tile per item, at once."""
+        if self._grid is None:
+            return
+        self._grid_queue = queue_id
+        self.grid_started(queue_id, [GridItem(f"waiting-{index}", None, "pending") for index in range(count)])
+        self.refresh()
+
+    def grid_closed(self) -> None:
+        """Generate shows something else: the batch runs and saves on, and the grid is no longer fed."""
+        self._grid_queue = None
+
+    def _refresh_grid(self) -> None:
+        grid, queue_id = self._grid, self._grid_queue
+        if grid is None or queue_id is None or self._grid_reading or self._runner.closed or not grid.isVisible():
+            return  # a hidden grid costs no read; showing it again reads once
+        if self._detail is not None and self._detail["queue_id"] == queue_id:
+            grid.apply(self._grid_items(self._detail))
+            return
+        self._grid_reading = True
+
+        async def work():
+            views = await read_queue_views(self._state, queue_id)
+            return views[0] if views else None
+
+        def done(result, failure) -> None:
+            self._grid_reading = False
+            if failure is None and result is not None and queue_id == self._grid_queue:
+                grid.apply(self._grid_items(result))
+
+        self._runner.submit(work(), done)
+
+    def _grid_items(self, detail: dict) -> list[GridItem]:
+        requests = {item["item_id"]: item.get("request_id") for item in detail["items"]}
+        return [
+            GridItem(
+                row.item_id,
+                requests.get(row.item_id),
+                row.state,
+                row.outputs,
+                row.gallery_identity,
+                self._run_stages.get((detail["queue_id"], row.item_id), ""),
+                row.num_frames is not None,
+            )
+            for row in item_rows(detail)
+        ]
 
     def set_images_hook(self, hook) -> None:
         """Wire Open in Images: hook(identity) shows that committed output in the Images Detail view."""
@@ -2374,7 +2433,9 @@ class QueuePage:
         return page.queuePrimaryButton if action is not None and action.text in ("Start", "Start next") else None
 
     # -- creation --------------------------------------------------------------------------------------------------
-    def create(self, action: str = "save", *, count: int | None = None, quick: bool = False) -> None:
+    def create(
+        self, action: str = "save", *, count: int | None = None, quick: bool = False, from_generate: bool = False
+    ) -> None:
         """Create from the composer: ``save`` keeps it paused, ``add`` queues it up next, ``start`` dispatches it.
 
         ``quick`` is the Queue popover (#135): ``count`` repeats Generate's request, and ``None`` uses the composer's
@@ -2425,6 +2486,9 @@ class QueuePage:
         # Add to queue during a single generation: remember the intent now, since the generation may end before the
         # new queue is saved (nothing then runs to follow, but the user still asked for it to start by itself).
         after_generation = quick and action == "add" and self._activity.generating
+        # A Generate Repeat of several items is a batch Generate shows as tiles (#560); one item stays an ordinary queue
+        # here (a single Generate click has its own path), so a one-item origin `generate` queue is never made twice.
+        generate_batch = from_generate and quick and count is not None and count > 1
 
         async def work():
             drawn = plan
@@ -2439,13 +2503,17 @@ class QueuePage:
                 job,
                 up_next=action == "add",
                 composer_source=composer_source,
+                origin=MANUAL_ORIGIN if generate_batch else None,
             )
             status = (await read_queue_views(self._state, queue_id))[0]["status"] if action == "add" else None
             return queue_id, status
 
         if quick:
             self._runner.submit(
-                work(), lambda result, failure: self._quick_created(result, failure, action, after_generation)
+                work(),
+                lambda result, failure: self._quick_created(
+                    result, failure, action, after_generation, count if generate_batch else None
+                ),
             )
         else:
             self._runner.submit(work(), lambda result, failure: self._created(result, failure, action))
@@ -2478,8 +2546,8 @@ class QueuePage:
             return False, True, "Another process runs a queue: Add to queue starts this one after it."
         return True, False, "Start now creates the queue and starts it at once."
 
-    def quick_create(self, action: str, *, count: int | None) -> None:
-        self.create(action, count=count, quick=True)
+    def quick_create(self, action: str, *, count: int | None, from_generate: bool = False) -> None:
+        self.create(action, count=count, quick=True, from_generate=from_generate)
 
     def prepare_script(self, source, source_name, cap, done, *, inventory=None, expected_steps=None, owner=None):
         """Prepare the form without creating/admitting a queue or opening any provider."""
@@ -2702,7 +2770,9 @@ class QueuePage:
         state = {"ok": "success", "warning": "partial"}.get(presentation.level, "error")
         activity_strip(self.page).complete("queue-quick", presentation.headline, presentation.detail, state)
 
-    def _quick_created(self, result, failure, action: str, after_generation: bool = False) -> None:
+    def _quick_created(
+        self, result, failure, action: str, after_generation: bool = False, grid_count: int | None = None
+    ) -> None:
         """Like ``_created``, but the composer and the current tab stay as they are."""
         if failure is not None:
             if isinstance(failure, PlanError | FormError):
@@ -2713,6 +2783,8 @@ class QueuePage:
             return
         queue_id, status = result
         self._created_hook()
+        if grid_count is not None:
+            self._grid_begin(queue_id, grid_count)
         if action == "start" and not self.dispatching_here and not self._activity.generating:
             self._dispatch(queue_id, resume_fallback=None)  # progress and results use the shared overlay
         elif action == "start":
@@ -3340,6 +3412,13 @@ class QueuePage:
         if self._runner.closed:
             return
         event = wrapped.event
+        if (
+            wrapped.queue_id == self._grid_queue
+            and event.kind == "preview"
+            and event.artifact is not None
+            and event.artifact.designation == Designation.PREVIEW
+        ):
+            self._grid.preview(wrapped.item_id, event.artifact.encoded)  # only a tile in view asked for it
         if wrapped.queue_id in self._manual_queues:
             manual = self._manual
             if manual is not None and wrapped.queue_id == manual.queue_id:
@@ -3459,6 +3538,7 @@ class QueuePage:
                 queue_id,
                 saved=saved,
                 waiting=waiting,
+                preview_gate=self._grid.gate if self._grid is not None else None,
                 on_event=lambda item_id, event: self._event_relay(_QueueBackendEvent(queue_id, item_id, event)),
                 on_next=lambda settled, following: self._advance_relay(_QueueAdvance(settled, following)),
                 on_overlap=lambda started: self._overlap_relay(_QueueOverlap(started)),
