@@ -4892,8 +4892,12 @@ def _render_selection(app, args):
                     capture("generate-17-queue-dispatch-running")
                     behind = []
                     controller.queue_behind = lambda *args: behind.append(args)
+                    # A plain image now runs as its own one-item queue (#558); the hand-off to a queue behind the
+                    # running one remains for Inpaint, Controlnet and video, so this state exercises that path.
+                    controller.queue_run = None
                     page.generateButton.click()
                     capture("generate-42-queued-behind")
+                    controller.queue_run = shell.queue
                     controller.queue_behind = shell.queue.queue_behind
                     shell.activity.set(dispatching=False)
                     page.savePresetButton.click()
