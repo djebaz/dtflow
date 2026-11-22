@@ -2778,8 +2778,11 @@ class QueuePage:
         self.refresh()
 
     # -- Generate clicks (#558) ------------------------------------------------------------------------------------
-    def run_generate(self, request, name, endpoint, asset_ids, sink) -> None:
-        """Generate's single image as a visible one-item queue on the shared dispatch path.
+    def run_generate(self, request, name, endpoint, asset_ids, sink, job=None) -> None:
+        """Generate's single image, edit, pose map or video as a visible one-item queue on the shared dispatch path.
+
+        ``job`` is the Inpaint edit or the Controlnet pose Generate was asked to run; the queue stages its exact inputs
+        before dispatch, like any queue of that kind.
 
         With this window dispatching, the queue waits up next and the owner starts it at once, ahead of ordinary queue
         work; otherwise it is saved paused and this window dispatches it. Another process's ownership is reported, never
@@ -2794,7 +2797,7 @@ class QueuePage:
 
         async def work():
             await self._create(
-                backend, request, asset_ids, 1, up_next=owner_here, origin=MANUAL_ORIGIN, queue_id=queue_id
+                backend, request, asset_ids, 1, job=job, up_next=owner_here, origin=MANUAL_ORIGIN, queue_id=queue_id
             )
             return await self._manual_ready(queue_id)
 
@@ -3008,6 +3011,8 @@ class QueuePage:
                 up_next=up_next,
                 receipts=receipts,
                 composer_source=composer_source,
+                origin=origin,
+                queue_id=queue_id,
             )
             if isinstance(job, PoseJob):
                 return await create_pose_queue(
@@ -3052,6 +3057,8 @@ class QueuePage:
                 up_next=up_next,
                 receipts=receipts,
                 composer_source=composer_source,
+                origin=origin,
+                queue_id=queue_id,
             )
         items = expand_plan(request, plan, receipts=receipts) if plan is not None else expand_items(request, count)
         return await create_queue(

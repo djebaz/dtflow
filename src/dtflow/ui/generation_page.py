@@ -1140,6 +1140,9 @@ class GenerationPage:
 
     def _show_queued_stage(self) -> None:
         """The shown click's last observed stage and step, with how long that stage has been the latest news."""
+        if self._run_video:
+            self._show_video_stage()
+            return
         detail = self._queued_stage
         if self._queued_steps is not None:
             detail += f" · step {self._queued_steps[0]}/{self._queued_steps[1]}"
@@ -1192,7 +1195,7 @@ class GenerationPage:
                     Presentation("warning", "Controlnet is not ready", self.controlnet.blocker() or "Nothing to send.")
                 )
                 return False
-        if self.video.active:
+        if self.video.active and self.queue_run is None:
             if self._activity.dispatching:
                 self._status(
                     Presentation(
@@ -1208,7 +1211,7 @@ class GenerationPage:
             # thumbnail, seed, status and Retry in Queues. The queue's creation validates the form.
             self.queue_images(images)
             return False
-        queued = edit is None and not self.video.active and self.queue_run is not None
+        queued = self.queue_run is not None  # every mode: one manual-priority queue per click (#558, #559)
         if self._activity.dispatching and not queued:
             self._queue_behind(edit)
             return False
@@ -1263,9 +1266,19 @@ class GenerationPage:
     def _tick_video(self) -> None:
         """Keep the elapsed time moving while DT+ is silent."""
         if not self._runner.closed and self._generating and self._run_video:
-            self._video_progress.present(self._activity)
+            if self._queued_run:
+                self._show_video_stage()
+            else:
+                self._video_progress.present(self._activity)
         else:
             self._video_tick.stop()
+
+    def _show_video_stage(self) -> None:
+        """A queued video's phase and elapsed time in this page's status line (the header bar shows the queue)."""
+        progress = self._video_progress
+        origin = progress.sent_at if progress.sent_at is not None else progress.started
+        detail = f"{progress.text} · {int(max(0.0, time.monotonic() - origin))} s"
+        self._status(Presentation("warning", "Generating", detail))
 
     def retry(self) -> bool:
         """Retry: resend the last request as recorded (same settings, same seed, same provider) under a new identity.
@@ -1285,8 +1298,8 @@ class GenerationPage:
             ),
         )
         diagnostic_event(log, "generation.retry", level=logging.INFO, data={"backend": name})
-        if self._last_manual and self.queue_run is not None and edit is None and retried.num_frames is None:
-            # A queued single image reruns its own queue item in place: same settings and seed, a new attempt.
+        if self._last_manual and self.queue_run is not None:
+            # A queued click reruns its own queue item in place: same settings, seed and staged inputs, a new attempt.
             self._submit(
                 retried, name, endpoint, asset_ids, prefix, simulation, edit, None, manual=self._manual_queue or True
             )
@@ -1391,7 +1404,7 @@ class GenerationPage:
                 self.queue_run.retry_generate(manual, self)
             else:
                 self._manual_queue = None
-                self.queue_run.run_generate(request, name, endpoint, tuple(asset_ids), self)
+                self.queue_run.run_generate(request, name, endpoint, tuple(asset_ids), self, edit)
             return
         run = (
             self._generate_video
@@ -1562,7 +1575,10 @@ class GenerationPage:
         if label:
             self._stage_seen.setdefault(label, time.monotonic() - self._stage_started)
         if self._run_video and self._video_progress.observe(event):
-            self._video_progress.present(self._activity)
+            if self._queued_run:  # the queue run owns the bar; this page words the same observed phase
+                self._show_video_stage()
+            else:
+                self._video_progress.present(self._activity)
             return
         if event.kind == "progress":
             from dtflow.ui.progress_stages import event_stage

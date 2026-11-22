@@ -229,6 +229,8 @@ async def create_edit_queue(
     up_next: bool = False,
     receipts: tuple[PreparedAsset, ...] = (),
     composer_source: dict | None = None,
+    origin: str | None = None,
+    queue_id: str | None = None,
 ) -> str:
     """Stage one prepared edit once and persist a paused queue of items that share it.
 
@@ -253,7 +255,9 @@ async def create_edit_queue(
         image_inputs=staged,
     )
     items = expand_items(edit, count) if plan is None else expand_plan(edit, plan, receipts=receipts)
-    return await create_queue(state, backend, items, up_next=up_next, composer_source=composer_source)
+    return await create_queue(
+        state, backend, items, up_next=up_next, composer_source=composer_source, origin=origin, queue_id=queue_id
+    )
 
 
 async def _check_pose_queue(
@@ -293,6 +297,8 @@ async def create_pose_queue(
     up_next: bool = False,
     receipts: tuple[PreparedAsset, ...] = (),
     composer_source: dict | None = None,
+    origin: str | None = None,
+    queue_id: str | None = None,
 ) -> str:
     """Stage one verified pose map for a cloud queue; creation never uploads or generates.
 
@@ -331,7 +337,9 @@ async def create_pose_queue(
             resolution_evidence=tuple(pair for pair in pose.resolution_evidence if pair[0] != "prepared_assets"),
         )
         composer_source = {**composer_source, "base": asdict(source_base)}
-    return await create_queue(state, backend, final, up_next=up_next, composer_source=composer_source)
+    return await create_queue(
+        state, backend, final, up_next=up_next, composer_source=composer_source, origin=origin, queue_id=queue_id
+    )
 
 
 async def create_saved_pose_queue(
@@ -346,6 +354,8 @@ async def create_saved_pose_queue(
     up_next: bool = False,
     receipts: tuple[PreparedAsset, ...] = (),
     composer_source: dict | None = None,
+    origin: str | None = None,
+    queue_id: str | None = None,
 ) -> str:
     """Create a queue from a recorded pose without changing the retained map or submitting anything."""
     if base.pose_control is None or base.image_inputs is None:
@@ -358,7 +368,9 @@ async def create_saved_pose_queue(
         await settle(asyncio.to_thread(restore_image_inputs, state, base.image_inputs))
     except (ValidationError, OSError) as exc:
         raise ValidationError(f"The retained pose map is unavailable: {exc}. No queue was created.") from exc
-    return await create_queue(state, backend, items, up_next=up_next, composer_source=composer_source)
+    return await create_queue(
+        state, backend, items, up_next=up_next, composer_source=composer_source, origin=origin, queue_id=queue_id
+    )
 
 
 # Items a relaunch with ``failed_only`` (and Retry item) takes again: settled without a saved image.
