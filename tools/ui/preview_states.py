@@ -3714,7 +3714,7 @@ def render_queue_states(shell, capture):
     # Leave no queue behind for the later Generate/Inpaint renders.
     page.removeQueueButton.click()
     page.removeQueueButton.click()
-    wait_for(lambda: not queue._views)
+    wait_for(lambda: view["queue_id"] not in queue._views)  # earlier Generate clicks leave their own one-item queues
 
 
 @fixture("queue")
@@ -3826,11 +3826,12 @@ def render_shell_states(shell, capture):
     shell.form.queueNavigationButton.click()
     page.createQueueButton.click()
     wait_for(lambda: queue._view() is not None and page.removeQueueButton.isEnabled())
+    created = queue._view()["queue_id"]
     page.removeQueueButton.click()  # arms the Remove confirmation
     InlineNotice.warning(shell.form, "Original images unavailable", "Offline fixture notice during a confirmation.")
     capture("shell-09-overlay-notice-during-confirmation")
-    page.removeQueueButton.click()  # confirms, leaving no queue for later renders
-    wait_for(lambda: not queue._views)
+    page.removeQueueButton.click()  # confirms, leaving no queue of its own for later renders
+    wait_for(lambda: created not in queue._views)  # earlier Generate clicks leave their own one-item queues
     clear()
     strip.complete("info-result", "Nothing to export", "All checked images already exist at the destination.", "info")
     capture("shell-10-overlay-info-result")
@@ -4752,7 +4753,8 @@ def _render_selection(app, args):
             report(target)
 
         def settled():
-            return page.generateButton.isEnabled()
+            # Generate stays enabled while a click runs (#558): settled also means its queue finished and dispatch ended.
+            return page.generateButton.isEnabled() and not shell.activity.generating and not shell.activity.dispatching
 
         try:
             page.refreshInventoryButton.click()
@@ -4805,8 +4807,8 @@ def _render_selection(app, args):
                     controller.lora.set_loras(())
                     gate = asyncio.Event()
                     page.generateButton.click()
-                    wait_for(lambda: not page.generateButton.isEnabled())
-                    # #133: only another Generate waits; the form and the LoRA panel stay editable for the next request.
+                    wait_for(lambda: shell.activity.generating or shell.activity.dispatching)
+                    # #133: the form and the LoRA panel stay editable for the next request; Generate stays enabled (#558).
                     capture("generate-10-busy-disabled")
                     shell.runner._loop.call_soon_threadsafe(gate.set)
                     wait_for(settled, timeout=60)
@@ -4881,6 +4883,8 @@ def _render_selection(app, args):
                     strip.finish("generation-result")
                     gate, scenario = asyncio.Event(), "success"
                     page.generateButton.click()
+                    # The click is a queue (#558): its request is sent, and the header bar row exists, before Stop.
+                    wait_for(lambda: "Sending request" in page.generationStatusLabel.text())
                     wait_for(lambda: "run" in strip.rows)
                     strip.rows["run"].activityStopButton.click()
                     capture("generate-15-stop-requested")
