@@ -42,15 +42,30 @@ class Permit:
         self.pool, self.rank = pool, rank
         self.held = True  # holds a slot
         self.open = True  # counts as an open call
+        self.since = monotonic()  # when the slot was taken
 
-    def provider_done(self) -> None:
+    def provider_done(self, reason: str = "stream_end") -> None:
+        """Free the slot (idempotent); ``reason`` says what ended the provider phase and is recorded once."""
         if self.held:
             self.held = False
             self.pool.active -= 1
+            diagnostic_event(
+                log,
+                "admission.slot_released",
+                level=logging.INFO,
+                data={
+                    "backend": self.pool.key,
+                    "reason": reason,
+                    "held_ms": round((monotonic() - self.since) * 1000),
+                    "active": self.pool.active,
+                    "open": self.pool.open,
+                    "limit": self.pool.limit,
+                },
+            )
             self.pool.changed()
 
     def close(self) -> None:
-        self.provider_done()
+        self.provider_done("closed")
         if self.open:
             self.open = False
             self.pool.open -= 1
@@ -138,7 +153,7 @@ class ProviderPool:
                 if permit is None:
                     granted.close()
                 else:
-                    granted.provider_done()
+                    granted.provider_done("cancelled")
             else:
                 future.cancel()
                 self._grant()
@@ -169,6 +184,7 @@ class ProviderPool:
                 permit = Permit(self, rank)
             else:
                 permit.held = True
+                permit.since = monotonic()
             future.set_result(permit)
 
     # -- wake-ups ------------------------------------------------------------------------------------------------

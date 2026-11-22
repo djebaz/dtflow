@@ -51,8 +51,11 @@ that way. #550's lease, encoder cap and FFmpeg protections are unchanged.
 
 ## Diagnostics
 
-Existing events carry the facts; two records are new: `admission.pool_opened` (backend key, limit, overlap) and
-`admission.slot_wait` for a call that waited 30 s or longer (waited, limit, active, open). Nothing is logged per
+Existing events carry the facts; three records are new: `admission.pool_opened` (backend key, limit, overlap),
+`admission.slot_wait` for a call that waited 30 s or longer (waited, limit, active, open) and `admission.slot_released`,
+once each time a call gives its slot back (reason `sampling_complete`, `stream_end`, `returned`, `local_wait`,
+`cancelled` or `closed`, time held, active/open/limit), which shows whether DT+'s final sampling step or the stream end
+freed it. Nothing is logged per
 sampling step, poll or unchanged wait. `queue.item_settled` now carries `queue_id`, the automatic retry count and, for a
 failed item, the recorded failure (code, message, category, submission stage, remote outcome); the provider's own error
 text stays in `backend.api_failed`. Quota exhaustion is never inferred.

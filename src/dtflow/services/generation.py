@@ -213,7 +213,9 @@ class GenerationService:
                         request, "cloud" if self.backend.capabilities.backend_id == "drawthings-cloud" else "other"
                     )
                     if held is not None:
-                        held.provider_done()  # waiting for local video resources must not hold a provider slot
+                        held.provider_done(
+                            "local_wait"
+                        )  # waiting for local video resources must not hold a provider slot
                     if sink is not None:
                         sink(
                             BackendEvent(
@@ -545,7 +547,9 @@ class GenerationService:
                 and event.total
                 and (event.completed or 0) >= event.total
             ):
-                permit.provider_done()  # DT+ finished sampling this call; the next one may start while it downloads
+                permit.provider_done(
+                    "sampling_complete"
+                )  # DT+ finished sampling; the next call may start while this downloads
             events(event)
             if on_event is not None:
                 on_event(event)
@@ -638,7 +642,7 @@ class GenerationService:
                 with provider_phase.bound(permit.provider_done if permit is not None else None):
                     result = await self.backend.generate(request, on_event=receive)
                 if permit is not None:
-                    permit.provider_done()
+                    permit.provider_done("returned")
             stage = SubmissionStage.TERMINAL_OBSERVED
             if result.backend_id != caps.backend_id:
                 raise ValueError("Result backend identity does not match.")
