@@ -222,9 +222,10 @@ def _insert_paused(
     kind: str = "generation",
     records: Sequence[dict[str, Any]] | None = None,
     origin: str | None = None,
+    queue_id: str | None = None,
 ) -> str:
     """Insert one paused (or, behind a live owner, queued) queue with pending items in the caller's transaction."""
-    queue_id = uuid4().hex
+    queue_id = queue_id or uuid4().hex  # a caller may name it first, so it can follow the queue from the start
     db.execute(
         "INSERT INTO queues (queue_id, backend_key, backend_json, state, cap, created_at_utc, updated_at_utc, up_next,"
         " kind) VALUES (?,?,?,?,?,?,?,?,?)",
@@ -366,14 +367,22 @@ class QueueMixin:
         *,
         composer_source=None,
         origin: str | None = None,
+        queue_id: str | None = None,
     ) -> str:
-        return await self._run(self._create_queue, backend, cap, tuple(requests), composer_source, origin)
+        return await self._run(self._create_queue, backend, cap, tuple(requests), composer_source, origin, queue_id)
 
-    def _create_queue(self, backend, cap, requests, composer_source=None, origin=None) -> str:
+    def _create_queue(self, backend, cap, requests, composer_source=None, origin=None, queue_id=None) -> str:
         _check_new_queue(requests)
         with self._txn() as db:
             return _insert_paused(
-                db, backend, cap, requests, self._now(), composer_source=composer_source, origin=origin
+                db,
+                backend,
+                cap,
+                requests,
+                self._now(),
+                composer_source=composer_source,
+                origin=origin,
+                queue_id=queue_id,
             )
 
     async def create_script_queue(self, backend: dict[str, Any], record: dict[str, Any]) -> str:
@@ -1380,6 +1389,7 @@ def insert_queue(
     up_next: bool = False,
     composer_source: dict | None = None,
     origin: str | None = None,
+    queue_id: str | None = None,
 ) -> str:
     """Add one queue while another owner holds the state (a running dispatch or generation).
 
@@ -1403,6 +1413,7 @@ def insert_queue(
                 up_next=live,
                 composer_source=composer_source,
                 origin=origin,
+                queue_id=queue_id,
             )
             connection.execute("COMMIT")
         except BaseException:

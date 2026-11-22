@@ -13,8 +13,9 @@ claims remote cancellation.
 import asyncio
 import logging
 from collections.abc import Callable
-from dataclasses import asdict, dataclass, field, replace
+from dataclasses import asdict, dataclass, replace
 from typing import Any
+from uuid import uuid4
 from html import escape
 from pathlib import Path
 from time import monotonic
@@ -261,8 +262,8 @@ class _ManualRun:
     (no outcome and no failure is a stop) and ``refused(presentation)``."""
 
     sink: Any
-    queue_id: str | None = None
-    early: list = field(default_factory=list)  # deliveries that came before ``queue_id`` was known
+    queue_id: str
+    ready: bool = False  # the queue exists (created, or reset for Retry) and is being handed to dispatch
     stopping: bool = False
 
 
@@ -2775,10 +2776,15 @@ class QueuePage:
         """
         backend = {"name": name, "endpoint": endpoint, "scenario": "success", **self._simulation()}
         owner_here = self.dispatching_here
-        self._manual = _ManualRun(sink)
+        # Named before anything exists, so the queue's first event or result can never arrive unrecognised.
+        queue_id = uuid4().hex
+        self._manual = _ManualRun(sink, queue_id)
+        self._manual_queues.add(queue_id)
 
         async def work():
-            queue_id = await self._create(backend, request, asset_ids, 1, up_next=owner_here, origin=MANUAL_ORIGIN)
+            await self._create(
+                backend, request, asset_ids, 1, up_next=owner_here, origin=MANUAL_ORIGIN, queue_id=queue_id
+            )
             return await self._manual_ready(queue_id)
 
         self._runner.submit(work(), self._manual_created)
@@ -2811,15 +2817,12 @@ class QueuePage:
             self._manual = None
             manual.sink.finished(None, failure)
             return
-        queue_id, request_id, status = result
-        manual.queue_id = queue_id
-        self._manual_queues.add(queue_id)
+        queue_id, request_id, _ = result
+        manual.ready = True
         manual.sink.created(queue_id, request_id)
-        if status != "queued" and not self.dispatching_here:
+        if not self.dispatching_here:
+            # No owner here (it may have ended after the status was read): nothing else would start this queue.
             self._dispatch(queue_id, resume_fallback=None)
-        early, manual.early = manual.early, []
-        for delivery in early:
-            self._manual_delivered(delivery)
         if manual.stopping:
             self.stop_generate()
         self.refresh()
@@ -2829,7 +2832,7 @@ class QueuePage:
         manual = self._manual
         if manual is None:
             return
-        if manual.queue_id is None:
+        if not manual.ready:
             manual.stopping = True  # applied as soon as the queue exists
             return
         queue_id = manual.queue_id
@@ -2860,9 +2863,6 @@ class QueuePage:
         """A Generate queue's result, or the end of a queue's task; only this click's queue counts."""
         manual = self._manual
         if manual is None:
-            return
-        if manual.queue_id is None:
-            manual.early.append(delivery)
             return
         if delivery.queue_id != manual.queue_id:
             return
@@ -2921,6 +2921,7 @@ class QueuePage:
         up_next: bool = False,
         composer_source=None,
         origin: str | None = None,
+        queue_id: str | None = None,
     ):
         receipts = ()
         if plan is None:
@@ -3013,7 +3014,13 @@ class QueuePage:
             )
         items = expand_plan(request, plan, receipts=receipts) if plan is not None else expand_items(request, count)
         return await create_queue(
-            self._state, backend, items, up_next=up_next, composer_source=composer_source, origin=origin
+            self._state,
+            backend,
+            items,
+            up_next=up_next,
+            composer_source=composer_source,
+            origin=origin,
+            queue_id=queue_id,
         )
 
     # -- planning --------------------------------------------------------------------------------------------------
@@ -3493,7 +3500,7 @@ class QueuePage:
         self._render()
         self.refresh()
         manual = self._manual
-        if manual is not None and manual.queue_id is not None:
+        if manual is not None and manual.ready:
             # The owner ended before Generate's queue reported: it was restored paused, or no owner could start.
             if isinstance(failure, StateBusyError):
                 self._manual = None

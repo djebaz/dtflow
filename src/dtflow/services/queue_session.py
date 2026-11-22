@@ -177,6 +177,7 @@ async def create_queue(
     up_next: bool = False,
     composer_source: dict | None = None,
     origin: str | None = None,
+    queue_id: str | None = None,
 ) -> str:
     """Persist a paused queue of resolved items; contacts no backend and never uploads.
 
@@ -195,7 +196,9 @@ async def create_queue(
     store = SQLiteAttempts(state)
     try:
         await store.open()
-        return await store.create_queue(backend, STORED_CAP, requests, composer_source=composer_source, origin=origin)
+        return await store.create_queue(
+            backend, STORED_CAP, requests, composer_source=composer_source, origin=origin, queue_id=queue_id
+        )
     except StateBusyError:
         return await asyncio.to_thread(
             insert_queue,
@@ -206,6 +209,7 @@ async def create_queue(
             up_next=up_next,
             composer_source=composer_source,
             origin=origin,
+            queue_id=queue_id,
         )
     finally:
         await store.aclose()
