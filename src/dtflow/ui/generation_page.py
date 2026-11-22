@@ -85,6 +85,7 @@ from dtflow.ui.generation_presenter import (
     snap_dimension,
     values_from_request,
 )
+from dtflow.ui.generation_grid import GenerationGrid
 from dtflow.ui.inline_feedback import InlineNotice, edit_text
 from dtflow.ui.video_progress import VideoProgress
 from dtflow.ui.video_panel import VideoPanel
@@ -461,6 +462,12 @@ class GenerationPage:
         page.detailsToggle.toggled.connect(page.attemptDetails.setVisible)
         page.expandPromptButton.toggled.connect(self._set_prompt_expanded)
         page.resultPreviewLabel.enable_inspection()
+        # A Generate batch (Images above 1, #560) shows one tile per item here instead of the single-result viewer.
+        self.grid = GenerationGrid(runner, self._state, page.previewHost)
+        page.previewHostLayout.addWidget(self.grid, 1)
+        self._grid_hid: list = []  # the single-result viewers the grid replaced, shown again when it goes
+        for button in (page.textToImageModeButton, page.inpaintModeButton, page.controlnetModeButton):
+            button.toggled.connect(lambda *_: self.dismiss_grid())
         startup.mark("generate: widgets and preview setup")
         self.sync_backend()
         startup.mark("generate: backend sync")
@@ -1167,6 +1174,37 @@ class GenerationPage:
             designation, fixture=(backend_id or self._submitted_backend or self._backend()[0]) == "fake"
         )
 
+    # -- the multi-result grid (#560) ------------------------------------------------------------------------------
+    def show_grid(self, queue_id: str, items: list) -> None:
+        """A Generate batch started: its tiles replace the single-result viewer until another Generate run starts."""
+        host = self.page.previewHostLayout
+        if not self._grid_hid:
+            self._grid_hid = [
+                widget
+                for index in range(host.count())
+                if (widget := host.itemAt(index).widget()) is not None
+                and widget is not self.grid
+                and not widget.isHidden()
+            ]
+            for widget in self._grid_hid:
+                widget.hide()
+        self.grid.begin(queue_id, items)
+        self.grid.show()
+
+    def dismiss_grid(self) -> None:
+        """Another Generate run, or another mode, takes the output panel back: the grid goes, the batch runs on."""
+        self.grid_dismissed()  # also when no grid shows yet: a batch whose queue is still being created must not appear
+        if self.grid.queue_id is None and not self._grid_hid:
+            return
+        self.grid.hide()
+        self.grid.end()
+        for widget in self._grid_hid:
+            widget.show()
+        self._grid_hid = []
+
+    def grid_dismissed(self) -> None:
+        """Replaced by the window to tell the Queues page to stop feeding the grid."""
+
     # -- generation ------------------------------------------------------------------------------------------------
     def edit_saved_image(self, path: str) -> bool:
         """Images handoff: open a saved output as the Inpaint source; nothing is submitted, so a running generation or
@@ -1377,6 +1415,7 @@ class GenerationPage:
         self._set_result_actions(False)
         self.page.attemptIdentityLabel.setText("No durable attempt yet.")
         self.page.attemptIdentityLabel.setToolTip("")
+        self.dismiss_grid()
         self.page.resultPreviewLabel.clear()
         self.page.resultPreviewLabel.setProperty("designation", "")
         self.page.previewHost.setMinimumHeight(PREVIEW_MIN_HEIGHT)

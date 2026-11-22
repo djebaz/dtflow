@@ -54,11 +54,11 @@ class QueueThumbnails(QObject):
 
     changed = Signal(str)  # a pixmap for this path arrived
 
-    def __init__(self, runner, state: Path, parent=None):
+    def __init__(self, runner, state: Path, parent=None, *, preview_cap: int = MAX_PREVIEW_PIXMAPS):
         super().__init__(parent)
         self._runner, self._state = runner, Path(state)
         self._view = parent if isinstance(parent, QTableView) else None
-        self._stores = {ROW_SIDE: (OrderedDict(), MAX_ROW_PIXMAPS), PREVIEW_SIDE: (OrderedDict(), MAX_PREVIEW_PIXMAPS)}
+        self._stores = {ROW_SIDE: (OrderedDict(), MAX_ROW_PIXMAPS), PREVIEW_SIDE: (OrderedDict(), preview_cap)}
         self._waiting: deque = deque()
         self._queued: set[tuple[str, str | None]] = set()
         self._failed: set[tuple[str, str | None]] = set()
@@ -141,6 +141,19 @@ class QueueThumbnails(QObject):
             self._queued.add(key)
             self._waiting.append((self._epoch, key))
             self._pump()
+
+    def keep_only(self, keys: set[tuple[str, str | None]]) -> None:
+        """Forget the decodes still waiting for outputs nobody shows any more (a fast scroll); running ones finish."""
+        if not self._waiting:
+            return
+        kept: deque = deque()
+        for epoch, key in self._waiting:
+            if key in keys:
+                kept.append((epoch, key))
+            else:
+                self._queued.discard(key)
+                self._wanted.pop(key, None)
+        self._waiting = kept
 
     def pixmap(self, path: str, side: int = ROW_SIDE, identity: str | None = None) -> QPixmap | None:
         if self._closed or self._runner.closed or not identity:

@@ -274,6 +274,11 @@ def is_manual(queue: dict[str, Any]) -> bool:
     return queue.get("origin") == MANUAL_ORIGIN and len(queue.get("items", ())) == 1
 
 
+def is_generate_batch(queue: dict[str, Any]) -> bool:
+    """A Repeat batch Generate started (#560): several items, ordinary priority, shown as a grid in Generate."""
+    return queue.get("origin") == MANUAL_ORIGIN and len(queue.get("items", ())) > 1
+
+
 def _last_up_next(db: sqlite3.Connection) -> int:
     return db.execute("SELECT COALESCE(MAX(up_next), 0) FROM queues WHERE state='queued'").fetchone()[0]
 

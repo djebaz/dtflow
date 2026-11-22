@@ -29,6 +29,7 @@ from dtflow.backends.drawthings.versions import bundled_base_version
 from dtflow.backends.drawthings.wire import CLIENT_NAME, build_generation_message
 from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.image_operations import ImageOperationPermit
+from dtflow.core.preview_gate import PreviewGate
 from dtflow.core.model_profiles import exact_model_description_digest, exact_model_spec, fallback_spec
 from dtflow.core.models import (
     MAX_QUEUE_CONCURRENCY,
@@ -103,7 +104,7 @@ class DrawThingsBackend:
         image_permits: tuple[ImageOperationPermit, ...] = (),
         image_inputs_loader: Callable[[ImageInputSnapshot], PreparedImageInputs] | None = None,
         allow_image_probe: bool = False,
-        preview_images: bool = True,
+        preview_images: bool | PreviewGate = True,
     ):
         self.endpoint = endpoint
         self.timeouts = timeouts or TimeoutPolicy()
@@ -120,8 +121,8 @@ class DrawThingsBackend:
         self._echoed = False  # an Echo answered on this backend, whether or not it advertised descriptions
         self._image_inputs_loader = image_inputs_loader
         self._allow_image_probe = allow_image_probe
-        if type(preview_images) is not bool:
-            raise ValidationError("Preview image policy must be a boolean.")
+        if type(preview_images) is not bool and not isinstance(preview_images, PreviewGate):
+            raise ValidationError("Preview image policy must be a boolean or a preview gate.")
         self._preview_images = preview_images
         self._image_permits, self._image_specs = self.validate_image_permits(
             endpoint, image_permits, image_inputs_loader, allow_image_probe
@@ -635,7 +636,10 @@ class DrawThingsBackend:
                             if response.preview_image:
                                 previews += 1
                                 preview_bytes += len(response.preview_image)
-                                if self._preview_images:
+                                if self._preview_images is True or (
+                                    isinstance(self._preview_images, PreviewGate)
+                                    and self._preview_images.wants(request.request_id)
+                                ):
                                     preview_started = time.monotonic()
                                     try:
                                         preview = await settle(
@@ -721,7 +725,7 @@ class DrawThingsBackend:
                 "backend.preview_summary",
                 level=logging.DEBUG,
                 data={
-                    "enabled": self._preview_images,
+                    "enabled": self._preview_images is not False,
                     "received": previews,
                     "skipped": skipped_previews,
                     "received_bytes": preview_bytes,
