@@ -132,6 +132,7 @@ class ControlnetEditor(QObject):
         self._generate_tip = False  # Generate's tooltip is ours while in this mode and cleared on leaving
         self._wanted_control = None  # a remembered control, applied once the inventory lists it
         self._paths = {}  # the last photo and the last body map, kept apart so switching between them restores each
+        self._restore_source_pending = False  # no saved source work until visible Generate → ControlNet
         self._pending_person = None
         self._strength = 0.7
         self._notice = ""
@@ -208,6 +209,15 @@ class ControlnetEditor(QObject):
     def active(self):
         return self.page.controlnetModeButton.isChecked()
 
+    def activate_if_visible(self) -> None:
+        """Load a remembered pose source once, only while Generate → ControlNet is actually visible."""
+        if not (self._restore_source_pending and self.active and self.page.isVisible()):
+            return
+        self._restore_source_pending = False
+        remembered = self._paths.get(self._kind)
+        if remembered and Path(remembered).is_file():
+            self.load_source(remembered)
+
     def sync_mode(self, *_):
         active = self.active
         for widget in (self.form.poseSourceCard, self.form.poseGuidanceCard, *self._extras):
@@ -235,6 +245,7 @@ class ControlnetEditor(QObject):
             for name in ("configurationCombo", "loadConfigurationButton"):
                 getattr(self.page, name).setEnabled(True)
         if active and self._wired:
+            self.activate_if_visible()
             self.refresh()
         else:
             self.sync_buttons()
@@ -516,6 +527,7 @@ class ControlnetEditor(QObject):
         self.refresh()
 
     def _clear_source(self):
+        self._restore_source_pending = False
         self._revision += 1
         self._extracting = False
         self._content, self._filename, self._source_pixmap = None, "", None
@@ -549,6 +561,7 @@ class ControlnetEditor(QObject):
             self._source_error = "Wait for the current extraction or download to finish, then choose the image again."
             self.refresh()
             return
+        self._restore_source_pending = False
         path = Path(path)
         kind = self._kind
         self._revision += 1
@@ -795,12 +808,12 @@ class ControlnetEditor(QObject):
     def session_document(self):
         """What the next launch restores: mode, the photo and the body map paths, the person, control and strength.
         The map is rebuilt from the files, as Inpaint reloads its source."""
-        chosen = self._controls[self._control_index].checkpoint if self._controls else None
+        chosen = self._wanted_control or (self._controls[self._control_index].checkpoint if self._controls else None)
         return {
             "mode": "controlnet" if self.active else "text",
             "kind": self._kind,
             "paths": dict(self._paths),
-            "person": self._selected,
+            "person": self._selected if self._selected is not None else self._pending_person,
             "control": chosen,
             "strength": self._strength,
             "control_mode": self.form.poseModeCombo.currentText(),
@@ -829,11 +842,9 @@ class ControlnetEditor(QObject):
             self._kind = kind
         person = document.get("person")
         self._pending_person = person if type(person) is int and person >= 0 else None
-        remembered = self._paths.get(self._kind)
-        if remembered and Path(remembered).is_file():
-            self.load_source(remembered)
-        else:
-            self.refresh()
+        # Restore preferences now, but postpone source I/O and ONNX detection until ControlNet is visible.
+        self._restore_source_pending = bool(self._paths.get(self._kind))
+        self.refresh()
         if document.get("mode") == "controlnet":
             self.page.controlnetModeButton.setChecked(True)
 
