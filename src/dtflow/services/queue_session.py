@@ -512,7 +512,7 @@ async def dispatch_queue(
     timeouts: TimeoutPolicy | None = None,
     out: Path | None = None,
     on_settle: Callable[[str, str], None] | None = None,
-    on_event: Callable[[str, BackendEvent], None] | None = None,
+    on_event: Callable[[str, str, BackendEvent], None] | None = None,
     on_next: Callable[[dict[str, Any], str], None] | None = None,
     on_overlap: Callable[[str], None] | None = None,
     manual: ManualSink | None = None,
@@ -529,6 +529,8 @@ async def dispatch_queue(
     failure or interruption included, every queue still waiting is restored paused: nothing starts without a live owner.
     A queue started early beside a running one is announced with ``on_overlap``; ``on_next`` still reports each queue
     only when it truly settles. Without ``auto_play`` (the CLI's ``queue start``) it runs exactly the queue it names.
+
+    ``on_event`` receives ``(queue_id, item_id, event)`` with the queue that owns the item.
 
     A single Generate request (#558) waiting up next starts at once, beside whatever runs, and its provider calls take
     the next free slot ahead of ordinary queue work. ``manual`` receives that queue's events, saved result or failure,
@@ -717,6 +719,9 @@ async def _dispatch_one(
     backend = None
     rank = admission.next_rank() if admission is not None else None  # taken in start order, before any await
     try:
+        if on_event is not None:  # each queue reports under its own id, whether it started first, early or by auto-play
+            owner_event = on_event
+            on_event = lambda item_id, event: owner_event(queue_id, item_id, event)  # noqa: E731
         queue = await store.inspect_queue(queue_id)
         manual = is_manual(
             queue
