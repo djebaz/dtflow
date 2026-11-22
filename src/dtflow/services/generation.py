@@ -78,7 +78,12 @@ def _buffer_reservation(request: ResolvedGenerationRequest, caps, prepared_input
 
 
 class SubmissionHeld(Exception):
-    """The caller's last check before creating the attempt said no (its queue was paused or cancelled): nothing exists."""
+    """The caller's check said no (its queue was paused or cancelled) and nothing was sent. ``attempt_id`` names the
+    prepared attempt this call had already created and has ended as cancelled; None when no attempt exists yet."""
+
+    def __init__(self, attempt_id: str | None = None):
+        super().__init__(attempt_id)
+        self.attempt_id = attempt_id
 
 
 class GenerationService:
@@ -182,8 +187,9 @@ class GenerationService:
         permit: Permit | None = None,
         may_submit: Callable[[], Awaitable[bool]] | None = None,
     ) -> SavedGeneration:
-        """``may_submit`` is asked once, after preparation and before the attempt exists; False raises
-        :class:`SubmissionHeld` with nothing created or sent.
+        """``may_submit`` is asked twice: after preparation and before the attempt exists, and again as close to the
+        provider as the flow allows (after the buffer budget and image snapshot, just before the attempt is marked
+        submitted). False raises :class:`SubmissionHeld`; nothing is sent, and a prepared attempt is ended as cancelled.
 
         ``permit`` is the provider slot the queue dispatcher reserved when it claimed the item; without one, a call
         under admission waits its turn for a slot. The call closes it (idempotent) however it ends.
@@ -596,6 +602,26 @@ class GenerationService:
                         "ffprobe_ready": True,
                     },
                 )
+            if may_submit is not None and not await may_submit():
+                failure = BackendFailure(
+                    ErrorCategory.CANCELLATION,
+                    "held_before_submission",
+                    "The queue was paused or cancelled before this was sent; nothing was sent.",
+                    request.request_id,
+                    SubmissionStage.NOT_SUBMITTED,
+                    RemoteOutcome.NOT_STARTED,
+                    cancellation=CancellationEvidence(True, True, False, False),
+                )
+                await self.store.transition(
+                    attempt_id,
+                    ("prepared",),
+                    "cancelled",
+                    SubmissionStage.NOT_SUBMITTED,
+                    RemoteOutcome.NOT_STARTED,
+                    failure=failure,
+                )
+                state = "cancelled"
+                raise SubmissionHeld(attempt_id)
             preparation("recording_submission_state")
             await self.store.transition(
                 attempt_id,
@@ -735,6 +761,8 @@ class GenerationService:
                     recorded_outcome,
                     failure=failure,
                 )
+            raise
+        except SubmissionHeld:
             raise
         except BackendError as exc:
             failure = exc.failure

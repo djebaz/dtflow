@@ -13,6 +13,8 @@ attempt under a new request identity, recorded on the item before it is sent. No
 import asyncio
 import logging
 import math
+from dataclasses import replace
+from uuid import uuid4
 from datetime import datetime, timezone
 from collections.abc import Callable
 from typing import Any
@@ -419,6 +421,7 @@ class QueueDispatcher:
         failure: dict[str, Any] | None = None
         saved = None
         retries = 0
+        had_attempt = False
         held = False  # the queue was paused or cancelled before anything was created: the item goes back to pending
 
         def receive(event: BackendEvent) -> None:
@@ -532,8 +535,9 @@ class QueueDispatcher:
                             **self.service._key_diagnostics(),
                         },
                     )
-            except SubmissionHeld:
+            except SubmissionHeld as exc:
                 held = True
+                had_attempt = exc.attempt_id is not None
             except asyncio.CancelledError:
                 state = await settle(self.store.settle_item(item_id))
                 evidence.put_nowait(("item_settled", {"item_id": item_id, "state": state}, None))
@@ -568,7 +572,11 @@ class QueueDispatcher:
                 }
 
             if held:
-                await settle(self.store.unclaim_item(item_id))
+                if had_attempt:
+                    # The cancelled attempt keeps its request identity; the pending item gets a new one.
+                    await settle(self.store.return_item(item_id, replace(request, request_id=uuid4().hex)))
+                else:
+                    await settle(self.store.unclaim_item(item_id))
                 evidence.put_nowait(("item_returned", {"item_id": item_id, "reason": "queue_paused"}, None))
                 diagnostic_event(
                     log, "queue.item_returned", level=logging.INFO, data={"queue_id": queue_id, "item_id": item_id}

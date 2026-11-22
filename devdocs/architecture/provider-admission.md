@@ -30,9 +30,11 @@ queues, Scripts and Workflows.
   one is still running and the pool has capacity nobody wants (`spare`: a free slot, no waiting call, no ready queue). A
   queue that has work but cannot use a slot (repairing assets, a Script/Workflow at its child limit) does not count as
   wanting one; the oldest queue that is ready still gets the next slot. A paused or cancelled queue never overlaps.
-- A paused queue claims nothing. Just before the attempt is created, a claimed item asks its queue once more
-  (`can_submit`, which also counts a Pause or Cancel posted but not yet applied); if it is no longer running, nothing is
-  created or sent and the item returns to pending (`queue.item_returned`). An automatic retry that finds its queue no
+- A paused queue claims nothing. A claimed item asks its queue twice (`can_submit`, which also counts a Pause or Cancel
+  posted but not yet applied): before its attempt is created, and again after the buffer budget and image snapshot, just
+  before the attempt is marked submitted. If the queue is no longer running nothing is sent and the item returns to
+  pending (`queue.item_returned`). On the second check the prepared attempt is kept as `cancelled` (not submitted,
+  nothing started) and the pending item takes a new request identity; on the first no attempt exists yet. An automatic retry that finds its queue no
   longer running sends nothing either: the item settles with its first failure. A retry waits for a slot after its delay,
   not during it.
 - Script and Workflow runs keep their own child limit (`reserve_script_child(..., shared=True)` drops only the global
@@ -58,8 +60,8 @@ text stays in `backend.api_failed`. Quota exhaustion is never inferred.
   resolved before the queue's first claim. The buffer budget is widened with the open-call cap, so DT+ text-to-image
   never waits on it; a larger image edit can wait for budget while holding its slot, which is accepted rather than
   adding a reservation scheme.
-- The attempt is created before the buffer budget and the image snapshot are taken, so a Pause arriving in that short
-  gap still lets the item run (it is no longer returned to pending).
+- A Pause arriving after the second check, in the few awaits before `backend.generate`, can still be sent; the
+  attempt is already recorded as possibly submitted by then.
 - A DT+ call that sends a later `second_pass` signpost after its last sampling step is already admitted past its slot;
   the open-call cap bounds this.
 - Generate's single manual run, Inpaint and other non-queue callers do not take part yet (#558, #559).

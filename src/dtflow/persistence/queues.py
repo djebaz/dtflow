@@ -606,6 +606,39 @@ class QueueMixin:
                 state = "cancelled"
         return state == "running"
 
+    async def return_item(self, item_id: str, request: ResolvedGenerationRequest) -> None:
+        """Return a claimed item whose prepared attempt was ended as cancelled before anything was sent to pending, under
+        a new request identity (the cancelled attempt keeps the old one), with an ``item_returned`` event."""
+        await self._run(self._return_item, item_id, json.dumps(asdict(request), allow_nan=False))
+
+    def _return_item(self, item_id: str, encoded: str) -> None:
+        with self._txn() as db:
+            item = db.execute(
+                "SELECT queue_id, position, request_json, state FROM queue_items WHERE item_id=?", (item_id,)
+            ).fetchone()
+            if item is None or item["state"] != "running":
+                raise QueueError("The item no longer holds its reservation.")
+            previous = json.loads(item["request_json"])["request_id"]
+            attempt = db.execute("SELECT attempt_id FROM attempts WHERE request_id=?", (previous,)).fetchone()
+            now = self._now()
+            db.execute(
+                "UPDATE queue_items SET state='pending', request_json=?, attempt_id=NULL, updated_at_utc=?"
+                " WHERE item_id=?",
+                (encoded, now, item_id),
+            )
+            self._event(
+                db,
+                item["queue_id"],
+                "item_returned",
+                now,
+                {
+                    "item_id": item_id,
+                    "position": item["position"],
+                    "previous_attempt_id": attempt["attempt_id"] if attempt else None,
+                    "previous_request_id": previous,
+                },
+            )
+
     async def unclaim_item(self, item_id: str) -> None:
         """Return a claimed item that never got an attempt to pending (what restart reconciliation does for it)."""
         await self._run(self._unclaim_item, item_id)
