@@ -1,6 +1,6 @@
 """Bottom-bar progress of one video run, in the spirit of the POC's console line.
 
-Shows the observed phase (waiting for DT+, sampling step n of N, a second pass only when DT+ reports one, receiving
+Shows the observed phase (DT+ Cloud processing, sampling step n of N, a second pass only when DT+ reports one, receiving
 frames k/F with the MB received, finalizing) and the seconds since the request was sent, refreshed every second so a
 silent wait never looks hung. The bar fill is one monotonic estimate for the whole run: each phase owns a window of it,
 filled by the observed step or frame count when DT+ reports one and by elapsed time (approaching the end of the window
@@ -21,7 +21,8 @@ from dtflow.ui.progress_stages import event_stage
 # no counter. Values are rough shares of a typical clip, not measurements.
 WINDOWS = {
     "preparing": (0.00, 0.03, 6.0),
-    "waiting": (0.03, 0.50, 60.0),
+    "waiting": (0.03, 0.50, 60.0),  # a local video resource
+    "cloud": (0.03, 0.50, 60.0),  # request sent: DT+ queues, prepares and generates before sampling steps appear
     "sampling": (0.50, 0.80, 120.0),
     "second_pass": (0.70, 0.80, 60.0),
     "receiving": (0.80, 0.93, 40.0),
@@ -66,7 +67,7 @@ class VideoProgress:
             value = low + (high - low) * min(1.0, max(0.0, self.done / self.total))
         else:
             elapsed = max(0.0, now - self.phase_started)
-            if self.phase == "waiting" and self.beats:
+            if self.phase == "cloud" and self.beats:
                 # Advance with DT+'s own messages: between two of them for at most one beat interval, so a silent
                 # connection stops moving the fill instead of creeping on.
                 elapsed = min(elapsed, self.beats * BEAT_SECONDS + min(BEAT_SECONDS, max(0.0, now - self.last_beat)))
@@ -92,7 +93,7 @@ class VideoProgress:
 
     def _observe(self, event: BackendEvent) -> bool:
         if event.kind == "progress" and event.stage == "waiting_heartbeat":
-            if self.phase == "waiting":
+            if self.phase == "cloud":
                 self.beats += 1
                 self.last_beat = time.monotonic()
             return True  # text unchanged: callers keep showing the phase label, not the raw stage name
@@ -108,7 +109,7 @@ class VideoProgress:
                 )
         elif event.kind == "submission_possible":
             self.sent_at = time.monotonic()
-            self._wait()
+            self.phase, self.text, self.done, self.total = "preparing", "Sending request", None, None  # until sent
         elif event.kind == "progress" and event.stage == "sampling":
             self.phase, self.done, self.total = "sampling", event.completed, event.total
             self.steps = (event.completed or 0, event.total or 0)
@@ -140,8 +141,8 @@ class VideoProgress:
         return True
 
     def _wait(self) -> None:
-        self.phase, self.done, self.total = "waiting", None, None
-        self.text = "Waiting for DT+"
+        self.phase, self.done, self.total = "cloud", None, None
+        self.text = "DT+ Cloud processing"
 
     def present(self, activity: Activity) -> None:
         origin = self.sent_at if self.sent_at is not None else self.started

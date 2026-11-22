@@ -982,11 +982,14 @@ class QueuePage:
                     if phases:
                         phase_names = {
                             "preparing": "preparing",
-                            "waiting": "waiting",
+                            "waiting": "waiting for local video resources",
+                            "cloud": "DT+ Cloud processing",
                             "sampling": "sampling",
                             "second_pass": "second pass",
                             "receiving": "receiving",
+                            "encoder_wait": "waiting for a local video encoder",
                             "encoding": "finalizing",
+                            "verifying": "finalizing",
                             "saving": "saving",
                         }
                         counts = {}
@@ -3551,7 +3554,7 @@ class QueuePage:
                 saved=saved,
                 waiting=waiting,
                 preview_gate=self._grid.gate if self._grid is not None else None,
-                on_event=lambda item_id, event: self._event_relay(_QueueBackendEvent(queue_id, item_id, event)),
+                on_event=lambda queue, item_id, event: self._event_relay(_QueueBackendEvent(queue, item_id, event)),
                 on_next=lambda settled, following: self._advance_relay(_QueueAdvance(settled, following)),
                 on_overlap=lambda started: self._overlap_relay(_QueueOverlap(started)),
                 manual=ManualSink(
