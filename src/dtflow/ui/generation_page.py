@@ -1193,6 +1193,7 @@ class GenerationPage:
 
     def dismiss_grid(self) -> None:
         """Another Generate run, or another mode, takes the output panel back: the grid goes, the batch runs on."""
+        self.grid_dismissed()  # also when no grid shows yet: a batch whose queue is still being created must not appear
         if self.grid.queue_id is None and not self._grid_hid:
             return
         self.grid.hide()
@@ -1200,7 +1201,6 @@ class GenerationPage:
         for widget in self._grid_hid:
             widget.show()
         self._grid_hid = []
-        self.grid_dismissed()
 
     def grid_dismissed(self) -> None:
         """Replaced by the window to tell the Queues page to stop feeding the grid."""

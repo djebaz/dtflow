@@ -142,6 +142,19 @@ class QueueThumbnails(QObject):
             self._waiting.append((self._epoch, key))
             self._pump()
 
+    def keep_only(self, keys: set[tuple[str, str | None]]) -> None:
+        """Forget the decodes still waiting for outputs nobody shows any more (a fast scroll); running ones finish."""
+        if not self._waiting:
+            return
+        kept: deque = deque()
+        for epoch, key in self._waiting:
+            if key in keys:
+                kept.append((epoch, key))
+            else:
+                self._queued.discard(key)
+                self._wanted.pop(key, None)
+        self._waiting = kept
+
     def pixmap(self, path: str, side: int = ROW_SIDE, identity: str | None = None) -> QPixmap | None:
         if self._closed or self._runner.closed or not identity:
             return None

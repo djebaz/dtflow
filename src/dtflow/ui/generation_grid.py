@@ -11,10 +11,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from PySide6.QtCore import QPoint, QRect, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QGuiApplication, QPainter, QPen, QPixmap
+from PySide6.QtGui import QColor, QGuiApplication, QPainter, QPen, QPixmap
 from PySide6.QtWidgets import QAbstractScrollArea, QLabel, QSizePolicy
 
 from dtflow.core.preview_gate import PreviewGate
+from dtflow.ui.theme import load_tokens
 from dtflow.ui.queue_thumbnails import PREVIEW_BOX, PREVIEW_DELAY_MS, PREVIEW_SIDE, QueueThumbnails
 
 GAP = 8
@@ -69,6 +70,11 @@ class GenerationGrid(QAbstractScrollArea):
         self.setFrameShape(QAbstractScrollArea.Shape.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.viewport().setMouseTracking(True)
+        colors = load_tokens()  # the design system's colours: the grid paints itself, so it reads the tokens
+        self._colors = {
+            name: QColor(colors[f"color.{name}"])
+            for name in ("canvas", "itemSurface", "sectionBorder", "secondary", "text")
+        }
         self.gate = PreviewGate()
         self.thumbnails = QueueThumbnails(runner, state, self, preview_cap=GRID_PIXMAPS)
         self.thumbnails.changed.connect(self._thumbnail_arrived)
@@ -167,6 +173,7 @@ class GenerationGrid(QAbstractScrollArea):
             self._visible = (first * columns, min(len(self._items) - 1, (last + 1) * columns - 1))
         wanted = self._items[self._visible[0] : self._visible[1] + 1]
         self.gate.set_wanted(item.request_id for item in wanted if item.state in LIVE_STATES and item.request_id)
+        self.thumbnails.keep_only({(item.outputs[0], item.identity) for item in wanted if item.saved})
         running = {item.item_id for item in wanted if item.state == "running"}
         self._live = {key: pm for key, pm in self._live.items() if key in running}
 
@@ -180,13 +187,8 @@ class GenerationGrid(QAbstractScrollArea):
     def paintEvent(self, event) -> None:
         painter = QPainter(self.viewport())
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        palette = self.palette()
-        frame = palette.color(palette.ColorRole.Mid)
-        base = palette.color(palette.ColorRole.AlternateBase)
-        text = palette.color(palette.ColorRole.WindowText)
-        small = QFont(self.font())
-        small.setPointSizeF(max(7.0, small.pointSizeF() - 1))
-        painter.setFont(small)
+        painter.fillRect(event.rect(), self._colors["canvas"])
+        frame, base, text = self._colors["sectionBorder"], self._colors["itemSurface"], self._colors["secondary"]
         for index in range(self._visible[0], self._visible[1] + 1):
             rect = self._rect(index)
             if not rect.intersects(event.rect()):

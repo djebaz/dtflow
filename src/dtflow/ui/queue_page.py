@@ -335,6 +335,7 @@ class QueuePage:
         self._grid = None  # the Generate grid (#560), set_grid
         self._grid_queue: str | None = None  # the one Generate batch the grid shows
         self._grid_reading = False
+        self._grid_token = 0  # the newest Generate submission; only it may show the grid when its queue exists
         self._varied: dict[str, dict] = {}  # items never change after creation, so their variation is read once
         self._resume_fallback: str | None = None
         self._list_key: tuple | None = None
@@ -1291,7 +1292,9 @@ class QueuePage:
         self.refresh()
 
     def grid_closed(self) -> None:
-        """Generate shows something else: the batch runs and saves on, and the grid is no longer fed."""
+        """Generate starts something else: any batch still being created, or already shown, runs and saves on but no
+        longer takes the output panel."""
+        self._grid_token += 1
         self._grid_queue = None
 
     def _refresh_grid(self) -> None:
@@ -2489,6 +2492,9 @@ class QueuePage:
         # A Generate Repeat of several items is a batch Generate shows as tiles (#560); one item stays an ordinary queue
         # here (a single Generate click has its own path), so a one-item origin `generate` queue is never made twice.
         generate_batch = from_generate and quick and count is not None and count > 1
+        if generate_batch:
+            self._grid_token += 1
+        token = self._grid_token
 
         async def work():
             drawn = plan
@@ -2512,7 +2518,7 @@ class QueuePage:
             self._runner.submit(
                 work(),
                 lambda result, failure: self._quick_created(
-                    result, failure, action, after_generation, count if generate_batch else None
+                    result, failure, action, after_generation, count if generate_batch else None, token
                 ),
             )
         else:
@@ -2771,7 +2777,13 @@ class QueuePage:
         activity_strip(self.page).complete("queue-quick", presentation.headline, presentation.detail, state)
 
     def _quick_created(
-        self, result, failure, action: str, after_generation: bool = False, grid_count: int | None = None
+        self,
+        result,
+        failure,
+        action: str,
+        after_generation: bool = False,
+        grid_count: int | None = None,
+        token: int = 0,
     ) -> None:
         """Like ``_created``, but the composer and the current tab stay as they are."""
         if failure is not None:
@@ -2783,7 +2795,7 @@ class QueuePage:
             return
         queue_id, status = result
         self._created_hook()
-        if grid_count is not None:
+        if grid_count is not None and token == self._grid_token:  # a newer Generate submission keeps its output
             self._grid_begin(queue_id, grid_count)
         if action == "start" and not self.dispatching_here and not self._activity.generating:
             self._dispatch(queue_id, resume_fallback=None)  # progress and results use the shared overlay
