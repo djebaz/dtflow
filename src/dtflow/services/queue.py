@@ -1,8 +1,10 @@
 """Rolling queue dispatch over the shared generation service.
 
 One dispatcher owns the state directory (through the store's ownership lock), claims items one at a time in queue order,
-and starts the next eligible item the moment a reservation is released: there is no group barrier. Reservations are
-taken durably before an attempt exists. Nothing here replays an attempt; an item that reached the remote boundary and
+and starts the next eligible item the moment a provider slot is free: there is no group barrier. A slot is taken from
+the owner's shared provider pool (``provider_admission``) when the item is claimed and freed when the provider has
+finished sampling it, so decoding and saving never hold up the next generation. The claim is durable before an attempt
+exists. Nothing here replays an attempt; an item that reached the remote boundary and
 came back unknown is settled as ``unknown`` (most likely no result will arrive), releases its reservation and does not
 block other work. The one automatic retry (``core.retry_policy``, #241) runs inside the item's reservation as a new
 attempt under a new request identity, recorded on the item before it is sent. No database transaction is held while generating.
@@ -45,12 +47,22 @@ from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.core.request_records import request_from_record
 from dtflow.services.assets import possible_missing_asset
 from dtflow.services.generation import GenerationService
+from dtflow.services.provider_admission import Permit, ProviderAdmission, QueueAdmission
 from dtflow.services.image_inputs import restore_image_inputs
 from dtflow.services.session import _require_flux1
 
 log = logging.getLogger(__name__)
 
 RECORDED_BACKEND_EVENTS = {"preparing", "submission_possible", "artifact_received", "terminal"}
+
+
+def _failure_data(failure: dict[str, Any]) -> dict[str, Any]:
+    """The item's recorded failure for its settled record: the explanation Queues shows, not a generic summary."""
+    return {
+        key: failure[key]
+        for key in ("code", "message", "category", "submission_stage", "remote_outcome")
+        if failure.get(key) is not None
+    }
 
 
 class QueueDispatcher:
@@ -65,6 +77,14 @@ class QueueDispatcher:
         trigger_prefix: Callable[[], bool] | None = None,
     ):
         self.store, self.service, self.poll, self.on_settle, self.on_event = store, service, poll, on_settle, on_event
+        if service.admission is None:
+            # A caller with no shared owner (tests, direct use) gets a private pool sized to its own backend.
+            owner = ProviderAdmission()
+            caps = service.backend.capabilities
+            service.admission = QueueAdmission(
+                owner.pool(f"{caps.backend_id}:-", caps.max_concurrency), owner.next_rank()
+            )
+        self.admission: QueueAdmission = service.admission
         self._trigger_prefix = trigger_prefix  # the Queues switch, read when each item runs (#373)
         self._asset_recovery: asyncio.Task | None = None
         self._recovery_active = False
@@ -82,7 +102,6 @@ class QueueDispatcher:
         A paused queue with nothing active keeps polling so a posted Resume can continue it; interrupting the process
         (Ctrl-C) ends dispatch and records honest evidence for whatever was active.
         """
-        limit = self.service.backend.capabilities.max_concurrency
         tasks: dict[asyncio.Task, str] = {}
         failure: BaseException | None = None
         await self.store.apply_controls(queue_id)
@@ -143,27 +162,43 @@ class QueueDispatcher:
                         self._asset_recovery.cancel()
                     for task in tasks:
                         task.cancel()
-                while failure is None and not self._recovery_active:
-                    claim = await self.store.claim_next(queue_id, limit)
-                    if claim is None:
-                        break
-                    item_id, request = claim
-                    task = asyncio.create_task(self._execute(queue_id, item_id, request))
-                    tasks[task] = item_id
-                if tasks:
-                    done, _ = await asyncio.wait(tasks, timeout=self.poll, return_when=asyncio.FIRST_COMPLETED)
-                    for task in done:
-                        del tasks[task]
-                        if not task.cancelled() and task.exception() is not None:
-                            failure = failure or task.exception()
-                    continue
-                if failure is not None:
-                    raise failure
-                state = await self.store.inspect_queue(queue_id)
-                if state["state"] == "cancelled" or not (state["summary"]["pending"] or state["summary"]["running"]):
-                    return state
-                await asyncio.sleep(self.poll)
+                changed = self.admission.pool.watch()  # armed before the claims, so a freed slot is never missed
+                try:
+                    while failure is None and not self._recovery_active:
+                        # The pool hands a slot to the oldest queue that wants one; this queue says whether it does.
+                        ready = await self.store.has_pending(queue_id)
+                        self.admission.want(ready)
+                        permit = self.admission.reserve() if ready else None
+                        if permit is None:
+                            break
+                        claim = await self.store.claim_next(queue_id, None)
+                        if claim is None:
+                            permit.close()
+                            break
+                        item_id, request = claim
+                        task = asyncio.create_task(self._execute(queue_id, item_id, request, permit))
+                        tasks[task] = item_id
+                    if tasks:
+                        done, _ = await asyncio.wait(
+                            (*tasks, changed), timeout=self.poll, return_when=asyncio.FIRST_COMPLETED
+                        )
+                        for task in done - {changed}:
+                            del tasks[task]
+                            if not task.cancelled() and task.exception() is not None:
+                                failure = failure or task.exception()
+                        continue
+                    if failure is not None:
+                        raise failure
+                    state = await self.store.inspect_queue(queue_id)
+                    if state["state"] == "cancelled" or not (
+                        state["summary"]["pending"] or state["summary"]["running"]
+                    ):
+                        return state
+                    await asyncio.wait((changed,), timeout=self.poll)
+                finally:
+                    self.admission.pool.unwatch(changed)
         finally:
+            self.admission.forget()
             if self._asset_recovery is not None and not self._asset_recovery.done():
                 self._asset_recovery.cancel()
             for task in tasks:
@@ -372,11 +407,15 @@ class QueueDispatcher:
             detail["designation"] = str(event.artifact.designation)
         return detail
 
-    async def _execute(self, queue_id: str, item_id: str, request: ResolvedGenerationRequest) -> None:
+    async def _execute(
+        self, queue_id: str, item_id: str, request: ResolvedGenerationRequest, permit: Permit | None = None
+    ) -> None:
+        """Run one claimed item; ``permit`` is the provider slot its claim took (the service closes it)."""
         evidence: asyncio.Queue[tuple[str, dict[str, Any], str | None] | None] = asyncio.Queue()
         writer = asyncio.create_task(self._event_writer(queue_id, evidence))
         failure: dict[str, Any] | None = None
         saved = None
+        retries = 0
 
         def receive(event: BackendEvent) -> None:
             if self.on_event is not None:
@@ -426,10 +465,11 @@ class QueueDispatcher:
                 if self._trigger_prefix is not None and request.loras and self._trigger_prefix():
                     request = apply_trigger_prefixes(request, await self.service.get_inventory(refresh=True))
                 await self._warn_unprepared(queue_id, item_id, request)
-                retries = 0
                 while True:
                     try:
-                        saved = await self.service.generate(request, on_event=receive, layout=layout, **options)
+                        saved = await self.service.generate(
+                            request, on_event=receive, layout=layout, permit=permit, **options
+                        )
                         await self._note_lora_outcome(queue_id, request, None)
                         break
                     except BackendError as exc:
@@ -445,11 +485,32 @@ class QueueDispatcher:
                             raise
                         retries += 1
                         retry, first = auto_retry_request(request), exc.failure
+                        if self.on_event is not None:
+                            self.on_event(
+                                item_id,
+                                BackendEvent(
+                                    request.request_id,
+                                    0,
+                                    "preparing",
+                                    datetime.now(timezone.utc).isoformat(),
+                                    stage="retrying",
+                                ),
+                            )
+                        # No slot is held while the retry waits; it takes its turn for one afterwards.
+                        await asyncio.sleep(AUTO_RETRY_DELAY)
+                        permit = await self.admission.acquire()
                         try:
+                            # A queue paused meanwhile sends nothing more: the item settles with its first failure.
+                            if (await self.store.inspect_queue(queue_id))["state"] != "running":
+                                raise exc from None
                             # Durable before anything is sent: settlement and restart find the retry's attempt.
                             await self.store.auto_retry_item(item_id, retry)
-                        except QueueError:
+                        except (QueueError, BackendError):
+                            permit.close()
                             raise exc from None
+                        except BaseException:
+                            permit.close()
+                            raise
                     request = retry
                     diagnostic_event(
                         log,
@@ -462,18 +523,6 @@ class QueueDispatcher:
                             **self.service._key_diagnostics(),
                         },
                     )
-                    if self.on_event is not None:
-                        self.on_event(
-                            item_id,
-                            BackendEvent(
-                                request.request_id,
-                                0,
-                                "preparing",
-                                datetime.now(timezone.utc).isoformat(),
-                                stage="retrying",
-                            ),
-                        )
-                    await asyncio.sleep(AUTO_RETRY_DELAY)
             except asyncio.CancelledError:
                 state = await settle(self.store.settle_item(item_id))
                 evidence.put_nowait(("item_settled", {"item_id": item_id, "state": state}, None))
@@ -521,11 +570,16 @@ class QueueDispatcher:
                 "queue.item_settled",
                 level=logging.INFO,
                 data={
+                    "queue_id": queue_id,
                     "item_id": item_id,
                     "state": state,
+                    "auto_retries": retries,
+                    **({"failure": _failure_data(failure)} if failure else {}),
                     **self.service._key_diagnostics(),
                 },
             )
         finally:
+            if permit is not None:
+                permit.close()  # normally already closed by the service; this covers a failure before it started
             evidence.put_nowait(None)
             await settle(writer)

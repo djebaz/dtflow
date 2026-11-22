@@ -27,6 +27,7 @@ from grpclib.const import Cardinality
 from dtflow.backends.drawthings.errors import error, from_exception
 from dtflow.backends.drawthings.versions import bundled_base_version
 from dtflow.backends.drawthings.wire import build_generation_message
+from dtflow.core import provider_phase
 from dtflow.core.models import (
     BackendError,
     BackendEvent,
@@ -377,6 +378,7 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
                         declared_download_bytes=declared_download_size,
                         unfinished_bytes=len(pending),
                     )
+                    provider_phase.provider_done()  # received everything: decoding, encoding and saving are local
                     if pending:
                         trace("unfinished_tensor", level=logging.WARNING, pending_bytes=len(pending))
                         raise _reject(request, "video_unfinished_tensor", stage)

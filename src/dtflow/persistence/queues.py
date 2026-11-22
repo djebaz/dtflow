@@ -520,19 +520,24 @@ class QueueMixin:
             and tail["backend_key"] == row["backend_key"]
         )
 
-    async def claim_queued(self, overlap_after: str | None = None, limit: int | None = None) -> str | None:
+    async def claim_queued(
+        self, overlap_after: str | None = None, limit: int | None = None, spare: bool | None = None
+    ) -> str | None:
         """Auto-play: atomically start the first up-next queue, or close the order when none waits.
 
         Picking and starting happen in one transaction, so a Pause, Cancel or reorder made before it is respected, and
         a queue can never join after the owner found the order empty.
 
         With ``overlap_after`` (a running queue whose items are all claimed) the first waiting queue starts early, only
-        while a slot is free on their shared backend (reservations below ``min(cap, limit)``, ``limit`` being the
-        backend's own maximum); otherwise nothing changes and the order stays open.
+        while a slot is free on their shared backend; otherwise nothing changes and the order stays open. A dispatch
+        owner with provider admission passes ``spare`` (the shared pool has capacity nobody wants); without it the
+        reservations must be below ``limit``, the backend's own maximum.
         """
-        return await self._run(self._claim_queued, overlap_after, limit)
+        return await self._run(self._claim_queued, overlap_after, limit, spare)
 
-    def _claim_queued(self, overlap_after: str | None = None, limit: int | None = None) -> str | None:
+    def _claim_queued(
+        self, overlap_after: str | None = None, limit: int | None = None, spare: bool | None = None
+    ) -> str | None:
         with self._txn() as db:
             row = db.execute(
                 "SELECT queue_id, backend_key, cap, kind FROM queues WHERE state='queued' ORDER BY up_next, created_at_utc"
@@ -555,8 +560,11 @@ class QueueMixin:
                     or tail["state"] != "running"
                     or tail["pending"]
                     or tail["backend_key"] != row["backend_key"]
-                    or limit is None
-                    or self._reserved(db, row["backend_key"]) >= _lane_bound(row, limit)
+                    or (
+                        not spare
+                        if spare is not None
+                        else limit is None or self._reserved(db, row["backend_key"]) >= _lane_bound(row, limit)
+                    )
                 ):
                     return None
             now = self._now()
@@ -583,18 +591,47 @@ class QueueMixin:
                 )
             return _release_queued(db, now, reason)
 
-    async def claim_next(self, queue_id: str, limit: int) -> tuple[str, Any] | None:
-        """Reserve the next eligible item, or None when paused, capped or exhausted."""
+    async def has_pending(self, queue_id: str) -> bool:
+        """Cheap read: is the queue running with an item it could hand out? (A dispatcher's demand for provider slots.)"""
+        return await self._run(self._has_pending, queue_id)
+
+    def _has_pending(self, queue_id: str) -> bool:
+        return (
+            self._db()
+            .execute(
+                "SELECT 1 FROM queues q WHERE queue_id=? AND state='running'"
+                " AND EXISTS (SELECT 1 FROM queue_items WHERE queue_id=q.queue_id AND state='pending')",
+                (queue_id,),
+            )
+            .fetchone()
+            is not None
+        )
+
+    async def claim_next(self, queue_id: str, limit: int | None) -> tuple[str, Any] | None:
+        """Reserve the next eligible item, or None when paused, capped or exhausted.
+
+        ``limit`` is the backend's own maximum when the database bounds the claims. A dispatch owner with provider
+        admission passes None: the provider pool bounds generations, and the database keeps only the one item a
+        script or workflow queue may run."""
         return await self._run(self._claim_next, queue_id, limit)
 
-    def _claim_next(self, queue_id: str, limit: int):
+    def _claim_next(self, queue_id: str, limit: int | None):
         with self._txn() as db:
             queue = db.execute("SELECT * FROM queues WHERE queue_id=?", (queue_id,)).fetchone()
             if queue is None:
                 raise QueueError("Unknown queue.")
             if queue["state"] != "running":
                 return None
-            if self._reserved(db, queue["backend_key"]) >= _lane_bound(queue, limit):
+            if limit is not None:
+                if self._reserved(db, queue["backend_key"]) >= _lane_bound(queue, limit):
+                    return None
+            elif (
+                queue["kind"] in (KIND_SCRIPT, KIND_WORKFLOW)
+                and db.execute(
+                    "SELECT COUNT(*) FROM queue_items WHERE queue_id=? AND state='running'", (queue_id,)
+                ).fetchone()[0]
+                >= queue["cap"]
+            ):
                 return None
             decode = {KIND_SCRIPT: script_request_from_record, KIND_WORKFLOW: workflow_request_from_record}.get(
                 queue["kind"], request_from_record
@@ -674,15 +711,18 @@ class QueueMixin:
         return parents + children["total"] - children["parents"]
 
     async def reserve_script_child(
-        self, queue_id: str, attempt_id: str, max_concurrent: int, backend_limit: int
+        self, queue_id: str, attempt_id: str, max_concurrent: int, backend_limit: int, shared: bool = False
     ) -> bool:
         """Atomically claim a script child lane without bypassing normal queue reservations.
 
         False means the lane is busy; the caller may poll, but must stop polling on Stop.
-        Child work is never submitted before the caller also links its attempt to the run."""
-        return await self._run(self._reserve_script_child, queue_id, attempt_id, max_concurrent, backend_limit)
+        Child work is never submitted before the caller also links its attempt to the run. With ``shared`` (provider
+        admission) the run's own limit is the only bound here: the provider pool orders each child's generation."""
+        return await self._run(self._reserve_script_child, queue_id, attempt_id, max_concurrent, backend_limit, shared)
 
-    def _reserve_script_child(self, queue_id: str, attempt_id: str, max_concurrent: int, backend_limit: int) -> bool:
+    def _reserve_script_child(
+        self, queue_id: str, attempt_id: str, max_concurrent: int, backend_limit: int, shared: bool = False
+    ) -> bool:
         if not 1 <= max_concurrent <= 10 or not 1 <= backend_limit <= MAX_QUEUE_CONCURRENCY:
             raise QueueError("Invalid script concurrency bound.")
         with self._txn() as db:
@@ -701,7 +741,7 @@ class QueueMixin:
             active = len(lanes)
             # The first child uses the parent reservation; further children need a free global lane.
             if active >= min(max_concurrent, backend_limit) or (
-                active > 0 and self._reserved(db, queue["backend_key"]) >= backend_limit
+                active > 0 and not shared and self._reserved(db, queue["backend_key"]) >= backend_limit
             ):
                 return False
             if attempt_id not in lanes:

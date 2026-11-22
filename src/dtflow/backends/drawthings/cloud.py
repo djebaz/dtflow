@@ -20,6 +20,7 @@ from dtflow.backends.drawthings.cloud_assets import (
 from dtflow.backends.drawthings.cloud_auth import CloudAuth
 from dtflow.backends.drawthings.errors import diagnostics
 from dtflow.backends.drawthings.tls import TlsPolicy
+from dtflow.core.provider_phase import OVERLAP
 from dtflow.core.models import (
     MAX_QUEUE_CONCURRENCY,
     AssetContent,
@@ -36,6 +37,8 @@ from dtflow.core.models import (
 class DirectCloudBackend(DrawThingsBackend):
     backend_id = "drawthings-cloud"
     unlisted_model_bridge = False
+    # DT+ queues work on its side; calls past their sampling phase may still be downloading beside the active ones.
+    lane_factor = OVERLAP
 
     @staticmethod
     def default_endpoint() -> DrawThingsEndpoint:
