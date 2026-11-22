@@ -169,38 +169,28 @@ def test_generate_keeps_the_event_loop_responsive_and_saves_the_final_image(wind
     window.runner.submit(other.aclose(), lambda *_: None)
 
 
-def test_run_ring_preserves_reported_sampler_step_across_stage_and_preview(window, qtbot, fake):
-    """Stage-only backend events must not erase a truthful step count from the header ring."""
+def test_generate_click_is_shown_as_queue_progress_and_keeps_its_sampler_step(window, qtbot, fake):
+    """The header follows the click's queue (#558); Generate keeps the last truthful step across stage-only events."""
     use, gate = fake
     use(gate=gate)
     page = window.generation_page
     page.generateButton.click()
-    qtbot.waitUntil(lambda: window.activity.run_state.detail.startswith("Sending request"), timeout=5000)
+    qtbot.waitUntil(lambda: window.activity.run_state.queue_id is not None, timeout=5000)
+    qtbot.waitUntil(lambda: page.generationStatusLabel.text().startswith("Generating."), timeout=5000)
     ring = window.shell.runControl
-    assert ring._phase == "running" and ring._completed is None
+    assert ring._phase == "running" and ring._completed == 0 and ring._total == 1
+    assert window.progress_strip.rows["run"].property("runIdentity").startswith("queue:")
 
     window.generation._event(BackendEvent("r", 100, "progress", "t", stage="sampling", completed=3, total=9))
-    assert ring._completed == 3 and ring._total == 9
-    assert window.progress_strip.rows["run"].activityCount.text() == "3 / 9"
-
+    assert "step 3/9" in page.generationStatusLabel.text()
     window.generation._event(BackendEvent("r", 101, "progress", "t", stage="decoding"))
-    assert ring._completed == 3 and ring._total == 9
-    assert "last reported step 3/9" in ring.toolTip()
-
-    preview = ImageArtifact("p", Designation.PREVIEW, "image/png", fixture_png(64, 64, 1), 64, 64)
-    window.generation._event(BackendEvent("r", 102, "preview", "t", artifact=preview))
-    assert ring._completed == 3 and ring._total == 9
-    assert "Preview shown (not the final image)" in ring.toolTip()
-
+    assert "step 3/9" in page.generationStatusLabel.text()
     window.generation._event(BackendEvent("r", 103, "progress", "t", stage="sampling", completed=4, total=9))
-    assert ring._completed == 4 and ring._total == 9
-    assert window.progress_strip.rows["run"].activityCount.text() == "4 / 9"
+    assert "step 4/9" in page.generationStatusLabel.text()
 
     window.runner._loop.call_soon_threadsafe(gate.set)
     qtbot.waitUntil(settled(window), timeout=5000)
-    page.generateButton.click()
-    assert ring._phase == "running" and ring._completed is None and ring._total is None
-    qtbot.waitUntil(settled(window), timeout=5000)
+    assert "run" not in window.progress_strip.rows
 
 
 def test_preview_is_shown_but_never_becomes_a_result(window, qtbot, fake):
@@ -208,15 +198,12 @@ def test_preview_is_shown_but_never_becomes_a_result(window, qtbot, fake):
     use(gate=gate)
     page = window.generation_page
     page.generateButton.click()
-    qtbot.waitUntil(
-        lambda: window.activity.run_state.detail.startswith("Sending request"), timeout=5000
-    )  # held at gate
+    qtbot.waitUntil(lambda: window.activity.run_state.queue_id is not None, timeout=5000)  # held at gate
     png = fixture_png(64, 64, 1)
     preview = ImageArtifact("p", Designation.PREVIEW, "image/png", png, 64, 64)
     window.generation._relay(BackendEvent("r", 99, "preview", "t", artifact=preview))
     qtbot.waitUntil(lambda: page.resultPreviewLabel.property("designation") == "preview", timeout=3000)
     assert page.resultList.count() == 0
-    qtbot.waitUntil(lambda: "Preview shown (not the final image)" in window.activity.run_state.detail, timeout=3000)
     window.runner._loop.call_soon_threadsafe(gate.set)
     qtbot.waitUntil(settled(window), timeout=5000)
 
@@ -238,7 +225,7 @@ def test_local_stop_reports_recorded_evidence_not_remote_cancellation(window, qt
     use(gate=gate)
     page = window.generation_page
     page.generateButton.click()
-    qtbot.waitUntil(lambda: window.activity.run_state.detail.startswith("Sending request"), timeout=5000)
+    qtbot.waitUntil(lambda: "Sending request" in page.generationStatusLabel.text(), timeout=5000)
     window.progress_strip.rows["run"].activityStopButton.click()
     qtbot.waitUntil(settled(window), timeout=5000)
     text = page.generationStatusLabel.text()

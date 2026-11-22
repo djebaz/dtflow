@@ -550,6 +550,11 @@ class QueuePage:
             and self._overlapping <= self._manual_queues
         )
 
+    @property
+    def _generate_presents(self) -> bool:
+        """A Generate run that is not a one-item queue (inpaint, Controlnet, video) shows its own progress."""
+        return self._activity.generating and self._manual is None and not self._manual_runs
+
     def _owns(self, queue_id: str | None) -> bool:
         """This window dispatches ``queue_id``: the primary queue or one auto-started early beside it."""
         return queue_id is not None and (queue_id == self._dispatching or queue_id in self._overlapping)
@@ -851,11 +856,15 @@ class QueuePage:
             active = self._views.get(self._dispatching)
             if active is not None:
                 return active
+        if self._manual is not None:  # a Generate click whose queue is not dispatched yet
+            shown = self._views.get(self._manual.queue_id)
+            if shown is not None:
+                return shown
         return self._view()
 
     @profile_slow_gui_callback("queue.publish_run_state")
     def _publish_run_state(self) -> None:
-        if self._activity.generating or self._manual is not None:  # Generate presents its own run
+        if self._generate_presents:  # a non-queue Generate run presents its own progress
             self._timing_timer.stop()
             self._countdown.reset()
             return
@@ -3328,7 +3337,8 @@ class QueuePage:
             manual = self._manual
             if manual is not None and wrapped.queue_id == manual.queue_id:
                 manual.sink.event(event)  # the click Generate shows: progress and previews appear in Generate
-            return
+            if event.kind in ("assets_restored", "assets_failed", "assets_inconclusive"):
+                return  # Generate reports these itself; the stage and step tracking below also feeds the global bar
         if event.kind in ("assets_restored", "assets_failed", "assets_inconclusive"):
             if event.stage:
                 titles = {
@@ -3387,7 +3397,7 @@ class QueuePage:
 
     def trigger_run_control(self) -> None:
         """Route the compact header control through the same Start/Pause/Resume paths as the Queues page."""
-        if self._activity.generating:
+        if self._generate_presents:
             return
         view = self._run_view()
         available = self._controls_for(view)
@@ -3537,7 +3547,7 @@ class QueuePage:
 
     def cancel_run(self) -> None:
         """Stop the locally owned run shown globally, independently of the selected queue."""
-        if self._runner.closed or self._activity.generating or not self.dispatching_here:
+        if self._runner.closed or self._generate_presents or not self.dispatching_here:
             return
         view = self._run_view()
         if view is None or not self._owns(view["queue_id"]) or not self._controls_for(view).cancel:

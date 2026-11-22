@@ -337,6 +337,12 @@ class GenerationPage:
         self._run_pose = False
         self._run_video = False
         self._video_progress = VideoProgress()
+        self._stage_tick = QTimer(page)  # a queued click's page text keeps counting while the provider is silent
+        self._stage_tick.setInterval(1000)
+        self._stage_tick.timeout.connect(self._tick_stage)
+        self._queued_stage = ""  # the last observed stage and sampler step of the queued click shown here
+        self._queued_steps: tuple[int, int] | None = None
+        self._queued_stage_since = 0.0
         self._video_tick = QTimer(page)
         self._video_tick.setInterval(1000)
         self._video_tick.timeout.connect(self._tick_video)
@@ -1106,6 +1112,13 @@ class GenerationPage:
         if not self._generating:
             return
         reported = type(completed) is int and type(total) is int and total > 0 and 0 <= completed <= total
+        if self._queued_run:
+            if reported:
+                self._queued_steps = (completed, total)
+            if stage != self._queued_stage:
+                self._queued_stage, self._queued_stage_since = stage, time.monotonic()
+            self._show_queued_stage()
+            return
         if not reported:
             current = self._activity.run_state
             if current.owner == "generation" and current.phase == "running":
@@ -1125,6 +1138,22 @@ class GenerationPage:
                 detail=detail,
             )
         )
+
+    def _show_queued_stage(self) -> None:
+        """The shown click's last observed stage and step, with how long that stage has been the latest news."""
+        detail = self._queued_stage
+        if self._queued_steps is not None:
+            detail += f" · step {self._queued_steps[0]}/{self._queued_steps[1]}"
+        waited = int(time.monotonic() - self._queued_stage_since)
+        if waited >= 3:
+            detail += f" · {waited} s since the last update"
+        self._status(Presentation("warning", "Generating", detail))
+
+    def _tick_stage(self) -> None:
+        if self._runner.closed or not (self._generating and self._queued_run):
+            self._stage_tick.stop()
+            return
+        self._show_queued_stage()
 
     def _show_image(self, encoded: bytes, designation: str, backend_id: str | None = None) -> None:
         pixmap = QPixmap()
@@ -1343,6 +1372,12 @@ class GenerationPage:
         self._stage_started = time.monotonic()
         self._stage_seen = {}
         self._generating = True
+        if manual:
+            # In this page a queued click is presented by its status line; the global bar starts as "Generation" and
+            # becomes the shared queue progress once the queue run publishes its state.
+            self._queued_stage, self._queued_steps = "Preparing generation", None
+            self._queued_stage_since = time.monotonic()
+            self._stage_tick.start()
         self._activity.set(
             generating=True,
             run_state=RunState(
@@ -1485,10 +1520,19 @@ class GenerationPage:
         """The queue item's saved result or failure; neither means the run was stopped (or cancelled with the owner)."""
         self._generated(outcome, failure if (outcome is not None or failure is not None) else asyncio.CancelledError())
 
+    def _end_run(self) -> None:
+        """The click's run is over. A queued click leaves the run state to the queue it shared; others reset it."""
+        queued = self._queued_run
+        self._generating, self._queued_run = False, False
+        self._stage_tick.stop()
+        if queued and self._activity.run_state.owner != "generation":
+            self._activity.set(generating=False)
+        else:
+            self._activity.set(generating=False, run_state=RunState())
+
     def refused(self, presentation: Presentation) -> None:
         """Another process owns dispatch: the request waits paused in Queues, nothing was sent."""
-        self._queued_run, self._generating = False, False
-        self._activity.set(generating=False, run_state=RunState())
+        self._end_run()
         self._sync_generate()
         self._status(presentation)
         activity_strip(self.page).complete("generation-result", presentation.headline, presentation.detail, "stopped")
@@ -1547,8 +1591,7 @@ class GenerationPage:
             request_id = self._request.request_id
             self._runner.submit(read_attempt(self._state, request_id), self._interrupted)
             return
-        self._generating, self._queued_run = False, False
-        self._activity.set(generating=False, run_state=RunState())
+        self._end_run()
         self._sync_generate()
         if self.lora.loras:
             self.lora.refresh_holdings()  # a restore or a refusal changed what the key holds
@@ -1732,8 +1775,7 @@ class GenerationPage:
             self._future.cancel()
 
     def _interrupted(self, evidence, failure) -> None:
-        self._generating, self._queued_run = False, False
-        self._activity.set(generating=False, run_state=RunState())
+        self._end_run()
         self._sync_generate()
         presentation = present_generation_failure(failure) if failure else present_interruption(evidence)
         self._status(presentation)

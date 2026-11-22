@@ -65,6 +65,11 @@ batch keeps its origin but has ordinary priority. No schema change: the marker i
   its trigger-prefix switch (`generate`). Its events (real queue and item), saved result or failure, and end go to
   Generate through `ManualSink`; other queues keep the existing relay untouched.
 - **Several clicks.** Each click is its own queue with manual priority (`_manual_runs` by queue id); Generate follows only the latest (`_manual`), events and results of earlier ones are dropped from Generate and live in Queues. If the owner ends first, all unreported clicks are handed back together (`waiting`) and dispatched again.
+- **Progress presentation.** The header bar is the queue run's (`_run_view`: the dispatched queue, else the shown click's
+  queue), not Generate's; `_generate_presents` is true only for runs that are not one-item queues. Events of a Generate
+  queue are forwarded to the shown click and also tracked like any queue's, so the bar's stage and step come from the
+  same observed events. Generate's page keeps the last stage and step and shows the seconds since the last update
+  (`_stage_tick`, 1 s); no percentage or time estimate is derived.
 - **Stop and Retry.** Stop cancels this queue only (a waiting one at once, a started one through a posted control; the
   service records the local-stop evidence, read beside the owner by `read_attempt_record`). Retry is the queue's own
   in-place item retry (`retry_queue_item`): same item, recorded settings and seed, a new request and attempt, the

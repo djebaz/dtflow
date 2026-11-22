@@ -1514,7 +1514,9 @@ class MainWindow:
         if marker != self._last_run_marker:
             self._last_run_marker = marker
             self.gallery.notify_changed()
-        generating = self.activity.generating  # a Generate click's queue runs under Generate's own presentation
+        # A Generate click's queue shows as queue progress once the queue run publishes; until then (and for runs that
+        # are not one-item queues) the row is Generation's.
+        generating = self.activity.generating and not (self.generation.queued_run and state.owner != "generation")
         if not (generating or self.activity.dispatching) or (not generating and self.queue.generate_settling):
             self.progress_strip.finish("run")
             return
