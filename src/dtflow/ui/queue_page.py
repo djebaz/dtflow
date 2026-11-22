@@ -983,11 +983,10 @@ class QueuePage:
                         phase_names = {
                             "preparing": "preparing",
                             "waiting": "waiting for local resources",
-                            "cloud": "Cloud processing",
+                            "cloud": "DT+ Cloud processing",
                             "sampling": "sampling",
                             "second_pass": "second pass",
                             "receiving": "receiving",
-                            "encoder_wait": "waiting for local encoder",
                             "encoding": "finalizing",
                             "saving": "saving",
                         }
