@@ -87,6 +87,7 @@ from dtflow.ui.dt_storage_overlay import DtStorageOverlay, SegmentMeter, gigabyt
 from dtflow.ui.lora_metadata_overlay import LoraMetadataOverlay
 from dtflow.ui.lora_hints import HintLibrary, PromptHintOverlay
 from dtflow.ui.lora_trigger_panel import LoraTriggerPanel
+from dtflow.ui.video_encoding_panel import VideoEncodingPanel
 from dtflow.ui.workflow_defaults_panel import WorkflowDefaultsPanel
 from dtflow.ui.gallery_page import GalleryPage
 from dtflow.ui.generation_page import GenerationPage
@@ -829,6 +830,7 @@ class MainWindow:
             on_unavailable=self._show_usage_unavailable,
         )
         self.workflow_defaults = WorkflowDefaultsPanel(form, self.runner, self.state_dir)
+        self.video_encoding = VideoEncodingPanel(form, self.runner, self.state_dir)
         self.lora_triggers = LoraTriggerPanel(
             form, self.runner, self.state_dir, self.generation.page.triggerPrefixCheck
         )

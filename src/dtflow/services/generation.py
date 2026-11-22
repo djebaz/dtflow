@@ -536,11 +536,9 @@ class GenerationService:
                 RemoteOutcome.UNKNOWN,
             )
             state, stage, outcome = "possibly_submitted", SubmissionStage.POSSIBLY_SUBMITTED, RemoteOutcome.UNKNOWN
-            from dtflow.core.video import VIDEO_TOTAL_TIMEOUT
-
-            total_timeout = (
-                max(self.timeouts.total, VIDEO_TOTAL_TIMEOUT) if request.num_frames is not None else self.timeouts.total
-            )
+            # A video's deadline covers remote receiving only and is enforced inside the video path; a downloaded
+            # clip waiting for a local encoder (cancellable) must not expire here (#550).
+            total_timeout = None if request.num_frames is not None else self.timeouts.total
             async with asyncio.timeout(total_timeout):
                 result = await self.backend.generate(request, on_event=receive)
             stage = SubmissionStage.TERMINAL_OBSERVED

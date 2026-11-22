@@ -1,10 +1,11 @@
 """One video generation on Draw Things: send, receive N one-frame tensors plus an optional audio tensor, encode an MP4.
 
 The image path (``DrawThingsBackend.generate``) keeps its own limits; a clip is far bigger (86 MiB at 384x640) and
-takes minutes (up to 243 s seen), so this path has its own total deadline and no transport cap. Frames go to ffmpeg as
-they arrive. The result carries the poster (first frame, PNG) as the only final artifact, plus the temporary MP4 path
-and the probed facts in the artifact metadata; the artifact saver (``services.video_artifacts``) moves the MP4 beside
-the poster.
+takes minutes (up to 243 s seen), so this path has its own receive deadline and no transport cap. Received frame
+tensors are written to a disk spool in arrival order. Once the stream ends, the clip waits (cancellably) for a local
+encoder slot, then ffmpeg encodes from the spool. The result carries the poster (first frame, PNG) as the only final
+artifact, plus the temporary MP4 path and the probed facts in the artifact metadata; the artifact saver
+(``services.video_artifacts``) moves the MP4 beside the poster.
 """
 
 from __future__ import annotations
@@ -13,7 +14,9 @@ import asyncio
 import logging
 import struct
 import tempfile
+import threading
 import time
+from contextlib import AsyncExitStack, closing
 from dataclasses import replace
 from pathlib import Path
 
@@ -40,7 +43,14 @@ from dtflow.core.tasks import settle
 from dtflow.core.video import START_IMAGE_EVIDENCE, VIDEO_TOTAL_TIMEOUT, audio_rate, playback_fps, video_profile
 from dtflow.diagnostics import api_error_data, event as diagnostic_event
 from dtflow.services import video_encode
-from dtflow.services.video_resources import AUDIO_LIMIT, MP4_LIMIT, TENSOR_LIMIT, recheck_video_storage
+from dtflow.services.video_resources import (
+    AUDIO_LIMIT,
+    MP4_LIMIT,
+    SPOOL_RESERVE,
+    TENSOR_LIMIT,
+    grow_video_spool,
+    recheck_video_storage,
+)
 
 log = logging.getLogger(__name__)
 GENERATE_METHOD = "/ImageGenerationService/GenerateImage"
@@ -59,6 +69,61 @@ def _frame_rgb(tensor: bytes) -> tuple[int, int, bytes]:
     buffer = ImageBuffer.from_tensor(tensor)
     pixels = np.frombuffer(buffer.data, dtype=np.uint8).reshape(buffer.height, buffer.width, buffer.channels)
     return buffer.width, buffer.height, np.ascontiguousarray(pixels[:, :, :3]).tobytes()
+
+
+def _tensor_size(tensor: bytes) -> tuple[int, int] | None:
+    """Width and height from a received tensor's header, or None when it is truncated or outside the policy."""
+    if len(tensor) < 68:
+        return None
+    height, width, channels = struct.unpack_from("<3I", tensor, 24)
+    if not width or not height or width * height > 2048 * 2048 or channels not in (3, 4):
+        return None
+    return width, height
+
+
+def _encode_spool(spool: video_encode.TensorSpool, sink: video_encode.FrameSink, stop: threading.Event) -> bytes:
+    """Feed the spooled tensors, in order, through the encoder and return the poster PNG (worker thread).
+
+    The first frame's decode also makes the poster; ffmpeg starts here, not while receiving. ``stop`` is set when the
+    item is cancelled: the loop then ends at the next frame.
+    """
+    poster = None
+    try:
+        with closing(spool.read()) as tensors:
+            for tensor in tensors:
+                if stop.is_set():
+                    raise video_encode.EncodeError("Local encoding was cancelled.")
+                width, height, rgb = _frame_rgb(tensor)
+                if poster is None:
+                    poster = encode_png(rgb, width, height, 3)
+                sink.put(width, height, rgb)
+    except OSError as exc:
+        raise video_encode.EncodeError(
+            f"The received frame data could not be read back ({type(exc).__name__})."
+        ) from exc
+    sink.finish()
+    if poster is None:
+        raise video_encode.EncodeError("No frames were available to encode.")
+    return poster
+
+
+async def _encode_cancellably(spool: video_encode.TensorSpool, sink: video_encode.FrameSink) -> bytes:
+    """Run the encode worker; on cancellation stop it and kill ffmpeg so it ends promptly, then re-raise."""
+    stop = threading.Event()
+    task = asyncio.ensure_future(video_encode.run_worker(_encode_spool, spool, sink, stop))
+    try:
+        return await asyncio.shield(task)
+    except asyncio.CancelledError:
+        stop.set()
+        sink.interrupt()
+        while not task.done():  # the worker returns within a frame once ffmpeg is gone
+            try:
+                await asyncio.wait({task})
+            except asyncio.CancelledError:
+                pass
+        if not task.cancelled():
+            task.exception()  # retrieved: its error is the cancellation itself
+        raise
 
 
 def _audio_raw(data: bytes, target: Path) -> int:
@@ -127,6 +192,10 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
     stream = None
     work = Path(tempfile.mkdtemp(prefix="dtflow-video-"))
     sink = video_encode.FrameSink(ffmpeg, playback_fps(request.model_id), work / "video.mp4.partial")
+    spool = video_encode.TensorSpool(
+        work / "frames.spool", SPOOL_RESERVE, lambda chunk: grow_video_spool(request.request_id, chunk)
+    )
+    slot = AsyncExitStack()  # holds the local encoder slot from the wait until the encode and audio mux end
     frames = 0
     received = 0
     audio = bytearray()
@@ -174,7 +243,7 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
 
     backend._active += 1
     try:
-        async with asyncio.timeout(deadline):
+        async with asyncio.timeout(deadline) as receive_deadline:
             emit("preparing", stage="video_preparing")
             emit("preparing", stage="resolving_model")
             spec = await backend._model_spec(request.model_id)
@@ -262,12 +331,17 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
                                 continue
                             tensor = bytes(pending)
                             pending.clear()
-                            width, height, rgb = await settle(video_encode.run_worker(_frame_rgb, tensor))
-                            if (width, height) != (request.width_px, request.height_px):
+                            size = _tensor_size(tensor)
+                            if size is None:
+                                raise _reject(request, "video_tensor_invalid", stage)
+                            if size != (request.width_px, request.height_px):
                                 raise _reject(request, "tensor_dimensions_mismatch", stage)
-                            if poster is None:
-                                poster = await settle(video_encode.run_worker(encode_png, rgb, width, height, 3))
-                            await settle(video_encode.run_worker(sink.put, width, height, rgb))
+                            try:
+                                await settle(video_encode.run_worker(spool.append, tensor))
+                            except OSError as exc:
+                                raise video_encode.EncodeError(
+                                    f"The received frames could not be written to disk ({type(exc).__name__})."
+                                ) from exc
                             frames += 1
                             received += len(tensor)
                             last_stage = "receiving_frames"
@@ -306,7 +380,7 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
                     if pending:
                         trace("unfinished_tensor", level=logging.WARNING, pending_bytes=len(pending))
                         raise _reject(request, "video_unfinished_tensor", stage)
-            if frames == 0 or poster is None:
+            if frames == 0:
                 raise _reject(request, "no_final_output", stage)
             if frames != request.num_frames:
                 trace(
@@ -317,10 +391,27 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
                     reason="incomplete_frame_count",
                 )
                 raise _reject(request, "video_frame_count_mismatch", stage)
+            # The stream is closed and the receive deadline has done its job: waiting for a local encoder
+            # (cancellable) never expires an already downloaded clip. ffmpeg keeps its own bounded timeouts.
+            receive_deadline.reschedule(None)
+            await settle(video_encode.run_worker(spool.finish_writing))
+            trace("spool_ready", received_frames=frames, spool_bytes=spool.size)
+            wait_started = time.monotonic()
+            await slot.enter_async_context(
+                video_encode.encoder_slot(on_wait=lambda: emit("progress", stage="waiting_local_encoder"))
+            )
             emit("progress", stage="encoding_video")
             encode_started = time.monotonic()
-            trace("encode_started", received_frames=frames, playback_fps=playback_fps(request.model_id))
-            await settle(video_encode.run_worker(sink.finish))
+            trace(
+                "encode_started",
+                received_frames=frames,
+                playback_fps=playback_fps(request.model_id),
+                waited_ms=round((encode_started - wait_started) * 1000),
+                codec_threads=video_encode.effective_threads(),
+                max_encoders=video_encode.policy_encoders() or "unlimited",
+            )
+            poster = await _encode_cancellably(spool, sink)
+            await settle(video_encode.run_worker(spool.delete))
             trace(
                 "encode_finished",
                 duration_ms=round((time.monotonic() - encode_started) * 1000),
@@ -374,6 +465,8 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
                         duration_ms=round((time.monotonic() - mux_started) * 1000),
                         **evidence,
                     )
+            await slot.aclose()  # encoding and muxing are done; verification below needs no encoder slot
+            emit("progress", stage="verifying_video")
             final = work / "video.mp4"
             video.replace(final)
             probe_started = time.monotonic()
@@ -485,6 +578,34 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
             category=ErrorCategory.RESOURCE_LIMIT,
             message="Video reached the local MP4 size limit and was not saved. Provider work may already have been charged.",
         ) from None
+    except video_encode.EncodeError as exc:
+        # Local failure (disk or ffmpeg) after or while receiving: say so, never pass it off as a provider rejection.
+        evidence = (
+            api_error_data(
+                message=str(exc),
+                private=(str(work), str(sink.partial), request.prompt, request.negative_prompt),
+            )
+            if log.isEnabledFor(logging.DEBUG)
+            else {}
+        )
+        local_stage = "encoding" if stage is SubmissionStage.TERMINAL_OBSERVED else "receiving"
+        trace(
+            "failed",
+            level=logging.WARNING,
+            reason=type(exc).__name__,
+            local_stage=local_stage,
+            submission_stage=stage.value,
+            elapsed_ms=round((time.monotonic() - started) * 1000),
+            **evidence,
+        )
+        reason = (str(exc).splitlines() or [""])[0].replace(str(work), "<temp>")[:160]
+        raise _reject(
+            request,
+            "video_local_failure",
+            stage,
+            category=ErrorCategory.RESOURCE_LIMIT,
+            message=f"Local video processing failed while {local_stage} ({reason}). Provider work may already have been charged.",
+        ) from None
     except Exception as exc:
         evidence = (
             api_error_data(
@@ -520,10 +641,16 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
     finally:
         backend._active -= 1
         try:
-            try:
-                await settle(asyncio.to_thread(sink.finish, abort=True))
-            except Exception:
-                pass
+            # Each step is best effort and none may skip the next: the spool handle must be closed before rmtree.
+            for step in (
+                lambda: asyncio.to_thread(sink.finish, abort=True),  # FFmpeg is gone before its slot is released
+                slot.aclose,
+                lambda: video_encode.run_worker(spool.delete),
+            ):
+                try:
+                    await settle(step())
+                except Exception:
+                    pass
         finally:
             if not keep:
                 import shutil
