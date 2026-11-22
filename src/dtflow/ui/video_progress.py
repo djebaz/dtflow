@@ -109,7 +109,7 @@ class VideoProgress:
                 )
         elif event.kind == "submission_possible":
             self.sent_at = time.monotonic()
-            self._wait()
+            self.phase, self.text, self.done, self.total = "preparing", "Sending request", None, None  # until sent
         elif event.kind == "progress" and event.stage == "sampling":
             self.phase, self.done, self.total = "sampling", event.completed, event.total
             self.steps = (event.completed or 0, event.total or 0)
