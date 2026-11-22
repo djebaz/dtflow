@@ -1247,6 +1247,30 @@
             </widget>
            </item>
            <item>
+            <widget class="QGroupBox" name="videoEncodingBox">
+             <property name="title"><string /></property>
+             <property name="role" stdset="0"><string>sectionCard</string></property>
+             <property name="accessibleName"><string>Local video encoding</string></property>
+             <layout class="QVBoxLayout" name="videoEncodingCardLayout">
+              <property name="leftMargin"><number>0</number></property><property name="topMargin"><number>0</number></property>
+              <property name="rightMargin"><number>0</number></property><property name="bottomMargin"><number>0</number></property>
+              <property name="spacing"><number>0</number></property>
+              <item><widget class="QFrame" name="videoEncodingHeader"><property name="role" stdset="0"><string>sectionHeader</string></property>
+               <layout class="QHBoxLayout" name="videoEncodingHeaderLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>7</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>7</number></property>
+                <item><widget class="QLabel" name="videoEncodingHeading"><property name="text"><string>Local video encoding</string></property><property name="textRole" stdset="0"><string>panelHeading</string></property></widget></item>
+               </layout></widget></item>
+              <item><widget class="QWidget" name="videoEncodingContents"><property name="role" stdset="0"><string>sectionContents</string></property>
+               <layout class="QVBoxLayout" name="videoEncodingLayout"><property name="leftMargin"><number>10</number></property><property name="topMargin"><number>8</number></property><property name="rightMargin"><number>10</number></property><property name="bottomMargin"><number>10</number></property><property name="spacing"><number>8</number></property>
+                <item><widget class="QLabel" name="videoEncodingNote"><property name="text"><string>Applies to the FFmpeg work on this computer after DT+ has sent a video, not to how many clips DT+ generates at once. Changes apply to the next video that starts encoding.</string></property><property name="wordWrap"><bool>true</bool></property><property name="role" stdset="0"><string>secondary</string></property></widget></item>
+                <item><widget class="QLabel" name="videoEncodersSpinLabel"><property name="text"><string>Max concurrent video encoders</string></property><property name="textRole" stdset="0"><string>caption</string></property><property name="buddy"><cstring>videoEncodersSpin</cstring></property></widget></item>
+                <item><widget class="QSpinBox" name="videoEncodersSpin"><property name="specialValueText"><string>Unlimited</string></property><property name="minimum"><number>0</number></property><property name="maximum"><number>10</number></property><property name="accessibleName"><string>Max concurrent video encoders</string></property><property name="toolTip"><string>The most videos that are encoded on this computer at the same time. Unlimited adds no cap beyond the existing limit of 10 videos in progress. Videos that have finished downloading wait for a free encoder.</string></property></widget></item>
+                <item><widget class="QLabel" name="videoThreadsSpinLabel"><property name="text"><string>FFmpeg threads per encoder</string></property><property name="textRole" stdset="0"><string>caption</string></property><property name="buddy"><cstring>videoThreadsSpin</cstring></property></widget></item>
+                <item><widget class="QSpinBox" name="videoThreadsSpin"><property name="specialValueText"><string>Auto</string></property><property name="minimum"><number>0</number></property><property name="maximum"><number>16</number></property><property name="accessibleName"><string>FFmpeg threads per encoder</string></property><property name="toolTip"><string>Codec threads each video encoder uses. Auto picks a number from this computer's CPU cores. Unlimited encoders with many threads can overload a slow CPU; lower either value if the computer becomes sluggish.</string></property></widget></item>
+               </layout></widget></item>
+             </layout>
+            </widget>
+           </item>
+           <item>
             <widget class="QGroupBox" name="loraTriggerBox">
              <property name="title"><string /></property>
              <property name="role" stdset="0"><string>sectionCard</string></property>

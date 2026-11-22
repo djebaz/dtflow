@@ -189,6 +189,47 @@ def save_workflow_defaults(state: Path, values: dict[str, int]) -> Path:
     return _write(state, document)
 
 
+# Local video encoding (#550): how many FFmpeg encoders may run at once and how many codec threads each one uses.
+# 0 means Unlimited encoders (no cap beyond the video admission limit) and Auto threads (chosen from the CPU count).
+MAX_VIDEO_ENCODERS = MAX_QUEUE_CONCURRENCY
+MAX_VIDEO_THREADS = 16
+VIDEO_ENCODING_KEYS = ("video_max_encoders", "video_encoder_threads")
+
+
+def _bounded_int(value: object, maximum: int) -> int:
+    return value if type(value) is int and 0 <= value <= maximum else 0
+
+
+def load_video_encoding(state: Path) -> tuple[int, int]:
+    """The saved ``(max encoders, threads per encoder)``; a missing or invalid value is 0 (Unlimited / Auto)."""
+    document = _read(state)
+    return (
+        _bounded_int(document.get(VIDEO_ENCODING_KEYS[0]), MAX_VIDEO_ENCODERS),
+        _bounded_int(document.get(VIDEO_ENCODING_KEYS[1]), MAX_VIDEO_THREADS),
+    )
+
+
+def save_video_encoding(state: Path, encoders: int, threads: int) -> None:
+    """Save both video encoding preferences without touching other settings."""
+    if (
+        type(encoders) is not int
+        or not 0 <= encoders <= MAX_VIDEO_ENCODERS
+        or type(threads) is not int
+        or not 0 <= threads <= MAX_VIDEO_THREADS
+    ):
+        raise SettingsError("Video encoding settings are out of range.")
+    with _VIDEO_ENCODING_LOCK:
+        document = _read(state)
+        values = dict(zip(VIDEO_ENCODING_KEYS, (encoders, threads), strict=True))
+        if all(document.get(key) == value for key, value in values.items()):
+            return
+        document.update(values)
+        _write(state, document)
+
+
+_VIDEO_ENCODING_LOCK = threading.Lock()
+
+
 # Small, durable Logs view preferences.  The reader remains independent of these choices.
 # Text can contain user-entered search terms: never include preferences in diagnostic events.
 LOG_STRING_LIMITS = {

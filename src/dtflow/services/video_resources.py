@@ -14,8 +14,10 @@ MIB = 1024 * 1024
 TENSOR_LIMIT = 64 * MIB
 AUDIO_LIMIT = 64 * MIB
 MP4_LIMIT = 256 * MIB
-# Encoder MP4 + muxed MP4 + bounded raw audio, with 24 MiB for container/packet overhead.
-SCRATCH_RESERVE = 2 * MP4_LIMIT + AUDIO_LIMIT + 24 * MIB
+# Reservation estimate (not a download cap) for the received-frame spool: 500 MB, so ten admitted clips budget 5 GB.
+SPOOL_RESERVE = 500 * MIB
+# Frame spool + encoder MP4 + muxed MP4 + bounded raw audio, with 24 MiB for container/packet overhead.
+SCRATCH_RESERVE = SPOOL_RESERVE + 2 * MP4_LIMIT + AUDIO_LIMIT + 24 * MIB
 # Final MP4 (256 MiB), poster (at most 32 MiB), and bounded sidecar/commit overhead.
 OUTPUT_RESERVE = 300 * MIB
 DISK_HEADROOM = 256 * MIB

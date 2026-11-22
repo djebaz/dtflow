@@ -25,8 +25,10 @@ WINDOWS = {
     "sampling": (0.50, 0.80, 120.0),
     "second_pass": (0.70, 0.80, 60.0),
     "receiving": (0.80, 0.93, 40.0),
-    "encoding": (0.93, 0.98, 10.0),
-    "saving": (0.98, 0.995, 3.0),
+    "encoder_wait": (0.93, 0.94, 30.0),
+    "encoding": (0.94, 0.98, 10.0),
+    "verifying": (0.98, 0.99, 3.0),
+    "saving": (0.99, 0.995, 3.0),
 }
 
 
@@ -115,13 +117,17 @@ class VideoProgress:
             self.phase, self.done, self.total = "receiving", event.completed, event.total
             self.bytes = event.received_bytes or self.bytes
             self.text = f"Receiving frames · {event.completed}/{event.total} · {self.bytes / 1_048_576:.1f} MB received"
-        elif event.kind == "progress" and event.stage == "encoding_video":
+        elif event.kind == "progress" and event.stage == "waiting_local_encoder":
             self.phase, self.text, self.done, self.total = (
-                "encoding",
-                "Finalizing video · adding audio, verifying MP4",
+                "encoder_wait",
+                "Received · waiting for a local video encoder",
                 None,
                 None,
             )
+        elif event.kind == "progress" and event.stage == "encoding_video":
+            self.phase, self.text, self.done, self.total = "encoding", "Encoding video and adding audio", None, None
+        elif event.kind == "progress" and event.stage == "verifying_video":
+            self.phase, self.text, self.done, self.total = "verifying", "Verifying the MP4", None, None
         elif event.kind == "progress" and event.stage and event.stage.startswith("second_pass"):
             self.phase, self.text = "second_pass", "Second-pass sampling"
             self.done, self.total = event.completed, event.total
@@ -142,7 +148,7 @@ class VideoProgress:
         fraction = round(self.fraction(), 2)  # whole percents: equal run states are not presented again
         elapsed = clock(time.monotonic() - origin)
         wide = self.text
-        if self.phase in ("receiving", "encoding", "saving") and self.steps:
+        if self.phase in ("receiving", "encoder_wait", "encoding", "verifying", "saving") and self.steps:
             wide = f"{self.text} · sampled {self.steps[1]} steps"
         activity.present_run(
             RunState(

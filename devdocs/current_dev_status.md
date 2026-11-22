@@ -1,5 +1,9 @@
 # Current development status
 
+## In review: video receiving to disk and local encoder controls (#550)
+
+DT+ video frames are received into a per-clip disk spool (original tensors, in order) without starting FFmpeg; after the stream ends the clip waits for a slot of the shared local-encoder limit, then FFmpeg encodes from the spool and muxes audio under that slot. Connection gets **Local video encoding**: max concurrent encoders (0 = Unlimited, default) and codec threads per encoder (0 = Auto, from the CPU count), saved in `settings.json`. The 1800 s deadline covers remote receiving only; the 10-clip admission lease is kept through encoding and saving; the spool reservation is 500 MiB per clip (an estimate, not a cap); item files are deleted on any normal failure. Successful `-encoders`/`-version` readiness checks are cached per process and tool pair. Static, CI and a short owner Windows smoke only; see the PR evidence.
+
 ## In review: bounded video queues (#546, PR #547; 2026-11-21)
 
 Ordinary DT+ video items can be captured from Generate Repeat or the independent composer, retaining optional source bytes durably. The existing rolling dispatcher and Connection 1–10 default own concurrency; per-item phases use the existing table/activity bar and bounded item-keyed GUI relay. Shared resource admission, payload/process/disk policy and zero automatic video retries are implemented; **source/static checks are not Windows/provider acceptance**. All behavioral ACs, especially 2/5/10-clip resource/failure/Stop evidence, remain pending. See the [plan](plans/2026-11-21-video-queues.md) and [limits](guides/queues.md#video-resource-policy).

@@ -16,11 +16,14 @@ import logging
 import os
 import queue
 import shutil
+import struct
 import subprocess
 import sys
 import threading
 from collections import deque
+from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
@@ -44,10 +47,91 @@ async def run_worker(function, *args, **kwargs):
     )
 
 
+# Local encoding policy (#550): ``(max encoders, codec threads)``, 0 meaning Unlimited / Auto. Read when an encoder
+# starts, so a change never retunes a running one.
+_policy: tuple[int, int] = (0, 0)
+_gate = threading.Lock()
+_running = 0
+_waiters: list[asyncio.Future] = []
+
+
+def set_policy(encoders: int, threads: int) -> None:
+    """Apply the saved or just-changed Connection preferences to encoders that have not started yet."""
+    global _policy
+    _policy = (encoders, threads)
+    _wake()  # a raised cap must release waiting items without needing another encoder to finish
+
+
+def apply_saved_policy(state: Path) -> None:
+    """Headless runs: load the Connection preferences from the state directory (defaults when unreadable)."""
+    from dtflow.persistence.settings import SettingsError, load_video_encoding
+
+    try:
+        set_policy(*load_video_encoding(state))
+    except SettingsError:
+        set_policy(0, 0)
+
+
+def auto_threads(cores: int | None = None) -> int:
+    """Codec threads chosen from the CPU count: about half the cores, at least two where there are two, at most 8."""
+    if cores is None:
+        cores = (os.process_cpu_count() if hasattr(os, "process_cpu_count") else os.cpu_count()) or 1
+    return max(1, min(cores, 2), min(8, cores // 2))
+
+
+def policy_encoders() -> int:
+    return _policy[0]
+
+
+def effective_threads() -> int:
+    return _policy[1] or auto_threads()
+
+
+def _wake() -> None:
+    with _gate:
+        waiting = list(_waiters)
+    for future in waiting:
+        future.get_loop().call_soon_threadsafe(lambda f=future: f.done() or f.set_result(None))
+
+
+@asynccontextmanager
+async def encoder_slot(on_wait=None):
+    """One slot of the shared local-encoder limit, held across a clip's FFmpeg encode and audio mux.
+
+    Waiting is cancellable. ``on_wait`` is called once, only when the item has to wait. With no cap (0) the slot is
+    only counted, never refused. The cap is read at each attempt, so a changed setting applies to waiting items.
+    """
+    global _running
+    waited = False
+    while True:
+        with _gate:
+            cap = _policy[0]
+            if cap == 0 or _running < cap:
+                _running += 1
+                break
+            future = asyncio.get_running_loop().create_future()
+            _waiters.append(future)
+        if not waited:
+            waited = True
+            if on_wait is not None:
+                on_wait()
+        try:
+            await future
+        finally:
+            with _gate:
+                if future in _waiters:
+                    _waiters.remove(future)
+    try:
+        yield waited
+    finally:
+        with _gate:
+            _running -= 1
+        _wake()
+
+
 PROVIDER_ENV = "DTFLOW_FFMPEG_PROVIDER"
 _SETUP_COMMAND = "uv run python tools/packaging/ffmpeg_bundle.py"
 _verified: set[str] = set()
-_announced: set[tuple[str, str]] = set()
 
 
 def _source_windows() -> bool:
@@ -137,32 +221,39 @@ def _first_line(text: str) -> str:
     return text.strip().splitlines()[0] if text.strip() else "unknown"
 
 
+_ready: set[tuple[str, str]] = set()
+_ready_lock = threading.Lock()
+
+
 def tools_readiness_problem() -> str | None:
-    """Verify usable H.264/AAC encoding and probing on the generation worker before submission."""
+    """Verify usable H.264/AAC encoding and probing on the generation worker before submission.
+
+    A success is remembered for this process and the exact FFmpeg/FFprobe pair, so later videos (and concurrent
+    attempts, which wait on the same lock) do not launch the tools again. Failures are never remembered.
+    """
     if (problem := tools_problem()) is not None:
         return problem
     if _source_windows() and (problem := _staging_problem()) is not None:
         return problem
-    ffmpeg, ffprobe = find_tools()
-    try:
-        encoders = run_tool([ffmpeg, "-hide_banner", "-encoders"], timeout=15)
-        probe_version = run_tool([ffprobe, "-version"], timeout=15)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return f"Video tools cannot run ({type(exc).__name__}); generation was not submitted."
-    if encoders.returncode != 0 or probe_version.returncode != 0:
-        return "FFmpeg or ffprobe could not start; generation was not submitted."
-    if " libx264 " not in encoders.stdout or " aac " not in encoders.stdout:
-        return "FFmpeg lacks the H.264 (libx264) or AAC encoder required for video generation."
-    if (ffmpeg, ffprobe) not in _announced:
-        _announced.add((ffmpeg, ffprobe))
-        mode = (
-            "frozen"
-            if getattr(sys, "frozen", False)
-            else f"source:{selected_provider()}"
-            if _source_windows()
-            else "path"
-        )
-        log.info("video tools (%s) ffmpeg=%s ffprobe=%s | %s", mode, ffmpeg, ffprobe, _first_line(probe_version.stdout))
+    pair = find_tools()
+    with _ready_lock:
+        if pair in _ready:
+            return None
+        ffmpeg, ffprobe = pair
+        try:
+            encoders = run_tool([ffmpeg, "-hide_banner", "-encoders"], timeout=15)
+            probe_version = run_tool([ffprobe, "-version"], timeout=15)
+        except (OSError, subprocess.SubprocessError) as exc:
+            return f"Video tools cannot run ({type(exc).__name__}); generation was not submitted."
+        if encoders.returncode != 0 or probe_version.returncode != 0:
+            return "FFmpeg or ffprobe could not start; generation was not submitted."
+        if " libx264 " not in encoders.stdout or " aac " not in encoders.stdout:
+            return "FFmpeg lacks the H.264 (libx264) or AAC encoder required for video generation."
+        _ready.add(pair)
+    mode = (
+        "frozen" if getattr(sys, "frozen", False) else f"source:{selected_provider()}" if _source_windows() else "path"
+    )
+    log.info("video tools (%s) ffmpeg=%s ffprobe=%s | %s", mode, ffmpeg, ffprobe, _first_line(probe_version.stdout))
     return None
 
 
@@ -207,6 +298,57 @@ def _size_limit_reached(path: Path) -> bool:
         return False
 
 
+class TensorSpool:
+    """Received frame tensors on disk, in order, so receiving never waits for (or starts) FFmpeg.
+
+    Each record is a 4-byte little-endian length and the original tensor bytes. Appending runs in a worker thread in
+    frame order; reading yields them back in the same order. Deleting it is part of the item's own cleanup.
+    """
+
+    CHECK_EVERY = 16 * 1024 * 1024  # re-check free space after this much growth beyond the admission estimate
+
+    def __init__(self, path: Path, estimate: int, headroom: int):
+        self.path, self.estimate, self.headroom = Path(path), estimate, headroom
+        self.count = 0
+        self.size = 0
+        self._file = None
+        self._checked = estimate
+
+    def append(self, tensor: bytes) -> None:
+        if self._file is None:
+            self._file = self.path.open("wb")
+        self._file.write(struct.pack("<I", len(tensor)))
+        self._file.write(tensor)
+        self.count += 1
+        self.size += 4 + len(tensor)
+        if self.size > self._checked:
+            # The reservation is an estimate, not a cap: a larger legitimate clip continues while space remains.
+            self._checked = self.size + self.CHECK_EVERY
+            if shutil.disk_usage(self.path.parent).free < self.headroom + self.CHECK_EVERY:
+                raise OSError("Not enough free disk space to keep the received frames.")
+
+    def finish_writing(self) -> None:
+        if self._file is not None:
+            self._file.close()
+            self._file = None
+
+    def read(self) -> Iterator[bytes]:
+        with self.path.open("rb") as stream:
+            for _ in range(self.count):
+                header = stream.read(4)
+                if len(header) != 4:
+                    raise EncodeError("The received frame data on disk is incomplete.")
+                (length,) = struct.unpack("<I", header)
+                tensor = stream.read(length)
+                if len(tensor) != length:
+                    raise EncodeError("The received frame data on disk is incomplete.")
+                yield tensor
+
+    def delete(self) -> None:
+        self.finish_writing()
+        self.path.unlink(missing_ok=True)
+
+
 class FrameSink:
     """Frames leave memory at once: a writer thread feeds ffmpeg's stdin through a small queue.
 
@@ -234,7 +376,7 @@ class FrameSink:
             self.ffmpeg, "-hide_banner", "-nostdin", "-y",
             "-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{width}x{height}", "-r", str(self.fps), "-i", "pipe:0",
             "-c:v", "libx264", "-profile:v", "high", "-level:v", "4.1", "-pix_fmt", "yuv420p",
-            "-b:v", str(bitrate), "-g", "30", "-bf", "2", "-threads", "2", "-filter_threads", "1",
+            "-b:v", str(bitrate), "-g", "30", "-bf", "2", "-threads", str(effective_threads()), "-filter_threads", "1",
             "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
             "-movflags", "+faststart", "-fs", str(MP4_LIMIT), "-f", "mp4", str(self.partial),
         ]  # fmt: skip
@@ -346,7 +488,7 @@ def mux_audio(ffmpeg: str, video: Path, audio_raw: Path, rate: int, target: Path
         ffmpeg, "-hide_banner", "-nostdin", "-y", "-i", str(video),
         "-f", "f32le", "-ar", str(rate), "-ac", "2", "-i", str(audio_raw),
         "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", str(min(192_000, rate * 6)),
-        "-movflags", "+faststart", "-threads", "2", "-fs", str(MP4_LIMIT), "-f", "mp4", str(target),
+        "-movflags", "+faststart", "-threads", str(effective_threads()), "-fs", str(MP4_LIMIT), "-f", "mp4", str(target),
     ]  # fmt: skip
     result = run_tool(command, timeout=300)
     size_limited = _size_limit_reached(target)

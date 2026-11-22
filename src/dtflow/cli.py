@@ -1047,6 +1047,10 @@ def main(argv: list[str] | None = None) -> int:
             return run_gui_command(no_cache=args.no_cache, gallery_limits=gallery_limits, thumbnail_format=args.format)
         if args.command == "test":
             return run_tests(args)
+        if getattr(args, "state", None) is not None:
+            from dtflow.services import video_encode
+
+            video_encode.apply_saved_policy(args.state)  # local video encoding preferences (#550)
         return asyncio.run(run(args))
     except (KeyboardInterrupt, asyncio.CancelledError):
         diagnostic_event(
