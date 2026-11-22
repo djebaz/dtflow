@@ -309,6 +309,12 @@ class GenerationPage:
         # Set by the window: queue_behind(request, backend, endpoint, receipts, edit) adds a one-item up-next queue.
         self.queue_behind: Callable | None = None
         self.queue_images: Callable[[int], None] | None = None  # (#279) Images above 1: one queue row per picture
+        # Set by the window: the Queues page runs a single image as a one-item queue (#558): run_generate(...),
+        # retry_generate(queue_id, sink), stop_generate(). Generate is that run's sink: created/event/finished/refused.
+        self.queue_run = None
+        self._queued_run = False  # the run in progress is a queue Generate handed to the Queues page
+        self._last_manual = False  # the last submission was a queued run, so Retry reruns its item in place
+        self._manual_queue: str | None = None
         self._activity.listen(self._sync_activity)
         page.destroyed.connect(self._unlisten_activity)
         self._choose_save, self._choose_open = choose_save, choose_open
@@ -331,6 +337,12 @@ class GenerationPage:
         self._run_pose = False
         self._run_video = False
         self._video_progress = VideoProgress()
+        self._stage_tick = QTimer(page)  # a queued click's page text keeps counting while the provider is silent
+        self._stage_tick.setInterval(1000)
+        self._stage_tick.timeout.connect(self._tick_stage)
+        self._queued_stage = ""  # the last observed stage and sampler step of the queued click shown here
+        self._queued_steps: tuple[int, int] | None = None
+        self._queued_stage_since = 0.0
         self._video_tick = QTimer(page)
         self._video_tick.setInterval(1000)
         self._video_tick.timeout.connect(self._tick_video)
@@ -965,7 +977,7 @@ class GenerationPage:
         queue, Generate stays available and queues the request behind it (``queue_behind``)."""
         dispatching = self._activity.dispatching
         button = self.page.generateButton
-        blocked = self._busy or self._generating
+        blocked = self._busy or (self._generating and not self._queued_run)
         no_model = self._model_missing() or not self._backend()[0]
         button.setEnabled(not blocked and not no_model)
         if hasattr(self, "retryButton"):
@@ -1100,6 +1112,12 @@ class GenerationPage:
         if not self._generating:
             return
         reported = type(completed) is int and type(total) is int and total > 0 and 0 <= completed <= total
+        if self._queued_run:
+            if reported:
+                self._queued_steps = (completed, total)
+            self._queued_stage, self._queued_stage_since = stage, time.monotonic()  # every report restarts the count
+            self._show_queued_stage()
+            return
         if not reported:
             current = self._activity.run_state
             if current.owner == "generation" and current.phase == "running":
@@ -1119,6 +1137,22 @@ class GenerationPage:
                 detail=detail,
             )
         )
+
+    def _show_queued_stage(self) -> None:
+        """The shown click's last observed stage and step, with how long that stage has been the latest news."""
+        detail = self._queued_stage
+        if self._queued_steps is not None:
+            detail += f" · step {self._queued_steps[0]}/{self._queued_steps[1]}"
+        waited = int(time.monotonic() - self._queued_stage_since)
+        if waited >= 3:
+            detail += f" · {waited} s since the last update"
+        self._status(Presentation("warning", "Generating", detail))
+
+    def _tick_stage(self) -> None:
+        if self._runner.closed or not (self._generating and self._queued_run):
+            self._stage_tick.stop()
+            return
+        self._show_queued_stage()
 
     def _show_image(self, encoded: bytes, designation: str, backend_id: str | None = None) -> None:
         pixmap = QPixmap()
@@ -1142,8 +1176,8 @@ class GenerationPage:
         if self.inpaint.active and edit is None:
             self.inpaint.generate()
             return False
-        if self._busy or self._generating:
-            return False
+        if self._busy or (self._generating and not self._queued_run):
+            return False  # an earlier queued click may still wait or run: each click is its own queue (#558)
         if self._relink_pending:
             self._status(
                 Presentation(
@@ -1174,7 +1208,8 @@ class GenerationPage:
             # thumbnail, seed, status and Retry in Queues. The queue's creation validates the form.
             self.queue_images(images)
             return False
-        if self._activity.dispatching:
+        queued = edit is None and not self.video.active and self.queue_run is not None
+        if self._activity.dispatching and not queued:
             self._queue_behind(edit)
             return False
         self._mark(None)
@@ -1221,6 +1256,7 @@ class GenerationPage:
             self.simulation(),
             edit,
             note,
+            manual=queued,
         )
         return True
 
@@ -1249,6 +1285,12 @@ class GenerationPage:
             ),
         )
         diagnostic_event(log, "generation.retry", level=logging.INFO, data={"backend": name})
+        if self._last_manual and self.queue_run is not None and edit is None and retried.num_frames is None:
+            # A queued single image reruns its own queue item in place: same settings and seed, a new attempt.
+            self._submit(
+                retried, name, endpoint, asset_ids, prefix, simulation, edit, None, manual=self._manual_queue or True
+            )
+            return True
         if self._activity.dispatching:
             if retried.num_frames is not None:
                 self._status(
@@ -1269,8 +1311,11 @@ class GenerationPage:
         self._submit(retried, name, endpoint, asset_ids, prefix, simulation, edit, None)
         return True
 
-    def _submit(self, request, name, endpoint, asset_ids, prefix, simulation, edit, note) -> None:
-        """Send one validated request snapshot; Generate and Retry both end here."""
+    def _submit(self, request, name, endpoint, asset_ids, prefix, simulation, edit, note, manual=False) -> None:
+        """Send one validated request snapshot; Generate and Retry both end here.
+
+        ``manual`` hands a single image to the Queues page (#558): True creates its one-item queue, a queue id reruns
+        that queue's item in place."""
         self.lora.dismiss_storage()
         self._submitted_backend, self._submitted_endpoint = name, endpoint
         self._request = request
@@ -1281,6 +1326,9 @@ class GenerationPage:
             self._video_progress.reset()
             self._video_tick.start()
         self._last_submission = (request, name, endpoint, tuple(asset_ids), prefix, simulation, edit)
+        self._last_manual, self._queued_run = bool(manual), bool(manual)
+        if not manual:
+            self._manual_queue = None
         self._offer_retry(False)
         diagnostic_event(
             log,
@@ -1323,6 +1371,12 @@ class GenerationPage:
         self._stage_started = time.monotonic()
         self._stage_seen = {}
         self._generating = True
+        if manual:
+            # In this page a queued click is presented by its status line; the global bar starts as "Generation" and
+            # becomes the shared queue progress once the queue run publishes its state.
+            self._queued_stage, self._queued_steps = "Preparing generation", None
+            self._queued_stage_since = time.monotonic()
+            self._stage_tick.start()
         self._activity.set(
             generating=True,
             run_state=RunState(
@@ -1332,6 +1386,13 @@ class GenerationPage:
             ),
         )
         self._sync_generate()
+        if manual:
+            if isinstance(manual, str):
+                self.queue_run.retry_generate(manual, self)
+            else:
+                self._manual_queue = None
+                self.queue_run.run_generate(request, name, endpoint, tuple(asset_ids), self)
+            return
         run = (
             self._generate_video
             if self._run_video
@@ -1439,6 +1500,43 @@ class GenerationPage:
             asset_ids=asset_ids,
         )
 
+    # -- a queued single image (#558): the Queues page reports back through these -----------------------------------
+    @property
+    def queued_run(self) -> bool:
+        """A queue the Queues page runs for this Generate click is in progress."""
+        return self._queued_run and self._generating
+
+    def created(self, queue_id: str, request_id: str) -> None:
+        """The click's queue exists; its item carries the identity every event and recorded attempt will use."""
+        self._manual_queue = queue_id
+        if self._request is not None:
+            self._request = replace(self._request, request_id=request_id)
+
+    def event(self, event: BackendEvent) -> None:
+        self._event(event)
+
+    def finished(self, outcome, failure) -> None:
+        """The queue item's saved result or failure; neither means the run was stopped (or cancelled with the owner)."""
+        self._generated(outcome, failure if (outcome is not None or failure is not None) else asyncio.CancelledError())
+
+    def _end_run(self) -> None:
+        """The click's run is over. A queued click leaves the run state to the queue it shared; others reset it."""
+        queued = self._queued_run
+        self._generating, self._queued_run = False, False
+        self._stage_tick.stop()
+        if queued and self._activity.run_state.owner != "generation":
+            self._activity.set(generating=False)
+        else:
+            self._activity.set(generating=False, run_state=RunState())
+
+    def refused(self, presentation: Presentation) -> None:
+        """Another process owns dispatch: the request waits paused in Queues, nothing was sent."""
+        self._end_run()
+        self._sync_generate()
+        self._status(presentation)
+        activity_strip(self.page).complete("generation-result", presentation.headline, presentation.detail, "stopped")
+        self._offer_retry(False)
+
     def _event(self, event: BackendEvent) -> None:
         if not self._generating:
             return  # a late event after completion never changes the settled view
@@ -1492,8 +1590,7 @@ class GenerationPage:
             request_id = self._request.request_id
             self._runner.submit(read_attempt(self._state, request_id), self._interrupted)
             return
-        self._generating = False
-        self._activity.set(generating=False, run_state=RunState())
+        self._end_run()
         self._sync_generate()
         if self.lora.loras:
             self.lora.refresh_holdings()  # a restore or a refusal changed what the key holds
@@ -1671,12 +1768,13 @@ class GenerationPage:
 
     def cancel(self) -> None:
         """Stop waiting locally through the shared interruption path; the server is never claimed cancelled."""
-        if self._future is not None and self._generating:
+        if self._queued_run and self._generating and self.queue_run is not None:
+            self.queue_run.stop_generate()  # this click's queue only; the owner records what the stop meant
+        elif self._future is not None and self._generating:
             self._future.cancel()
 
     def _interrupted(self, evidence, failure) -> None:
-        self._generating = False
-        self._activity.set(generating=False, run_state=RunState())
+        self._end_run()
         self._sync_generate()
         presentation = present_generation_failure(failure) if failure else present_interruption(evidence)
         self._status(presentation)

@@ -77,8 +77,13 @@ class QueueDispatcher:
         on_settle: Callable[[str, str], None] | None = None,
         on_event: Callable[[str, BackendEvent], None] | None = None,
         trigger_prefix: Callable[[], bool] | None = None,
+        manual: bool = False,
+        on_result: Callable[[str, ResolvedGenerationRequest, Any, BaseException | None], None] | None = None,
     ):
         self.store, self.service, self.poll, self.on_settle, self.on_event = store, service, poll, on_settle, on_event
+        # A single Generate click (#558): outputs keep Generate's own layout, a wait for a slot is announced, and the
+        # item's saved result or failure goes to ``on_result(item_id, request, saved, failure)`` for Generate to present.
+        self.manual, self.on_result = manual, on_result
         if service.admission is None:
             # A caller with no shared owner (tests, direct use) gets a private pool sized to its own backend.
             owner = ProviderAdmission()
@@ -106,6 +111,7 @@ class QueueDispatcher:
         """
         tasks: dict[asyncio.Task, str] = {}
         failure: BaseException | None = None
+        waiting = False
         await self.store.apply_controls(queue_id)
         await self.store.set_running(queue_id)
         self.admission.want(True)  # a started queue is ready until a look says otherwise
@@ -175,7 +181,20 @@ class QueueDispatcher:
                         self.admission.want(ready)
                         permit = self.admission.reserve() if ready else None
                         if permit is None:
+                            if ready and self.manual and not waiting and self.on_event is not None:
+                                waiting = True  # said once per wait, never to a queue that is not Generate's
+                                self.on_event(
+                                    "",
+                                    BackendEvent(
+                                        "",
+                                        0,
+                                        "preparing",
+                                        datetime.now(timezone.utc).isoformat(),
+                                        stage="waiting_provider_slot",
+                                    ),
+                                )
                             break
+                        waiting = False
                         claim = await self.store.claim_next(queue_id, None)
                         if claim is None:
                             permit.close()
@@ -419,6 +438,7 @@ class QueueDispatcher:
         evidence: asyncio.Queue[tuple[str, dict[str, Any], str | None] | None] = asyncio.Queue()
         writer = asyncio.create_task(self._event_writer(queue_id, evidence))
         failure: dict[str, Any] | None = None
+        error: BaseException | None = None  # what ended the item, for the Generate page (``on_result``)
         saved = None
         retries = 0
         had_attempt = False
@@ -468,7 +488,9 @@ class QueueDispatcher:
                                 request.request_id,
                             )
                         ) from exc
-                layout = OutputLayout(group_name("queue", queue_id), prompt_label(request.prompt))
+                layout = (
+                    None if self.manual else OutputLayout(group_name("queue", queue_id), prompt_label(request.prompt))
+                )
                 if self._trigger_prefix is not None and request.loras and self._trigger_prefix():
                     request = apply_trigger_prefixes(request, await self.service.get_inventory(refresh=True))
                 await self._warn_unprepared(queue_id, item_id, request)
@@ -543,6 +565,7 @@ class QueueDispatcher:
                 evidence.put_nowait(("item_settled", {"item_id": item_id, "state": state}, None))
                 raise
             except BackendError as exc:
+                error = exc
                 await self._note_lora_outcome(queue_id, request, exc.failure)
                 failure = {
                     "code": exc.failure.code,
@@ -565,6 +588,7 @@ class QueueDispatcher:
                 )
                 raise
             except Exception as exc:
+                error = exc
                 failure = {
                     "code": "unexpected",
                     "message": "An unexpected error stopped this item; the logs have the details.",
@@ -591,6 +615,8 @@ class QueueDispatcher:
             evidence.put_nowait(("item_settled", detail, None))
             if self.on_settle is not None:
                 self.on_settle(item_id, state)
+            if self.on_result is not None:
+                self.on_result(item_id, request, saved, error)
             diagnostic_event(
                 log,
                 "queue.item_settled",

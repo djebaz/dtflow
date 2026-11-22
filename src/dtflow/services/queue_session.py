@@ -8,7 +8,7 @@ import asyncio
 import logging
 import secrets
 from collections.abc import Callable
-from dataclasses import asdict, replace
+from dataclasses import asdict, dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -37,6 +37,7 @@ from dtflow.persistence.queues import (
     delete_queue,
     insert_queue,
     insert_script_queue,
+    is_manual,
     post_control,
     read_queue_requests,
     read_queue_composer_source,
@@ -55,12 +56,22 @@ from dtflow.services.assets import AssetService
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs, snapshot_image_inputs
 from dtflow.services.planning import Plan, PlanError, expand_plan
-from dtflow.services.provider_admission import ProviderAdmission, QueueAdmission
+from dtflow.services.provider_admission import PRIORITY_MANUAL, ProviderAdmission, QueueAdmission
 from dtflow.services.queue import QueueDispatcher
 from dtflow.services.script_item import ScriptItemRunner
 from dtflow.services.workflow_item import WorkflowItemRunner
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class ManualSink:
+    """Where one Generate click's queue reports (#558): its events (with the real queue and item), its saved result or
+    failure, and, for every queue the owner starts, its end (``None`` when it was cancelled with the owner)."""
+
+    event: Callable[[str, str, BackendEvent], None]
+    result: Callable[[str, str, Any, BaseException | None], None]
+    end: Callable[[str, BaseException | None], None]
 
 
 def expand_items(base: ResolvedGenerationRequest, count: int) -> list[ResolvedGenerationRequest]:
@@ -165,6 +176,8 @@ async def create_queue(
     *,
     up_next: bool = False,
     composer_source: dict | None = None,
+    origin: str | None = None,
+    queue_id: str | None = None,
 ) -> str:
     """Persist a paused queue of resolved items; contacts no backend and never uploads.
 
@@ -183,10 +196,20 @@ async def create_queue(
     store = SQLiteAttempts(state)
     try:
         await store.open()
-        return await store.create_queue(backend, STORED_CAP, requests, composer_source=composer_source)
+        return await store.create_queue(
+            backend, STORED_CAP, requests, composer_source=composer_source, origin=origin, queue_id=queue_id
+        )
     except StateBusyError:
         return await asyncio.to_thread(
-            insert_queue, state, backend, STORED_CAP, requests, up_next=up_next, composer_source=composer_source
+            insert_queue,
+            state,
+            backend,
+            STORED_CAP,
+            requests,
+            up_next=up_next,
+            composer_source=composer_source,
+            origin=origin,
+            queue_id=queue_id,
         )
     finally:
         await store.aclose()
@@ -478,6 +501,8 @@ async def dispatch_queue(
     on_event: Callable[[str, BackendEvent], None] | None = None,
     on_next: Callable[[dict[str, Any], str], None] | None = None,
     on_overlap: Callable[[str], None] | None = None,
+    manual: ManualSink | None = None,
+    waiting: tuple[str, ...] = (),
     auto_play: bool = True,
 ) -> dict[str, Any]:
     """Make this process the dispatch owner and run the queue until it finishes or is cancelled, then auto-play.
@@ -489,37 +514,33 @@ async def dispatch_queue(
     failure or interruption included, every queue still waiting is restored paused: nothing starts without a live owner.
     A queue started early beside a running one is announced with ``on_overlap``; ``on_next`` still reports each queue
     only when it truly settles. Without ``auto_play`` (the CLI's ``queue start``) it runs exactly the queue it names.
+
+    A single Generate request (#558) waiting up next starts at once, beside whatever runs, and its provider calls take
+    the next free slot ahead of ordinary queue work. ``manual`` receives that queue's events, saved result or failure,
+    and the end of every queue this owner starts (the receiver picks its own). ``waiting`` names further paused
+    Generate queues to put up next at once.
     """
     policy = timeouts or TimeoutPolicy()
     store = SQLiteAttempts(state)
     owned, reason = False, "stopped"
     chain: list[tuple[str, asyncio.Task]] = []  # dispatch order; the head is the oldest queue still unsettled
     claimed: set[str] = set()  # queues this owner auto-started and has not seen settle
+    manual_ids: set[str] = set()  # started ahead of the order for a Generate click
     backends: dict[str, str] = {}  # each open queue's provider pool key, known once its backend is open
     admission = ProviderAdmission()  # one pool per backend, shared by every queue this owner dispatches
     overlap_open = True
 
     def start(next_id: str) -> None:
-        chain.append(
-            (
-                next_id,
-                asyncio.create_task(
-                    _dispatch_one(
-                        store,
-                        state,
-                        next_id,
-                        policy,
-                        saved,
-                        out,
-                        on_settle,
-                        on_event,
-                        backends,
-                        admission,
-                        admission.next_rank(),
-                    )
-                ),
+        task = asyncio.create_task(
+            _dispatch_one(
+                store, state, next_id, policy, saved, out, on_settle, on_event, backends, admission, manual_sink=manual
             )
         )
+        if manual is not None:
+            task.add_done_callback(
+                lambda done, qid=next_id: manual.end(qid, None if done.cancelled() else done.exception())
+            )
+        chain.append((next_id, task))
 
     async def claim(**kwargs) -> str | None:
         """Claim up next, never abandoning a started queue to a cancellation that lands mid-claim."""
@@ -543,6 +564,8 @@ async def dispatch_queue(
         owned = True
         if auto_play:
             await store.open_up_next()
+            if waiting:
+                await store.enqueue_paused(waiting)  # Generate clicks handed back together: up next for this owner
         start(queue_id)
         final: dict[str, Any] = {}
         while True:
@@ -558,8 +581,12 @@ async def dispatch_queue(
                     )
                     chain.remove(entry)
                     claimed.discard(other_id)
-                    overlap_open = False
-                    await store.release_queued("overlap_failed", other_id)
+                    if other_id in manual_ids:
+                        # A Generate click that could not start says so to Generate; the queues waiting stay waiting.
+                        await store.pause_started(other_id)
+                    else:
+                        overlap_open = False
+                        await store.release_queued("overlap_failed", other_id)
                     break
             else:
                 if head.done() and not head.cancelled() and head.exception() is not None:
@@ -583,6 +610,20 @@ async def dispatch_queue(
                     if not chain:
                         start(following)
                     continue
+                if auto_play:
+                    priority = await claim(manual=True)
+                    if priority is not None:
+                        manual_ids.add(priority)
+                        diagnostic_event(
+                            log,
+                            "queue.priority_started",
+                            level=logging.INFO,
+                            data={"queue_id": priority, "active": len(chain)},
+                        )
+                        if on_overlap is not None:
+                            on_overlap(priority)
+                        start(priority)
+                        continue
                 if auto_play and overlap_open:
                     # Cross-queue overlap: once the newest unsettled queue has handed out its last item, capacity on the
                     # shared backend that no started queue wants is used by the next up-next queue. Its items then
@@ -633,12 +674,20 @@ async def dispatch_queue(
 
 
 async def _dispatch_one(
-    store, state, queue_id, policy, saved, out, on_settle, on_event, backends=None, admission=None, rank=None
+    store, state, queue_id, policy, saved, out, on_settle, on_event, backends=None, admission=None, manual_sink=None
 ) -> dict[str, Any]:
     """One queue on the open owner: its own recorded backend session, closed before the next queue starts."""
     backend = None
+    rank = admission.next_rank() if admission is not None else None  # taken in start order, before any await
     try:
         queue = await store.inspect_queue(queue_id)
+        manual = is_manual(
+            queue
+        )  # one Generate click (#558): live previews, Generate's layout, a slot ahead of the rest
+        if manual and manual_sink is not None:
+            on_event = lambda item_id, event: manual_sink.event(queue_id, item_id, event)  # noqa: E731
+        if manual and admission is not None:
+            rank = admission.next_rank(PRIORITY_MANUAL)
         recorded = queue["backend"]
         selection = BackendSelection(
             recorded["name"],
@@ -687,11 +736,14 @@ async def _dispatch_one(
                 else {}
             ),
         }
-        # A queue session covers ordinary queues, workflows and scripts; none consumes live preview images.
-        backend = session.create_backend(selection, timeouts=policy, saved=saved, preview_images=False, **image_options)
+        # Only a Generate click shows live preview images; ordinary queues, workflows and scripts consume none.
+        backend = session.create_backend(
+            selection, timeouts=policy, saved=saved, preview_images=manual, **image_options
+        )
         async with asyncio.timeout(policy.connect):
             await backend.open()
         key = backend_key(recorded)
+        recorded_backend_id = backend.capabilities.backend_id
         service = GenerationService(
             backend,
             store,
@@ -699,7 +751,7 @@ async def _dispatch_one(
             timeouts=policy,
             assets=session.asset_validator(backend, state),
             input_state=state if permits or has_pose else None,
-            preview_images=False,
+            preview_images=manual,
             admission=(
                 QueueAdmission(admission.pool(key, backend.capabilities.max_concurrency), rank)
                 if admission is not None
@@ -761,7 +813,20 @@ async def _dispatch_one(
             service,
             on_settle=on_settle,
             on_event=on_event,
-            trigger_prefix=lambda: trigger_prefix_enabled(state, "queues"),
+            trigger_prefix=lambda: trigger_prefix_enabled(state, "generate" if manual else "queues"),
+            manual=manual,
+            on_result=(
+                (
+                    lambda item_id, request, saved, error: manual_sink.result(
+                        queue_id,
+                        item_id,
+                        session.outcome_of(saved, recorded_backend_id, request) if saved is not None else None,
+                        error,
+                    )
+                )
+                if manual_sink is not None and manual
+                else None
+            ),
         ).run(queue_id)
     finally:
         if backend is not None:
