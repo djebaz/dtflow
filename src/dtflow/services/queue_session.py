@@ -595,7 +595,7 @@ async def dispatch_queue(
                         and await store.overlap_ready(live[-1][0])
                     ):
                         tail_id = live[-1][0]
-                        overlapping = await claim(overlap_after=tail_id, spare=True)
+                        overlapping = await claim(overlap_after=tail_id)
                         if overlapping is not None:
                             diagnostic_event(
                                 log,

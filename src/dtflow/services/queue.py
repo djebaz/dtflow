@@ -46,7 +46,7 @@ from dtflow.services.lora_naming import log_label
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.core.request_records import request_from_record
 from dtflow.services.assets import possible_missing_asset
-from dtflow.services.generation import GenerationService
+from dtflow.services.generation import GenerationService, SubmissionHeld
 from dtflow.services.provider_admission import Permit, ProviderAdmission, QueueAdmission
 from dtflow.services.image_inputs import restore_image_inputs
 from dtflow.services.session import _require_flux1
@@ -106,6 +106,7 @@ class QueueDispatcher:
         failure: BaseException | None = None
         await self.store.apply_controls(queue_id)
         await self.store.set_running(queue_id)
+        self.admission.want(True)  # a started queue is ready until a look says otherwise
         try:
             # Resolve all distinct first-use receipts before opening up to ten generation lanes.
             # Legacy and cross-key receipts share one BYOM batch, not one check per item.
@@ -164,6 +165,8 @@ class QueueDispatcher:
                         task.cancel()
                 changed = self.admission.pool.watch()  # armed before the claims, so a freed slot is never missed
                 try:
+                    if failure is not None or self._recovery_active:
+                        self.admission.want(False)  # repairing assets: the capacity is spare for a later queue
                     while failure is None and not self._recovery_active:
                         # The pool hands a slot to the oldest queue that wants one; this queue says whether it does.
                         ready = await self.store.has_pending(queue_id)
@@ -416,6 +419,7 @@ class QueueDispatcher:
         failure: dict[str, Any] | None = None
         saved = None
         retries = 0
+        held = False  # the queue was paused or cancelled before anything was created: the item goes back to pending
 
         def receive(event: BackendEvent) -> None:
             if self.on_event is not None:
@@ -468,7 +472,12 @@ class QueueDispatcher:
                 while True:
                     try:
                         saved = await self.service.generate(
-                            request, on_event=receive, layout=layout, permit=permit, **options
+                            request,
+                            on_event=receive,
+                            layout=layout,
+                            permit=permit,
+                            may_submit=None if retries else lambda: self.store.can_submit(queue_id),
+                            **options,
                         )
                         await self._note_lora_outcome(queue_id, request, None)
                         break
@@ -523,6 +532,8 @@ class QueueDispatcher:
                             **self.service._key_diagnostics(),
                         },
                     )
+            except SubmissionHeld:
+                held = True
             except asyncio.CancelledError:
                 state = await settle(self.store.settle_item(item_id))
                 evidence.put_nowait(("item_settled", {"item_id": item_id, "state": state}, None))
@@ -556,6 +567,13 @@ class QueueDispatcher:
                     "category": type(exc).__name__,
                 }
 
+            if held:
+                await settle(self.store.unclaim_item(item_id))
+                evidence.put_nowait(("item_returned", {"item_id": item_id, "reason": "queue_paused"}, None))
+                diagnostic_event(
+                    log, "queue.item_returned", level=logging.INFO, data={"queue_id": queue_id, "item_id": item_id}
+                )
+                return
             state = await settle(self.store.settle_item(item_id, failure))
             detail: dict[str, Any] = {"item_id": item_id, "state": state}
             if saved is not None:

@@ -26,10 +26,15 @@ queues, Scripts and Workflows.
 - Script and Workflow child generations, automatic retries and a video returning from its local-resource wait **wait in
   rank order** (`acquire`). Queues rank by start order (older first); a manual class (`PRIORITY_MANUAL`) sorts before
   them for later use.
-- Up next queues stay reorderable until they start. The next one starts early only when every live queue is open, the
-  last one has handed out its last item and the pool has capacity nobody wants (`spare`).
-- A paused queue claims nothing, and an automatic retry that finds its queue no longer running sends nothing: the item
-  settles with its first failure. A retry waits for a slot after its delay, not during it.
+- Up next queues stay reorderable until they start. The next one starts early when every live queue is open, the newest
+  one is still running and the pool has capacity nobody wants (`spare`: a free slot, no waiting call, no ready queue). A
+  queue that has work but cannot use a slot (repairing assets, a Script/Workflow at its child limit) does not count as
+  wanting one; the oldest queue that is ready still gets the next slot. A paused or cancelled queue never overlaps.
+- A paused queue claims nothing. Just before the attempt is created, a claimed item asks its queue once more
+  (`can_submit`, which also counts a Pause or Cancel posted but not yet applied); if it is no longer running, nothing is
+  created or sent and the item returns to pending (`queue.item_returned`). An automatic retry that finds its queue no
+  longer running sends nothing either: the item settles with its first failure. A retry waits for a slot after its delay,
+  not during it.
 - Script and Workflow runs keep their own child limit (`reserve_script_child(..., shared=True)` drops only the global
   count); a Workflow that asks for a wider run widens the pool and never narrows it.
 
@@ -50,7 +55,11 @@ text stays in `backend.api_failed`. Quota exhaustion is never inferred.
 ## Limits
 
 - The slot is taken at claim, so a short preparation (preflight, asset check) holds it; first-use asset uploads are
-  resolved before the queue's first claim.
+  resolved before the queue's first claim. The buffer budget is widened with the open-call cap, so DT+ text-to-image
+  never waits on it; a larger image edit can wait for budget while holding its slot, which is accepted rather than
+  adding a reservation scheme.
+- The attempt is created before the buffer budget and the image snapshot are taken, so a Pause arriving in that short
+  gap still lets the item run (it is no longer returned to pending).
 - A DT+ call that sends a later `second_pass` signpost after its last sampling step is already admitted past its slot;
   the open-call cap bounds this.
 - Generate's single manual run, Inpaint and other non-queue callers do not take part yet (#558, #559).

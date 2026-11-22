@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -75,6 +75,10 @@ def _buffer_reservation(request: ResolvedGenerationRequest, caps, prepared_input
             + request.width_px * request.height_px * 24
         )
     return reservation
+
+
+class SubmissionHeld(Exception):
+    """The caller's last check before creating the attempt said no (its queue was paused or cancelled): nothing exists."""
 
 
 class GenerationService:
@@ -176,8 +180,12 @@ class GenerationService:
         attempt_id: str | None = None,
         layout: OutputLayout | None = None,
         permit: Permit | None = None,
+        may_submit: Callable[[], Awaitable[bool]] | None = None,
     ) -> SavedGeneration:
-        """``permit`` is the provider slot the queue dispatcher reserved when it claimed the item; without one, a call
+        """``may_submit`` is asked once, after preparation and before the attempt exists; False raises
+        :class:`SubmissionHeld` with nothing created or sent.
+
+        ``permit`` is the provider slot the queue dispatcher reserved when it claimed the item; without one, a call
         under admission waits its turn for a slot. The call closes it (idempotent) however it ends.
 
         ``attempt_id`` lets a caller that records the attempt elsewhere first (script runs) name it up front.
@@ -223,9 +231,11 @@ class GenerationService:
                                 )
                             ) from exc
                         held = await self._take_slot(held, request, sink)
-                        return await self._generate(request, sink, prepared_inputs, attempt_id, layout, held, lease)
+                        return await self._generate(
+                            request, sink, prepared_inputs, attempt_id, layout, held, lease, may_submit
+                        )
                 held = await self._take_slot(held, request, sink)
-                return await self._generate(request, sink, prepared_inputs, attempt_id, layout, held)
+                return await self._generate(request, sink, prepared_inputs, attempt_id, layout, held, None, may_submit)
             finally:
                 if held is not None:
                     held.close()
@@ -279,6 +289,7 @@ class GenerationService:
         layout: OutputLayout | None,
         permit: Permit | None = None,
         video_lease=None,
+        may_submit: Callable[[], Awaitable[bool]] | None = None,
     ) -> SavedGeneration:
         def preparation(stage: str) -> None:
             if on_event is not None:
@@ -474,6 +485,8 @@ class GenerationService:
                         request.request_id,
                     )
                 ) from exc
+        if may_submit is not None and not await may_submit():
+            raise SubmissionHeld
         reserved = False
         if attempt_id is None:
             attempt_id = uuid4().hex
