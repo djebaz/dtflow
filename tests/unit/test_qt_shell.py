@@ -266,14 +266,14 @@ def test_activity_bar_progress_and_result_lifecycle(window, qtbot, monkeypatch):
     assert real_bar_rect().width() == 240
     strip.complete("fixture", "Queue", "Finished", "success")
     strip._notice_timer.stop()
-    monkeypatch.setattr(strip.form, "underMouse", lambda: False)
-    monkeypatch.setattr(strip.bar, "underMouse", lambda: True)
+    monkeypatch.setattr(strip, "_pointer_over", lambda widget: widget is strip.bar)
     strip._expiry["fixture"] = 0.05
     strip._tick_notices()
     assert strip._expiry["fixture"] == 0.05  # hover pauses the lifetime
-    monkeypatch.setattr(strip.bar, "underMouse", lambda: False)
+    monkeypatch.setattr(strip, "_pointer_over", lambda widget: False)
     window.form.clearFocus()
     monkeypatch.setattr(QApplication, "focusWidget", lambda: None)
+    strip._notice_last = None  # the first tick after a pause counts one nominal interval
     strip._tick_notices()
     row = strip.rows["fixture"]
     fade = row._lifetime_fade

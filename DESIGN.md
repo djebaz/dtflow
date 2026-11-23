@@ -659,7 +659,7 @@ A 450 ms fade-out follows expiry. The timer and line pause while the
 overlay is hovered or keyboard-focused. The 5 px blue task progress
 track is distinct and reflects actual completed work only.
 Amber informational warnings use the timed row even without another active
-editor/confirmation. Red errors stay until dismissed; neutral informational inspection closes with its × button, Escape or a click outside it. Amber overlay expiry only hides the notification: it
+editor/confirmation. Red errors stay until dismissed; neutral informational inspection closes with its × button, Escape or a click outside it. A click outside also dismisses finished notices (errors included) and cancels an armed confirmation or editor; running rows are never affected. Routine queue/generation success notices last three seconds; every other timed notice keeps six. Amber overlay expiry only hides the notification: it
 never erases durable outcome records, uncertainty indicators, failure
 details, or changes stop/retry behavior. Escape dismisses a standalone
 notice (a × button replaces the text Dismiss), while Cancel/Escape disarm a pending confirmation/editor;

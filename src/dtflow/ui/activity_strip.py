@@ -17,12 +17,13 @@ from PySide6.QtCore import (
     Signal,
     Slot,
 )
-from PySide6.QtGui import QIcon
+from PySide6.QtGui import QCursor, QIcon
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QApplication, QFrame, QGraphicsOpacityEffect, QWidget
 from shiboken6 import isValid
 
 from dtflow import startup
+from dtflow.ui.app_filters import install_app_filter, remove_app_filter
 from dtflow.ui.activity_bar import ActivityBar, BarModel, clock
 from dtflow.ui.trash_icon import trash_icon_pixmap
 
@@ -44,6 +45,10 @@ def _load(name, parent):
 # notices and persistent conditions keep the overlay card, which needs room, actions and no expiry.
 _RUN_RESULTS = {"generation-result", "queue-result", "queue-message", "queue-quick"}
 _BAR_STATES = {"progress", "success", "stopped"}
+_RESULT_STATES = {"success", "info", "warning", "partial", "stopped", "error"}
+# Routine queue/Generate successes leave quickly; every other expiring notice keeps the longer reading time.
+QUEUE_SUCCESS_SECONDS = 3.0
+NOTICE_SECONDS = 6.0
 
 _OPERATION_ICONS = {
     "export": "⇧",
@@ -56,6 +61,19 @@ _OPERATION_ICONS = {
     "selection": "☑",
     "q8p": "▤",
 }
+
+
+class _OutsidePress(QObject):
+    """Application filter that only reports mouse presses; it never consumes them."""
+
+    def __init__(self, parent, callback):
+        super().__init__(parent)
+        self._callback = callback
+
+    def eventFilter(self, watched, event):
+        if event.type() == QEvent.Type.MouseButtonPress and isinstance(watched, QWidget):
+            self._callback(event.globalPosition().toPoint(), watched)
+        return False
 
 
 class ActivityStrip(QObject):
@@ -102,6 +120,7 @@ class ActivityStrip(QObject):
         self.status_bar.installEventFilter(self)
         self.status_bar.messageChanged.connect(lambda _text: QTimer.singleShot(0, self, self._position))
         self._expiry = {}
+        self._notice_last: float | None = None  # time of the previous notice tick, for real elapsed accounting
         self._positioning = False
         self._retired = False
         self.feedback = None
@@ -109,6 +128,8 @@ class ActivityStrip(QObject):
         self.form.destroyed.connect(self._retire)
         self.host.installEventFilter(self)
         self.form.installEventFilter(self)
+        self._outside = _OutsidePress(self.form, self._outside_press)
+        self._outside_installed = False
         self._notice_timer = QTimer(self.form)
         self._notice_timer.setInterval(100)
         self._notice_timer.timeout.connect(self._tick_notices)
@@ -149,6 +170,9 @@ class ActivityStrip(QObject):
         self._expiry.clear()
         self.rows.clear()
         self.feedback = None
+        if self._outside_installed:
+            self._outside_installed = False
+            remove_app_filter(self._outside)
 
     def eventFilter(self, watched, event):
         if not self._live():
@@ -259,7 +283,7 @@ class ActivityStrip(QObject):
             elapsed=elapsed_text,
             eta=eta,
             stopping=stopping,
-            lifetime=(chosen.activityLifetimeBar.value() / 6000)
+            lifetime=(chosen.activityLifetimeBar.value() / max(1, chosen.activityLifetimeBar.maximum()))
             if not running and not chosen.activityLifetimeBar.isHidden()
             else None,
             tooltip=" · ".join(part for part in (label, detail, reported_eta) if part),
@@ -485,7 +509,7 @@ class ActivityStrip(QObject):
             self._sync_bar()
 
     def complete(self, key, title, text, state="success"):
-        """Show a semantic result: success and amber outcomes expire after six seconds."""
+        """Show a semantic result: routine queue successes expire after three seconds, amber outcomes after six."""
         if not self._live():
             return
         previous = self.rows.get(key)
@@ -518,40 +542,95 @@ class ActivityStrip(QObject):
             widget.style().unpolish(widget)
             widget.style().polish(widget)
         if state in {"success", "warning", "partial", "stopped"}:
-            self._expiry[key] = 6.0
-            row.activityLifetime.setText("6s")
+            seconds = self._lifetime_for(key, state)
+            self._expiry[key] = seconds
+            row.activityLifetime.setText(f"{math.ceil(seconds)}s")
             row.activityLifetime.show()
-            row.activityLifetimeBar.setValue(6000)
+            row.activityLifetimeBar.setMaximum(round(seconds * 1000))
+            row.activityLifetimeBar.setValue(round(seconds * 1000))
             row.activityLifetimeBar.show()
             self._notice_timer.start()
+        self._sync_outside()
         self._position()
+
+    @staticmethod
+    def _lifetime_for(key: str, state: str) -> float:
+        """Routine queue and Generate successes last three seconds; other expiring notices keep six."""
+        queue_key = key in _RUN_RESULTS or str(key).startswith("queue-")
+        return QUEUE_SUCCESS_SECONDS if state == "success" and queue_key else NOTICE_SECONDS
+
+    @staticmethod
+    def _pointer_over(widget) -> bool:
+        """The cursor is inside a widget that is actually showing.
+
+        Qt's ``underMouse`` stays true for a widget that was hidden or re-laid out while the cursor rested on it, which
+        left a routine notice paused until the mouse moved. A real hit test on a visible widget has no such state.
+        """
+        if not isValid(widget) or not widget.isVisible():
+            return False
+        return widget.rect().contains(widget.mapFromGlobal(QCursor.pos()))
+
+    def _focus_in_view(self, focused) -> bool:
+        """Keyboard focus inside the showing overlay or bar pauses the countdown; a hidden holder does not."""
+        if focused is None or not isValid(focused) or not focused.isVisible() or focused.window() is not self.window:
+            return False
+        return any(
+            container.isVisible() and (focused is container or container.isAncestorOf(focused))
+            for container in (self.form, self.bar)
+        )
+
+    def _result_keys(self) -> list:
+        """Keys of the visible transient notices (results, not running jobs or persistent status conditions)."""
+        return [
+            key
+            for key, row in self.rows.items()
+            if isValid(row) and row.property("feedbackState") in _RESULT_STATES and not row.property("compactStatus")
+        ]
+
+    def _sync_outside(self) -> None:
+        """Watch presses application-wide only while a notice is showing."""
+        if not self._live():
+            return
+        wanted = bool(self._result_keys())
+        if wanted == self._outside_installed:
+            return
+        self._outside_installed = wanted
+        (install_app_filter if wanted else remove_app_filter)(self._outside)
+
+    def _outside_press(self, point, target) -> None:
+        """One press outside the overlay and the bar dismisses every visible notice; running work is untouched."""
+        if not self._live() or not isValid(target) or target.window() is not self.window:
+            return  # a popup, menu or dialog press belongs to its own window
+        # The bar protects only a notice it shows; a bar that merely shows running progress is outside the notice.
+        model = self.bar.strip.model if isValid(self.bar) else None
+        showing_notice = model is not None and model.kind != "running"
+        for widget in (self.form, self.bar if showing_notice else None):
+            if widget is not None and isValid(widget) and widget.isVisible():
+                if widget.rect().contains(widget.mapFromGlobal(point)):
+                    return
+        keys = self._result_keys()
+        if keys:
+            # Qt may be iterating the application's filter list: remove rows (and the filter) after this event.
+            QTimer.singleShot(0, self, lambda: [self.finish(key) for key in keys if key in self.rows])
 
     @Slot()
     def _tick_notices(self):
         if not self._live():
             return
         focused = QApplication.focusWidget()
+        # Real elapsed time since the previous tick: a late or merged timer event must not stretch a notice's life.
+        now = monotonic()
+        step = 0.1 if self._notice_last is None else max(0.0, now - self._notice_last)
+        self._notice_last = now
         for key, remaining in tuple(self._expiry.items()):
             row = self.rows.get(key)
             if row is None or not isValid(row):
                 self._expiry.pop(key, None)
                 self.rows.pop(key, None)
                 continue
-            if (
-                self.form.underMouse()
-                or self.bar.underMouse()
-                or (
-                    focused is not None
-                    and (
-                        focused is self.form
-                        or self.form.isAncestorOf(focused)
-                        or focused is self.bar
-                        or self.bar.isAncestorOf(focused)
-                    )
-                )
-            ):
+            if self._pointer_over(self.form) or self._pointer_over(self.bar) or self._focus_in_view(focused):
                 continue
-            remaining -= 0.1
+            remaining -= step
             if remaining <= 0:
                 self._expiry.pop(key, None)
                 row.activityLifetimeBar.setValue(0)
@@ -573,6 +652,7 @@ class ActivityStrip(QObject):
                 row.activityLifetimeBar.setValue(max(0, round(remaining * 1000)))
         if not self._expiry:
             self._notice_timer.stop()
+            self._notice_last = None
         self._sync_bar()  # redraw the result's lifetime line
 
     def _finish_if_row(self, key, row):
@@ -593,8 +673,10 @@ class ActivityStrip(QObject):
             row.deleteLater()
         if not self._expiry:
             self._notice_timer.stop()
+            self._notice_last = None
         if row is not None:
             self.operations_changed.emit()
+        self._sync_outside()
         self._position()
 
 

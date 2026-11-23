@@ -7,7 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
-from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton
+from PySide6.QtWidgets import QApplication, QLineEdit, QPushButton, QWidget
 from shiboken6 import isValid
 
 from dtflow.ui.app_filters import install_app_filter, remove_app_filter
@@ -83,10 +83,29 @@ class InlineFeedback(QObject):
             target = self.form.inlineEditorCancelButton
         target.setFocus(Qt.FocusReason.OtherFocusReason)
 
+    def _inside(self, point) -> bool:
+        """The press landed on this surface: the shown card, or the in-place button of a pending confirmation."""
+        if self.form.isVisible() and self.form.rect().contains(self.form.mapFromGlobal(point)):
+            return True
+        armed = self._armed[0] if self._armed else None
+        return (
+            armed is not None
+            and isValid(armed)
+            and armed.isVisible()
+            and armed.rect().contains(armed.mapFromGlobal(point))
+        )
+
     def eventFilter(self, watched, event):
-        if self._outside and event.type() == QEvent.Type.MouseButtonPress and self.form.isVisible():
-            point = event.globalPosition().toPoint()
-            if not self.form.rect().contains(self.form.mapFromGlobal(point)):
+        if (
+            self._outside
+            and event.type() == QEvent.Type.MouseButtonPress
+            and self._suspended_editor is None
+            and isinstance(watched, QWidget)
+            and watched.window() is self.window  # a combo popup, menu or dialog press is not an outside click
+        ):
+            # Any press outside dismisses every kind of notice. For a pending confirmation or an editor that is
+            # Cancel (``dismiss`` runs the cancel hook / drops the editor), never Confirm, Save or Retry.
+            if (self.form.isVisible() or self._armed) and not self._inside(event.globalPosition().toPoint()):
                 self.dismiss()
             return False
         if event.type() == QEvent.Type.KeyPress and event.key() == Qt.Key.Key_Escape:
@@ -218,8 +237,8 @@ class InlineFeedback(QObject):
         self.form.inlineTextBrowser.setVisible(bool(text))
         self._set_dismiss_label(cross=True)
         self.form.show()
-        # Informational notices also close on any click outside them; errors and consent stay until answered.
-        self._watch_outside(state == "info")
+        # A press outside closes any notice; for consent and editors it acts as Cancel.
+        self._watch_outside(True)
         self.strip._position()
 
     def fit_text(self, width):
@@ -309,6 +328,7 @@ class InlineFeedback(QObject):
         button.style().polish(button)
         button._inline_commit = callback
         self._set_feedback_state("error" if danger else "confirm")
+        self._watch_outside(True)  # also for the in-place variant, which shows no card
         if danger and title.startswith("Move "):
             self.form.inlineSymbol.setPixmap(trash_icon_pixmap())
         else:
