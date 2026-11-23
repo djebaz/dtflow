@@ -14,6 +14,7 @@ The change is presentation-only. It does not alter scans, family detection, gene
 - Compare a copied presentation snapshot, including entries, metadata, no-copy records, formats, q8p availability, selected-key confirmations, backend and current busy state. An identical render request leaves the table and selection untouched.
 - Reuse each existing row's canonical Designer action host. Update its current identity and metadata before enabling its controls; click handlers resolve those current values rather than an old row's captured identity. Existing eligibility, status text, tooltips and service calls remain authoritative.
 - Mount at most one missing action form per timer turn, yielding between retained rows instead of synchronously loading the whole library. A replacement projection cancels the old pending list; each mount checks the row's current content identity and no-copy status. Busy state is read again at mount time. The timer belongs to the table/window and is stopped by the existing shutdown guard; callbacks also refuse work after runner shutdown starts.
+- Suspend missing-host mounting during retained or registry-only removal and resume it on either completion, including failure/no-op outcomes. Source review caught a race where mounting under a temporarily disabled parent could otherwise leave child actions explicitly disabled after an unchanged failed removal.
 - Keep the existing GUI-gap, stall-sample and retained-read diagnostics unchanged. No competing diagnostic writer or new sink is introduced.
 
 ## Evidence and remaining acceptance

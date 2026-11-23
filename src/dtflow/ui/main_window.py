@@ -2664,6 +2664,11 @@ class MainWindow:
         if self.runner.closed:
             self._lora_action_rows.clear()
             return
+        if self._removing_retained_lora:
+            # The parent table is disabled for removal. Do not explicitly disable newly mounted
+            # children: a failed/no-op removal can restore the same cached presentation afterward.
+            # Both removal completions resume this pending list once the parent is enabled again.
+            return
         if not self._lora_action_rows:
             return
         row, identity, family, metadata = self._lora_action_rows.pop(0)
@@ -3042,6 +3047,8 @@ class MainWindow:
     def _unretained_lora_removed(self, identity: tuple[str, int], removed, error) -> None:
         self._removing_retained_lora = False
         self.form.retainedLorasTable.setEnabled(True)
+        if self._lora_action_rows and not self.runner.closed:
+            self._lora_actions_timer.start(1)
         if error is not None:
             known = isinstance(error, (ValidationError, PersistenceError))
             InlineNotice.error(
@@ -3092,6 +3099,8 @@ class MainWindow:
     def _retained_lora_removed(self, removed, error) -> None:
         self._removing_retained_lora = False
         self.form.retainedLorasTable.setEnabled(True)
+        if self._lora_action_rows and not self.runner.closed:
+            self._lora_actions_timer.start(1)
         if error is not None:
             InlineNotice.error(self.form, "Retained LoRA not removed", str(error))
         elif removed:

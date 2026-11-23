@@ -1,6 +1,6 @@
 # Current development status
 
-## In implementation: retained-LoRA table responsiveness (#565; 2026-11-23)
+## In review: retained-LoRA table responsiveness (#565, PR #581; 2026-11-23)
 
 The table skips unchanged presentation snapshots, preserves family/format observations while refreshing, reuses row action controls and mounts missing Designer action forms one per GUI turn. This targets repeated synchronous form loads in the issue's reported 96-file stall stacks, not the separate slow family scan. Source/static evidence only; the 500 ms Windows responsiveness gate and preserved-behavior owner smoke remain unverified. See the [implementation and evidence boundary](plans/2026-11-23-lora-table-responsiveness.md).
 
