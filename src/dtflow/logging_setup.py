@@ -150,8 +150,13 @@ def configure_logging(
         raise LoggingSetupError("Diagnostic configuration is already in progress.")
     try:
         result = _configure_logging(
-            directory=directory, dev=dev, build=build, backend=backend, video_decoder=video_decoder,
-            session=session, report_error=report_error
+            directory=directory,
+            dev=dev,
+            build=build,
+            backend=backend,
+            video_decoder=video_decoder,
+            session=session,
+            report_error=report_error
         )
         return result
     finally:
