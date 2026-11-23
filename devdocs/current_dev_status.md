@@ -1,5 +1,9 @@
 # Current development status
 
+## In review: retained-LoRA table and catalogue responsiveness (#565, PR #581; 2026-11-23)
+
+LoRA refreshes reuse cells/controls, batch column sizing and retain selection and eligible actions during bounded updates. Catalogue preparation remains asynchronous with one-turn selector publication. Family/format observations now reuse unchanged per-file fingerprints, and initial inspection waits for SDK preload. Owner Windows evidence at the earlier head supports unchanged-table navigation and switching during generation (largest gap 384 ms); final startup ordering/cache timings and full behavior acceptance remain pending. Generation/provider behavior stays unchanged. See the [implementation and evidence boundary](plans/2026-11-23-lora-table-responsiveness.md).
+
 ## In review: video receiving to disk and local encoder controls (#550)
 
 DT+ video frames are received into a per-clip disk spool (original tensors, in order) without starting FFmpeg; after the stream ends the clip waits for a slot of the shared local-encoder limit, then FFmpeg encodes from the spool and muxes audio under that slot. Connection gets **Local video encoding**: max concurrent encoders (0 = Unlimited, default) and codec threads per encoder (0 = Auto, from the CPU count), saved in `settings.json`. The 1800 s deadline covers remote receiving only; the 10-clip admission lease is kept through encoding and saving; the spool reservation is 500 MiB per clip (an estimate, not a cap); item files are deleted on any normal failure. Successful `-encoders`/`-version` readiness checks are cached per process and tool pair. Static, CI and a short owner Windows smoke only; see the PR evidence.

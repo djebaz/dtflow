@@ -1,8 +1,8 @@
 """Qt application entry used by ``dtflow gui``."""
 
+import asyncio
 import logging
 import sys
-import threading
 import time
 
 from PySide6.QtCore import Qt, QTimer
@@ -149,7 +149,7 @@ def _start_background_work(window) -> None:
     if window.runner.closed:
         return
     window.start_startup_check()
-    threading.Thread(target=_preload_drawthings, name="dtflow-preload", daemon=True).start()
+    window.runner.submit(asyncio.to_thread(_preload_drawthings), window.finish_startup_preload)
 
 
 def _preload_drawthings() -> None:

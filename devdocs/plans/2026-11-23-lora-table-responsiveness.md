@@ -1,0 +1,24 @@
+# Retained-LoRA responsiveness (#565)
+
+## Cause and scope
+
+[Issue #565](https://github.com/djebaz/dtflow/issues/565) concerns repeated retained-LoRA table work during Connection navigation and generation. Owner Windows profiles identified repeated row-form construction and, subsequently, Qt cell replacement as hot paths. Unchanged visits also repeated family/format inspection of 99 files, taking 2–9 seconds on workers. Startup overlapped inspection with Draw Things SDK preload. Low sampled GUI CPU during overlapping jobs suggests contention; it does not prove a GIL cause.
+
+The owner expanded [PR #581](https://github.com/djebaz/dtflow/pull/581) to include asynchronous catalogue preparation, startup auto-connect, measured family-scan work and idle-Connection diagnostics. Broader import, form, attempt-store and first-paint optimization remains out of scope. Generation, provider protocols, upload consent, credentials and durable schemas are unchanged.
+
+## Implementation
+
+- Skip unchanged table projections. Reuse cells, status icons and row controls, update only differing properties, and apply measured fixed column widths once per content pass. Reconciliation uses cooperative 8 ms GUI slices with painting suppressed only within each slice and restored afterward.
+- Keep current rows interactive. Preserve identity-based selection and revalidate the current row, metadata, backend, key and busy state at click time. On reconcile failure, log and discard both iterators and presentation signatures so a later refresh can rebuild.
+- Read catalogue data and compute choices on a worker, retaining one active request and the latest replacement. Reject superseded/context-changed results and shutdown delivery. Build detached selector models and publish them in one GUI callback, as requested in the final review, rather than maintaining a second timer-driven application state machine. Keep explicit failure/retry presentation and the shared family-picker adapter used by Queue construction.
+- Reuse family/format observations per window by recorded SHA-256/size identity and a current managed-file stat fingerprint. Inspect only uncached or changed files; missing/unreadable observations remain retryable. This is display-only reuse, not byte-verification authority. Recompute verified q8p availability on every read; dispatch retains its existing checksum checks. No new persistent cache is introduced.
+- Begin initial family inspection after SDK preload settles, including handled preload failure. Coalesce overlapping requests and preserve a request made during removal until removal finishes. Bulk index reads retain path validation and fall through missing duplicate entries like the single-file lookup.
+- Preserve shared logging. With development/performance diagnostics enabled, observe visible non-minimized Connection even while idle and time LoRA table slices. Family-read diagnostics retain phase timings and report `inspected`/`reused` counts. Instrumentation remains `connection-activity-gui-jsonl-v3`; thresholds and JSONL schema are unchanged.
+
+## Evidence and acceptance
+
+On owner Windows runs at `e973c3c`, page switches during a successful generation produced no slow table slices and no gap above 500 ms (largest 384 ms). Unchanged page switches did not rebuild the table, supporting AC-4. Startup still had a 543 ms table-labelled slice while preload and family inspection overlapped, and repeated scans of unchanged files. These observations motivate the final cache/ordering changes; they do not validate those later changes or establish the contention cause.
+
+AC-6 is clarified to allow one-turn selector-model publication while retaining worker-owned reads/computation and stale-result guards. The issue's stable AC ids and levels remain authoritative. AC-2's switching scenario has owner evidence on the earlier head; startup latency after the final ordering change and AC-3's full preserved-behavior checklist remain unverified. Source inspection supports structural claims, not Windows latency acceptance. Static checks and exact-head GitHub CI are reported separately in the PR; agents do not add, modify or run tests, fixtures, renders or provider work.
+
+Owner acceptance should use existing diagnostics and roughly 99 retained files: compare startup and subsequent Connection visits (`inspected` should fall to zero for successfully observed unchanged files), switch Connection/Generate while an already-authorized generation runs, and inspect table-attributable gaps above 500 ms. Check retained/no-copy rows, statuses, family filtering, selection, eligible Prepare/Quantize actions, metadata edits/removal, key/backend changes and close during pending work. Also check same-inventory key changes, catalogue failure/retry, removal during reconciliation and shutdown. No additional generation, upload or billable action is authorized by this document.

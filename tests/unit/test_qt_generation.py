@@ -271,14 +271,17 @@ def test_inventory_refresh_populates_models_with_observation_time(window, qtbot)
     page = window.generation_page
     page.refreshInventoryButton.click()
     qtbot.waitUntil(lambda: page.refreshInventoryButton.isEnabled(), timeout=5000)
-    assert page.modelCombo.findText("fake-fixture") >= 0
+    # The catalogue is read off the GUI thread (#565); its choices arrive in a later callback.
+    qtbot.waitUntil(lambda: page.modelCombo.findText("fake-fixture") >= 0, timeout=5000)
     assert "observed" in page.inventoryEvidenceLabel.text()
 
 
-def test_checkpoint_details_inspects_exact_file_without_dispatch(window, monkeypatch):
+def test_checkpoint_details_inspects_exact_file_without_dispatch(window, qtbot, monkeypatch):
     from dtflow.services import checkpoint_metadata
 
     page = window.generation_page
+    # The catalogue is read off the GUI thread (#565); wait until it is applied before selecting a checkpoint.
+    qtbot.waitUntil(lambda: window.generation._catalogue_loaded, timeout=5000)
     page.modelCombo.setCurrentText("fixture_q8p.ckpt")
     monkeypatch.setattr(
         checkpoint_metadata,

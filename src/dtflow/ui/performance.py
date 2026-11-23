@@ -121,7 +121,7 @@ def profile_slow_gui_callback(name: str):
 
 
 class GuiHeartbeat(QObject):
-    """Observe only Images browsing or existing in-window work; never control that work."""
+    """Observe Connection/Images browsing or existing in-window work; never control that work."""
 
     def __init__(self, window, activity, progress_strip, runner, context, flush_gallery) -> None:
         super().__init__(window)

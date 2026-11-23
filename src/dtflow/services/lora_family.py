@@ -101,23 +101,27 @@ def detect_lora_family(path: Path) -> LoraFamily:
     # actual adapter up/down tensors, and use only their names and shapes.
     dit_modules = [match.group(1) for name in names if (match := _DIT_LORA_NAME.fullmatch(name)) is not None]
 
-    def adapter_dimensions(prefix: str) -> set[int]:
-        """Only dimensions of LoRA up/down tensors from this model namespace."""
-        return {
-            dimension
-            for row in rows
-            if len(row) > 1
-            and isinstance(row[0], str)
-            and row[0].lower().startswith(prefix)
-            and row[0].lower().endswith(("__up__", "__down__"))
-            for dimension in _dimensions(row[1])
-        }
-
-    dit_dimensions = adapter_dimensions("__dit__[t-")
-    unet_dimensions = adapter_dimensions("__unet__[t-")
-    text_dimensions = adapter_dimensions("__text_model__[t-")
-    te2_dimensions = adapter_dimensions("__te2__text_model__[t-")
-    fixed_unet_dimensions = adapter_dimensions("__unet_fixed__[t-")
+    # One pass over headers instead of five scans that repeatedly lowercase names.
+    # Namespace prefixes are disjoint; only adapter up/down shapes are decoded, as before.
+    dimensions = {
+        prefix: set()
+        for prefix in ("__dit__[t-", "__unet__[t-", "__text_model__[t-", "__te2__text_model__[t-", "__unet_fixed__[t-")
+    }
+    for row in rows:
+        if len(row) <= 1 or not isinstance(row[0], str):
+            continue
+        name = row[0].lower()
+        if not name.endswith(("__up__", "__down__")):
+            continue
+        for prefix, values in dimensions.items():
+            if name.startswith(prefix):
+                values.update(_dimensions(row[1]))
+                break
+    dit_dimensions = dimensions["__dit__[t-"]
+    unet_dimensions = dimensions["__unet__[t-"]
+    text_dimensions = dimensions["__text_model__[t-"]
+    te2_dimensions = dimensions["__te2__text_model__[t-"]
+    fixed_unet_dimensions = dimensions["__unet_fixed__[t-"]
 
     # Draw Things encodes DiT module names as "t-<module>-<layer>-...".
     # Do not require a specific last layer; a LoRA can adapt only a subset.
@@ -279,10 +283,15 @@ def retained_families(
     from dtflow.services.lora_store import LoraStore
 
     store = LoraStore(state)
+    identities = tuple(dict.fromkeys(identities))
+    try:
+        retained_files = store.find_many(identities)
+    except (OSError, ValidationError):
+        retained_files = {}
     result: dict[tuple[str, int], LoraFamily] = {}
-    for sha256, size in dict.fromkeys(identities):
+    for sha256, size in identities:
         try:
-            retained = store.find(sha256, size)
+            retained = retained_files.get((sha256, size))
             detected = LoraFamily()
             if retained is not None and retained.path.stat().st_size == size:
                 detected = detect_lora_family(retained.path)

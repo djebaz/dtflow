@@ -23,14 +23,26 @@ async def confirmed_contents(state: Path, owner: str) -> frozenset[tuple[str, in
         await registry.aclose()
 
 
-def library_formats(state: Path, entries: list[dict]) -> dict[tuple[str, int], str]:
-    """Bounded tensor-header observations only; no weight decoding or whole-file hashing."""
+def library_formats(state: Path, entries: list[dict]) -> dict[tuple[str, int], str | None]:
+    """Bounded tensor-header observations only; no weight decoding or whole-file hashing.
+
+    ``None`` means the file was read but is not a recognised tensor layout; a possibly transient read failure is absent.
+    """
     store = LoraStore(state)
     formats = {}
+    identities = [
+        (entry["sha256"], entry["size"])
+        for entry in entries
+        if isinstance(entry.get("sha256"), str) and isinstance(entry.get("size"), int)
+    ]
+    try:
+        retained_files = store.find_many(identities)
+    except (OSError, ValidationError):
+        return formats
     for entry in entries:
         identity = (entry.get("sha256"), entry.get("size"))
         try:
-            retained = store.find(*identity)
+            retained = retained_files.get(identity)
             if retained is None or not retained.path.is_file() or retained.path.stat().st_size != retained.size:
                 continue
             with closing(sqlite3.connect(retained.path.as_uri() + "?mode=ro", uri=True, timeout=1)) as db:
@@ -38,13 +50,17 @@ def library_formats(state: Path, entries: list[dict]) -> dict[tuple[str, int], s
                 db.execute("PRAGMA trusted_schema=OFF")
                 rows = db.execute("SELECT type, datatype FROM tensors LIMIT 20001").fetchall()
             if not rows or len(rows) > 20000:
-                continue
-            if all(kind == 1 and datatype == 0x20000 for kind, datatype in rows):
+                formats[identity] = None
+            elif all(kind == 1 and datatype == 0x20000 for kind, datatype in rows):
                 formats[identity] = "F16"
             elif all(isinstance(kind, int) and datatype == 0x20000 for kind, datatype in rows):
                 formats[identity] = "Q8P" if any(kind >> 32 == 0x8A1E8B for kind, _ in rows) else "Unknown"
-        except (OSError, sqlite3.Error, ValidationError, TypeError):
-            continue
+            else:
+                formats[identity] = None
+        except (OSError, sqlite3.OperationalError):
+            continue  # possibly transient (locked, cannot open): stay absent so the next visit retries
+        except (sqlite3.Error, ValidationError, TypeError):
+            formats[identity] = None
     return formats
 
 
@@ -52,12 +68,27 @@ def available_quantizations(state: Path, entries: list[dict]) -> frozenset[tuple
     """Only a verified, still-managed output disables quantization of its recorded source."""
     store = LoraStore(state)
     result = set()
+    identities = [
+        (entry["sha256"], entry["size"])
+        for entry in entries
+        if isinstance(entry.get("quantized_from"), list)
+        and isinstance(entry.get("sha256"), str)
+        and isinstance(entry.get("size"), int)
+    ]
+    try:
+        retained_files = store.find_many(identities)
+    except (OSError, ValidationError):
+        return frozenset()
     for entry in entries:
         sources = entry.get("quantized_from")
-        if not isinstance(sources, list):
+        if (
+            not isinstance(sources, list)
+            or not isinstance(entry.get("sha256"), str)
+            or not isinstance(entry.get("size"), int)
+        ):
             continue
         try:
-            retained = store.find(entry["sha256"], entry["size"])
+            retained = retained_files.get((entry["sha256"], entry["size"]))
             if retained is None:
                 continue
             store.verify(retained)
