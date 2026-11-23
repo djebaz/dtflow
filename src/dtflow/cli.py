@@ -94,8 +94,8 @@ def parser() -> argparse.ArgumentParser:
         "-vd",
         "--video-decoder",
         choices=("upstream", "lut", "fp32"),
-        default="upstream",
-        help="Video tensor decoder: upstream (default), lut, or experimental fp32 for CPU comparison.",
+        default="lut",
+        help="Video tensor decoder: lut (default), upstream, or experimental fp32 for CPU comparison."
     )
     gui.add_argument(
         "-format",
@@ -1029,7 +1029,7 @@ def start_logging(args: argparse.Namespace):
             dev=args.dev,
             build=identity(),
             backend=getattr(args, "backend", None) or "-",
-            video_decoder=getattr(args, "video_decoder", "upstream"),
+            video_decoder=getattr(args, "video_decoder", "lut"),
         )
     except LoggingSetupError as exc:
         print(f"Logging unavailable: {exc} Continuing without a log file.", file=sys.stderr)
