@@ -4593,14 +4593,15 @@ class GalleryPage(QObject):
             self._edit_callback(result)
 
     def _video_playback_changed(self, active: bool) -> None:
-        """Keep the position/dimensions overlays readable below the video's transport bar.
+        """Keep the overlays and the F6 controls clear of a playing video.
 
-        The video panel is lifted by the overlay row's height instead of covering it; only the image toolbar,
-        which has nothing to do for a clip, stays hidden. The slideshow pager and controls are raised back
-        above the panel, which was just raised over them.
+        The video widget is a native child window that no sibling can be stacked over, so the panel is
+        shortened instead: a bottom strip for the position/dimensions overlays and, when playback starts during
+        F6, a top strip for the slideshow pager and controls. The poster is not painted behind the strips.
+        Only the image toolbar, which has nothing to do for a clip, stays hidden.
         """
         overlays = [self._widget(name) for name in ("galleryPositionOverlay", "galleryDimensionsOverlay")]
-        inset = 0
+        top = bottom = 0
         if active:
             origin = self.surface.mapToGlobal(QPoint(0, 0)).y()
             tops = [
@@ -4609,14 +4610,17 @@ class GalleryPage(QObject):
                 if label.isVisibleTo(self.surface.window())
             ]
             if tops:
-                inset = max(0, self.surface.height() - min(tops) + 2)
+                bottom = max(0, self.surface.height() - min(tops) + 2)
             if self.slideshow.active:
-                self.slideshow._position_controls()
+                show = self.slideshow
+                top = max(show.pager.geometry().bottom(), show.controls.geometry().bottom()) + 4
         else:
             for label in overlays:
                 label.setVisible(True)
         self._widget("galleryImageToolbar").setVisible(not active)
-        self.video_player.set_bottom_inset(inset)
+        self.surface_painter.hide_image = active
+        self.surface.update()
+        self.video_player.set_insets(top, bottom)
 
     def _play_video(self) -> None:
         """Resolve the MP4 on a worker, then play it in Images without blocking Qt."""

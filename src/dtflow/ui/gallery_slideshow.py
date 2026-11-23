@@ -125,6 +125,7 @@ class GallerySlideshow(QObject):
 
     def start(self) -> None:
         gallery = self.gallery
+        gallery.video_player.release(show_play=True)  # a clip started outside F6 is laid out for Detail
         self._previous_view = gallery.mode
         self._previous_live = gallery._live_mode
         self._previous_focus = bool(gallery.page.property("imageFocus"))
@@ -195,6 +196,7 @@ class GallerySlideshow(QObject):
         QApplication.instance().removeEventFilter(self)
         self.controls.hide()
         gallery = self.gallery
+        gallery.video_player.release(show_play=True)  # the F6 strips around a clip end with the slideshow
         for widget, previous in self._mouse_tracking:
             widget.setMouseTracking(previous)
         gallery.surface_painter.finish_transition()

@@ -64,7 +64,7 @@ class VideoPlayer(QObject):
         self._duration = 0
         self._muted = False
         self._video = None
-        self._bottom_inset = 0  # strip below the panel that stays free for the Gallery's overlay row
+        self._insets = (0, 0)  # free strips (top, bottom) around the panel for the Gallery's overlays
         self._parts: SimpleNamespace | None = None  # reusable native widgets, hidden while no clip plays
         # K and S both toggle Play/Pause without taking focus from other widgets.
         # Space and Enter retain Qt's native focused-control behavior.
@@ -447,8 +447,10 @@ class VideoPlayer(QObject):
         self.play_button.move((width - self.play_button.width()) // 2, (height - self.play_button.height()) // 2)
         self.play_button.raise_()
         if self._panel is not None:
-            self._panel.setGeometry(0, 0, width, max(0, height - self._bottom_inset))
+            top, bottom = self._insets
+            self._panel.setGeometry(0, top, width, max(0, height - top - bottom))
 
-    def set_bottom_inset(self, pixels: int) -> None:
-        self._bottom_inset = max(0, pixels)
+    def set_insets(self, top: int, bottom: int) -> None:
+        """Shorten the panel so overlays beside it stay visible: QVideoWidget is a native window."""
+        self._insets = (max(0, top), max(0, bottom))
         self._place()

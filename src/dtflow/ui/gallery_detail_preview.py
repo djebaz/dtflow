@@ -59,6 +59,7 @@ class CoverPainter(QObject):
         self._outgoing_opacity = 0.0
         self.badges = badges
         self.placeholder = ""
+        self.hide_image = False  # Detail hides the poster while a video plays over part of the surface
         self.placeholder_icon = QIcon()
         # Built once per painter rather than on every paint; tokens are fixed for the session.
         small = int(self.tokens["type.small"].removesuffix("pt"))
@@ -153,7 +154,9 @@ class CoverPainter(QObject):
             clip.addRoundedRect(rect, 10, 10)
             painter.setClipPath(clip)
             painter.fillRect(rect, QColor(self.tokens["color.canvas"]))
-            if not self.pixmap.isNull():
+            if self.hide_image:
+                pass
+            elif not self.pixmap.isNull():
                 if self._previous_view is not None:
                     self._paint_pixmap(
                         painter, rect, self._previous_pixmap, *self._previous_view, self._outgoing_opacity
