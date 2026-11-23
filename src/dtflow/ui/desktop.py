@@ -36,6 +36,10 @@ def parser() -> argparse.ArgumentParser:
     )
     command.add_argument("-q", "--logs", type=Path, help="Override the diagnostic log directory.")
     command.add_argument("-nc", "--no-cache", action="store_true", help="Bypass disposable cache reads and writes.")
+    command.add_argument(
+        "-vd", "--video-decoder", choices=("upstream", "lut"), default="upstream",
+        help="Video tensor decoder: upstream (default) or experimental lut for CPU comparison.",
+    )
     return command
 
 
@@ -70,12 +74,15 @@ def _run(argv: list[str] | None, report: Callable[..., None]) -> int:
                 directory=args.logs,
                 dev=args.dev,
                 build=identity(),
+                video_decoder=args.video_decoder,
                 report_error=notices.post,
             )
         except LoggingSetupError:
             notices.post("Diagnostic logs are unavailable. Continuing without a log file.")
+        from dtflow.services import video_encode
         from dtflow.ui.splash import run_gui_with_splash
 
+        video_encode.set_video_decoder(args.video_decoder)
         return run_gui_with_splash(no_cache=args.no_cache, diagnostic_notices=notices)
     except KeyboardInterrupt:
         diagnostic_event(
