@@ -212,7 +212,6 @@ class GallerySlideshow(QObject):
         self.pager.style().polish(self.pager)
         self.pager.show()
         self.header.setVisible(self._header_visible)
-        gallery._sync_video_insets()
         gallery._slideshow_position = None
         toggle_image_focus(gallery.page, self._previous_focus)
         if not gallery.runner.closed:
@@ -251,7 +250,6 @@ class GallerySlideshow(QObject):
             self.pager.height() + 12,
         )
         self.controls.raise_()
-        self.gallery._sync_video_insets()
 
     def new_available(self) -> bool:
         """New relies on Newest first, where arrivals land at offset 0."""

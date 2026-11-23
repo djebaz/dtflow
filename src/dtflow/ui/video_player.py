@@ -10,7 +10,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSize, Qt, QUrl
-from PySide6.QtGui import QColor, QIcon, QKeySequence, QPalette, QShortcut
+from PySide6.QtGui import QIcon, QKeySequence, QShortcut
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import (
     QAbstractSpinBox,
@@ -64,7 +64,7 @@ class VideoPlayer(QObject):
         self._duration = 0
         self._muted = False
         self._video = None
-        self._insets = (0, 0)  # free strips (top, bottom) for the Gallery's overlays around the native video
+        self._bottom_inset = 0  # strip below the panel that stays free for the Gallery's overlay row
         self._parts: SimpleNamespace | None = None  # reusable native widgets, hidden while no clip plays
         # K and S both toggle Play/Pause without taking focus from other widgets.
         # Space and Enter retain Qt's native focused-control behavior.
@@ -142,12 +142,8 @@ class VideoPlayer(QObject):
 
         panel = QWidget(self.surface)
         panel.setObjectName("galleryVideoPanel")
-        panel.setAutoFillBackground(True)  # the strips must hide the poster painted below the panel
-        palette = panel.palette()
-        palette.setColor(QPalette.ColorRole.Window, QColor("black"))
-        panel.setPalette(palette)
         column = QVBoxLayout(panel)
-        column.setContentsMargins(0, self._insets[0], 0, self._insets[1])
+        column.setContentsMargins(0, 0, 0, 0)
         column.setSpacing(0)
         video = QVideoWidget(panel)
         video.setAspectRatioMode(Qt.AspectRatioMode.KeepAspectRatio)
@@ -245,7 +241,6 @@ class VideoPlayer(QObject):
         player.errorOccurred.connect(failure)
         self._parts = SimpleNamespace(
             panel=panel,
-            column=column,
             player=player,
             audio=audio,
             video=video,
@@ -452,13 +447,8 @@ class VideoPlayer(QObject):
         self.play_button.move((width - self.play_button.width()) // 2, (height - self.play_button.height()) // 2)
         self.play_button.raise_()
         if self._panel is not None:
-            self._panel.setGeometry(0, 0, width, height)
+            self._panel.setGeometry(0, 0, width, max(0, height - self._bottom_inset))
 
-    def set_insets(self, top: int, bottom: int) -> None:
-        """Keep strips at the panel's edges clear of the video so overlays beside it stay visible.
-
-        QVideoWidget is a native child window; widgets stacked above it are not shown over it.
-        """
-        self._insets = (max(0, top), max(0, bottom))
-        if self._parts is not None:
-            self._parts.column.setContentsMargins(0, self._insets[0], 0, self._insets[1])
+    def set_bottom_inset(self, pixels: int) -> None:
+        self._bottom_inset = max(0, pixels)
+        self._place()

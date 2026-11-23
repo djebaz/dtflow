@@ -4593,36 +4593,30 @@ class GalleryPage(QObject):
             self._edit_callback(result)
 
     def _video_playback_changed(self, active: bool) -> None:
-        """Keep the position/dimensions overlays and the F6 controls usable around a playing video.
+        """Keep the position/dimensions overlays readable below the video's transport bar.
 
-        The video widget is a native child window that no sibling can be stacked over, so the panel keeps
-        free strips (see `_sync_video_insets`) instead of being covered. Only the image toolbar, which has
-        nothing to do for a clip, stays hidden.
+        The video panel is lifted by the overlay row's height instead of covering it; only the image toolbar,
+        which has nothing to do for a clip, stays hidden. The slideshow pager and controls are raised back
+        above the panel, which was just raised over them.
         """
-        if not active:
-            for name in ("galleryPositionOverlay", "galleryDimensionsOverlay"):
-                self._widget(name).setVisible(True)
+        overlays = [self._widget(name) for name in ("galleryPositionOverlay", "galleryDimensionsOverlay")]
+        inset = 0
+        if active:
+            origin = self.surface.mapToGlobal(QPoint(0, 0)).y()
+            tops = [
+                label.mapToGlobal(QPoint(0, 0)).y() - origin
+                for label in overlays
+                if label.isVisibleTo(self.surface.window())
+            ]
+            if tops:
+                inset = max(0, self.surface.height() - min(tops) + 2)
+            if self.slideshow.active:
+                self.slideshow._position_controls()
+        else:
+            for label in overlays:
+                label.setVisible(True)
         self._widget("galleryImageToolbar").setVisible(not active)
-        self._sync_video_insets()
-
-    def _sync_video_insets(self) -> None:
-        """Reserve the strips the overlay row (bottom) and the F6 pager/controls (top) occupy."""
-        player = self.video_player
-        if not player.playing:
-            player.set_insets(0, 0)
-            return
-        origin = self.surface.mapToGlobal(QPoint(0, 0)).y()
-        tops = [
-            self._widget(name).mapToGlobal(QPoint(0, 0)).y() - origin
-            for name in ("galleryPositionOverlay", "galleryDimensionsOverlay")
-            if self._widget(name).isVisibleTo(self.surface.window())
-        ]
-        bottom = max(0, self.surface.height() - min(tops) + 2) if tops else 0
-        top = 0
-        if self.slideshow.active:
-            show = self.slideshow
-            top = max(show.pager.height(), show.controls.y() + show.controls.height()) + 4
-        player.set_insets(top, bottom)
+        self.video_player.set_bottom_inset(inset)
 
     def _play_video(self) -> None:
         """Resolve the MP4 on a worker, then play it in Images without blocking Qt."""
