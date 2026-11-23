@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import os
 import struct
 import tempfile
 import threading
@@ -57,10 +56,6 @@ from dtflow.services.video_resources import (
 
 log = logging.getLogger(__name__)
 GENERATE_METHOD = "/ImageGenerationService/GenerateImage"
-# Temporary Windows A/B experiment; keep the established decoder as the default.
-_USE_LUT_DECODER = os.environ.get("DTFLOW_VIDEO_DECODER") == "lut"
-
-
 @lru_cache(maxsize=1)
 def _half_to_byte_lut():
     """Map every float16 bit pattern using the exact drawthings-py 0.4.0 pixel formula."""
@@ -101,7 +96,7 @@ def _frame_rgb(tensor: bytes) -> tuple[int, int, bytes]:
     height, width, channels = struct.unpack_from("<3I", tensor, 24)
     if not width or not height or width * height > 2048 * 2048 or channels not in (3, 4):
         raise ValueError("Video frame exceeds the bounded pixel/channel policy.")
-    if _USE_LUT_DECODER:
+    if video_encode.video_decoder == "lut":
         return width, height, _frame_rgb_lut(tensor, width, height, channels)
 
     import numpy as np
@@ -131,7 +126,6 @@ def _encode_spool(spool: video_encode.TensorSpool, sink: video_encode.FrameSink,
     item is cancelled: the loop then ends at the next frame.
     """
     poster = None
-    log.info("Video decoder: %s", "lut (experimental)" if _USE_LUT_DECODER else "drawthings-py")
     try:
         with closing(spool.read()) as tensors:
             for tensor in tensors:
