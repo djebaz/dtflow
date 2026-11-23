@@ -32,7 +32,7 @@ def present_video(item: ItemProgress, activity: Activity) -> None:
             completed=item.done,
             total=item.total,
             fraction=fraction,
-            count=item.count_text or f"{int(fraction * 100)}%",
+            count=item.count_text,
             detail=item.text,
             elapsed=elapsed,
             stage=item.text,

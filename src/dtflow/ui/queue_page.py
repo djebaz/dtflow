@@ -12,6 +12,7 @@ claims remote cancellation.
 
 import asyncio
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from typing import Any
@@ -66,7 +67,8 @@ from dtflow.services.session import bind_prepared, script_asset_choices, selecti
 from dtflow.ui.activity import Activity, RunState
 from dtflow.ui.controlnet_editor import PoseJob
 from dtflow.ui.performance import profile_slow_gui_callback
-from dtflow.ui.progress_model import PHASE_WORDS
+from dtflow.ui.activity_bar import clock
+from dtflow.ui.progress_model import PHASE_WORDS, ProgressSnapshot, totals_from_view
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.generation_presenter import FormError
 from dtflow.ui.inline_feedback import confirm_action, feedback
@@ -105,6 +107,7 @@ from dtflow.ui.queue_presenter import (
     QueueCountdown,
     controls,
     elapsed_text,
+    estimate_remaining,
     eta_text,
     event_lines,
     filter_counts,
@@ -354,6 +357,9 @@ class QueuePage:
         self._manual_queues: set[str] = set()  # queues Generate created: Generate reports them, not the queue strip
         self._manual_relay = EventRelay(self._manual_delivered, page)
         self._overlapping: set[str] = set()  # queues auto-started early by this window's dispatch
+        self._period: dict[
+            str, bool
+        ] = {}  # queues of the running activity period (id -> foreign), finished ones included
         self.model = QueueItemModel(page)
         page.queueItemsView.setModel(self.model)
         for view in (page.queueItemsView, page.planTableView):
@@ -1299,6 +1305,59 @@ class QueuePage:
                 grid.apply(self._grid_items(result))
 
         self._runner.submit(work(), done)
+
+    def aggregate_progress(self) -> tuple[ProgressSnapshot, str | None, str] | None:
+        """Every queue this window runs, plus running queues of another process (durable counts only), for the global bar.
+
+        Returns the snapshot, a bar-level ETA override (None: the primary queue's own ETA stands) and the name of what
+        Stop reaches when several queues run. Up-next queues are not counted; a paused current dispatch stays in.
+        A script or workflow counts as one parent item. A non-queue Generate run keeps its own single row.
+        A queue that finishes while others still run keeps its settled segment, and stays in the settled/total, until
+        nothing runs any more."""
+        if self._generate_presents:
+            return None
+        owned = [queue_id for queue_id in (self._dispatching, *sorted(self._overlapping)) if queue_id]
+        entries = []
+        for queue_id in owned:
+            view = self._views.get(queue_id)
+            if view is not None and view["status"] in ("running", "paused", "queued"):
+                entries.append((view, False))  # a queue this window now dispatches counts from its first moment
+        for view in self._views.values():
+            if view["queue_id"] not in owned and view["status"] == "running" and view.get("owner_active") is True:
+                entries.append((view, True))
+        active = list(entries)
+        shown = {view["queue_id"] for view, _ in entries}
+        for queue_id, foreign in self._period.items():
+            view = self._views.get(queue_id)
+            # A queue ends in two steps: the dispatch hands over (it is no longer owned), then the next database read
+            # says "finished". Between them its view still says running; it keeps its segment through both.
+            if queue_id not in shown and view is not None and view["status"] in ("running", "finished", "cancelled"):
+                entries.append((view, foreign))  # a finished queue keeps its settled segment until the period ends
+        if not active:
+            # Between two auto-play queues this window already owns the next one, whose view is not read yet: the period
+            # (and its finished segments) goes on. Otherwise nothing runs any more and the period ends.
+            if not (self._dispatching and self._views.get(self._dispatching) is None):
+                self._period.clear()
+                return None
+        if not entries:
+            return None
+        self._period = {view["queue_id"]: foreign for view, foreign in entries}
+        snapshot = self._progress.snapshot(
+            [totals_from_view(view, foreign=foreign, parent=view.get("kind") in RUN_KINDS) for view, foreign in entries]
+        )
+        eta = None
+        if len(active) > 1:
+            names = [view["backend"]["name"] for view, _ in active if view["status"] == "running"]
+            seconds = [estimate_remaining(view) for view, _ in active if view["status"] == "running"]
+            if names and len(set(names)) == len(names) and all(value is not None for value in seconds):
+                eta = f"~{clock(math.ceil(max(seconds)))} left"
+            else:
+                eta = ""  # no usable estimate: show elapsed time only, never a placeholder
+        primary = self._run_view()
+        target = ""
+        if len(active) > 1 and primary is not None:
+            target = f"stops queue {primary['queue_id'][:8]} only"
+        return snapshot, eta, target
 
     def _is_video(self, queue_id: str, item_id: str) -> bool:
         item = self._progress.get(queue_id, item_id)

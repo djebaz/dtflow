@@ -1,6 +1,7 @@
 """Qt-owned feedback: running jobs and routine endings in the status bar, everything that needs reading as an overlay."""
 
 import math
+from dataclasses import dataclass
 from time import monotonic
 from pathlib import Path
 
@@ -24,7 +25,9 @@ from shiboken6 import isValid
 
 from dtflow import startup
 from dtflow.ui.app_filters import install_app_filter, remove_app_filter
-from dtflow.ui.activity_bar import ActivityBar, BarModel, clock
+from dtflow.ui.activity_bar import QUEUE_PALETTE, ActivityBar, BarModel, clock
+from dtflow.ui.progress_model import ProgressSnapshot
+from dtflow.ui.progress_text import aggregate_text
 from dtflow.ui.trash_icon import trash_icon_pixmap
 
 
@@ -61,6 +64,16 @@ _OPERATION_ICONS = {
     "selection": "☑",
     "q8p": "▤",
 }
+
+
+@dataclass(frozen=True, slots=True)
+class Aggregate:
+    """What the global bar shows while any queue of this window (or another process) runs."""
+
+    snapshot: ProgressSnapshot
+    elapsed: str = ""
+    eta: str = ""
+    stop_target: str = ""  # names what Stop reaches when several queues are active; empty for a single queue
 
 
 class _OutsidePress(QObject):
@@ -116,6 +129,9 @@ class ActivityStrip(QObject):
         self.bar.stop_requested.connect(self._bar_stop)
         self.bar.dismiss_requested.connect(self._bar_dismiss)
         self._bar_key = None
+        self._aggregate: Aggregate | None = None
+        self._palette: dict[str, int] = {}  # queue id -> palette slot, kept while the queue stays active
+        self._palette_reuse = 0
         self._last_run = None
         self.status_bar.installEventFilter(self)
         self.status_bar.messageChanged.connect(lambda _text: QTimer.singleShot(0, self, self._position))
@@ -212,6 +228,11 @@ class ActivityStrip(QObject):
         """The row the bar shows: the newest running job, else the newest routine ending."""
         rows = [(key, row) for key, row in self.rows.items() if isValid(row) and self._in_bar(row)]
         running = [item for item in rows if item[1].property("feedbackState") == "progress"]
+        if self._aggregate is not None:
+            # The aggregate bar keeps priority over newer unrelated operation rows; those stay in the overlay.
+            owner = [item for item in running if item[0] == "run"]
+            if owner:
+                return owner[0]
         chosen = running or rows
         return chosen[-1] if chosen else (None, None)
 
@@ -275,7 +296,11 @@ class ActivityStrip(QObject):
         model = BarModel(
             kind={"progress": "running"}.get(state, state),
             title=label,
-            count=(chosen.property("countText") or f"{done}/{total}") if known else "",
+            count=""
+            if chosen.property("fillOnly")
+            else (chosen.property("countText") or f"{done}/{total}")
+            if known
+            else "",
             queued=(chosen.property("queuedCount") or 0) if running else 0,
             stage=stage,
             wide=(chosen.property("wideText") or "") if running and not stopping else "",
@@ -291,6 +316,8 @@ class ActivityStrip(QObject):
             stop_visible=not stop.isHidden(),
             stop_action=chosen.property("stopActionText") or "Stop",
         )
+        if self._aggregate is not None and key == "run" and running:
+            model = self._aggregate_model(model, stopping)
         effect = chosen.graphicsEffect()
         self.bar.present(
             model,
@@ -304,6 +331,58 @@ class ActivityStrip(QObject):
             self._bar_timer.start()
         else:
             self._bar_timer.stop()
+
+    def set_aggregate(self, aggregate: Aggregate | None) -> None:
+        """Show (or stop showing) the aggregate over every active queue in the status bar's "run" row."""
+        if not self._live():
+            return
+        self._aggregate = aggregate
+        active = {queue.totals.queue_id for queue in aggregate.snapshot.queues} if aggregate is not None else set()
+        for queue_id in [queue_id for queue_id in self._palette if queue_id not in active]:
+            del self._palette[queue_id]
+        if aggregate is not None:
+            for queue in aggregate.snapshot.queues:
+                self._palette_slot(queue.totals.queue_id)
+        self._sync_bar()
+
+    def _palette_slot(self, queue_id: str) -> int:
+        """A stable slot per active queue: the lowest free colour, then deterministic reuse above six queues."""
+        if queue_id not in self._palette:
+            free = [slot for slot in range(len(QUEUE_PALETTE)) if slot not in self._palette.values()]
+            if free:
+                self._palette[queue_id] = free[0]
+            else:
+                self._palette[queue_id] = self._palette_reuse % len(QUEUE_PALETTE)
+                self._palette_reuse += 1
+        return self._palette[queue_id]
+
+    def _aggregate_model(self, base: BarModel, stopping: bool) -> BarModel:
+        aggregate = self._aggregate
+        snapshot = aggregate.snapshot
+        segments, end = [], 0.0
+        for queue in snapshot.queues:
+            end += queue.contribution / snapshot.total if snapshot.total else 0.0
+            segments.append((min(1.0, end), QUEUE_PALETTE[self._palette_slot(queue.totals.queue_id)]))
+        text = aggregate_text(snapshot)  # elapsed/ETA are painted at the right edge, not in the left text
+        full = aggregate_text(snapshot, elapsed=aggregate.elapsed, eta=aggregate.eta).full
+        stop_label = base.stop_label
+        if aggregate.stop_target:
+            stop_label = f"{base.stop_label} · {aggregate.stop_target}".strip(" ·")
+        return BarModel(
+            kind="running",
+            title="Queue progress",
+            fraction=snapshot.fill,
+            elapsed=aggregate.elapsed,
+            eta=aggregate.eta,
+            stopping=stopping,
+            tooltip=full,
+            stop_label=stop_label,
+            stop_visible=base.stop_visible,
+            stop_action=base.stop_action,
+            segments=tuple(segments),
+            texts=text.candidates,
+            timed=text.timed,
+        )
 
     def _bar_rect(self):
         """Space between the version text and the right-hand controls, without displacing either."""
@@ -483,7 +562,21 @@ class ActivityStrip(QObject):
             button.setVisible(visible)
             self._sync_bar()
 
-    def update(self, key, done, total, *, detail=None, elapsed="", eta="", stage="", wide="", queued=0, count=None):
+    def update(
+        self,
+        key,
+        done,
+        total,
+        *,
+        detail=None,
+        elapsed="",
+        eta="",
+        stage="",
+        wide="",
+        queued=0,
+        count=None,
+        fill_only=False,
+    ):
         """``count`` replaces the default "done / total" text (e.g. transferred MiB when done/total are percent)."""
         if not self._live():
             return
@@ -497,6 +590,7 @@ class ActivityStrip(QObject):
             row.activityProgress.setValue(done)
             row.activityCount.setText(count if count is not None else f"{done} / {total}" if total else "")
             row.setProperty("countText", count or "")
+            row.setProperty("fillOnly", fill_only)
             if row.activityStopButton.isEnabled() or row.activityStopButton.isHidden():
                 row.activityDetail.setText(
                     detail if detail is not None else f"{done} of {total} processed" if total else "Working…"
@@ -663,6 +757,8 @@ class ActivityStrip(QObject):
     def finish(self, key):
         if not self._live():
             return
+        if key == "run":
+            self._aggregate = None
         self._expiry.pop(key, None)
         row = self.rows.pop(key, None)
         if key == "run" and row is not None and isValid(row) and row.property("startedAt") is not None:
