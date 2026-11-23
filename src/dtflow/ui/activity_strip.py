@@ -365,6 +365,8 @@ class ActivityStrip(QObject):
             segments.append((min(1.0, end), QUEUE_PALETTE[self._palette_slot(queue.totals.queue_id)]))
         text = aggregate_text(snapshot)  # elapsed/ETA are painted at the right edge, not in the left text
         full = aggregate_text(snapshot, elapsed=aggregate.elapsed, eta=aggregate.eta).full
+        if aggregate.stop_target:
+            full = f"{full} · Stop {aggregate.stop_target}"
         stop_label = base.stop_label
         if aggregate.stop_target:
             stop_label = f"{base.stop_label} · {aggregate.stop_target}".strip(" ·")

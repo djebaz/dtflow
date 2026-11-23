@@ -29,7 +29,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dtflow.ui.video_progress import clock
+from dtflow.ui.activity_bar import clock
+from dtflow.ui.progress_model import fallback_eta
+from dtflow.ui.progress_text import aggregate_text
 from dtflow.ui import file_dialogs
 from dtflow.ui.file_dialogs import QFileDialog
 from dtflow import startup
@@ -101,7 +103,6 @@ from dtflow.ui.queue_popover import QueuePopover
 from dtflow.ui.performance import GuiHeartbeat, profile_slow_gui_callback
 from dtflow.ui.queue_composer import ValueChips
 from dtflow.ui.queue_widgets import SegmentedBar
-from dtflow.ui.run_control import RunControl
 from dtflow.persistence.script_library import ScriptLibrary
 from dtflow.ui.scripts_page import ScriptsPage
 from dtflow.ui.scripts_library_card import ScriptRemoveButton
@@ -114,7 +115,6 @@ from dtflow.ui.wheel_guard import WheelGuard
 
 log = logging.getLogger(__name__)
 
-RUN_SETTLE_MS = 2000  # how long the header control shows its finishing state after work ends
 
 FORMS_DIR = Path(__file__).with_name("forms")
 ASSETS_CONTROLS = Path(__file__).parents[1] / "resources" / "images" / "controls"
@@ -142,7 +142,6 @@ def _form_loader() -> QUiLoader:
         for widget_type in (
             ImagePreview,
             SearchableComboBox,
-            RunControl,
             SegmentedBar,
             ValueChips,
             ScriptRemoveButton,
@@ -395,6 +394,7 @@ class MainWindow:
         form.rootLayout.addWidget(self.shell)
         startup.mark("workspace: shell inserted into root layout")
         self._last_run_marker = None
+        self._period_start: float | None = None  # monotonic start of the current period of generation activity
         startup.mark("workspace: activity strip constructor entered")
         self.progress_strip = ActivityStrip(form)
         startup.mark("workspace: activity strip created")
@@ -758,31 +758,10 @@ class MainWindow:
         form.imagesNavigationButton.setAccessibleName("Show saved Images")
         form.imagesNavigationButton.clicked.connect(lambda: form.workspaceStack.setCurrentWidget(self.images_page))
         form.workspaceStack.currentChanged.connect(self._workspace_changed)
-        self.shell.runControl.clicked.connect(self.queue.trigger_run_control)
-        self.shell.brandFrame.layout().setAlignment(self.shell.runControl, Qt.AlignmentFlag.AlignVCenter)
-        self._run_was_running = False
-        self._run_settle = QTimer(form)
-        self._run_settle.setSingleShot(True)
-        self._run_settle.setInterval(RUN_SETTLE_MS)
-        self._run_settle.timeout.connect(self._sync_run_control)
-        self.activity.listen(self._sync_run_control)
         self.activity.listen(self._sync_activity_progress)
+        self.activity.listen_progress(self._sync_activity_progress)
         self.progress_strip.form.destroyed.connect(self._retire_activity_presentation)
-        self._sync_run_control()
         form.installEventFilter(_LayoutGuard(self._responsive_workspace, form))
-        for frame in (self.shell.brandFrame, self.shell.navigationFrame):
-            # Layout settles after the first show and after tab changes, not only on resize.
-            frame.installEventFilter(
-                _LayoutGuard(
-                    self._align_run_control,
-                    frame,
-                    (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.LayoutRequest),
-                )
-            )
-        for widget in (self.shell.queueNavigationButton, self.shell.runControl):
-            widget.installEventFilter(
-                _LayoutGuard(self._align_run_control, form, (QEvent.Type.Resize, QEvent.Type.Move))
-            )
         self.form.installEventFilter(_CloseGuard(self._confirm_close, self.form))
         self._fullscreen_shortcut = QShortcut(QKeySequence("F11"), self.form)
         self._fullscreen_shortcut.activated.connect(self._toggle_window_fullscreen)
@@ -1272,51 +1251,8 @@ class MainWindow:
 
     def _retire_activity_presentation(self) -> None:
         """Unsubscribe before Qt destroys the activity overlay's child widgets."""
-        self.activity.unlisten(self._sync_run_control)
         self.activity.unlisten(self._sync_activity_progress)
         # The window owns the settling timer and stops it during destruction.
-
-    @profile_slow_gui_callback("main.sync_run_control")
-    def _sync_run_control(self) -> None:
-        if self.progress_strip.retired:
-            return
-        state = self.activity.run_state
-        running = state.phase == "running"
-        if running:
-            self._run_settle.stop()
-        elif self._run_was_running and state.phase in ("idle", "ready") and not self._run_settle.isActive():
-            # Work just ended: show the finishing state briefly before the control settles back.
-            self._run_was_running = False
-            self.shell.runControl.set_presentation("complete", detail="Finishing.")
-            self._run_settle.start()
-            return
-        elif self._run_settle.isActive():
-            return  # keep the finishing state until its timer elapses
-        self._run_was_running = running
-        self.shell.runControl.set_presentation(
-            state.phase,
-            action=state.action,
-            completed=state.completed,
-            total=state.total,
-            detail=" ".join(
-                part for part in (state.detail, " · ".join(p for p in (state.elapsed, state.eta) if p)) if part
-            ),
-        )
-
-    def _align_run_control(self) -> None:
-        """Align the header control with Queues in the primary navigation row."""
-        shell = self.shell
-        anchor = shell.queueNavigationButton.geometry()
-        if not (shell.brandFrame.isVisible() and shell.navigationFrame.isVisible()) or anchor.width() <= 0:
-            return
-        control, offset = shell.runControl, shell.runControlOffset
-        # The Queue button sits between the offset and the control. Its fixed width plus one more layout spacing are
-        # constants, not read from positions that lag a pending relayout, so the target cannot oscillate (hovering
-        # the logo requests layouts and used to make the icons drift).
-        gap = shell.quickQueueButton.width() + max(0, shell.brandLayout.spacing())
-        width = max(0, anchor.center().x() - control.width() // 2 - offset.x() - gap)
-        if offset.width() != width:
-            offset.setFixedWidth(width)
 
     def _fit_context_pages(self, *_args) -> None:
         stack = self.shell.leftStack
@@ -1426,14 +1362,12 @@ class MainWindow:
         if self._logs_form is not None:
             self._logs_form.logsBrandSlot.setVisible(logs)
             self._logs_form.logsNavigationSlot.setVisible(logs)
-        shell.runControl.setVisible(True)
         if self._scripts_active and self.form.workspaceStack.currentWidget() is self.generation_page:
             self.scripts.sync_responsive()
         elif hasattr(self, "scripts"):
             self.scripts.drawer.hide()
         if hasattr(self, "workflows"):
             self.workflows.sync_responsive(narrow)
-        self._align_run_control()
         if hasattr(self, "_gui_heartbeat"):
             self._gui_heartbeat.sync()
 
@@ -1513,98 +1447,78 @@ class MainWindow:
     def _sync_activity_progress(self):
         if self.progress_strip.retired:
             return
-        state = self.activity.run_state
+        # One source for the bar: the Queues page's aggregate over every active queue, or Generate's own run.
+        queue_run = self.queue.aggregate_progress()
         # Each settled image or finished run pushes a refresh hint to Images (it checks the database cheaply).
-        aggregate = self.queue.aggregate_progress()
         marker = (
             self.activity.generating,
             self.activity.dispatching,
-            aggregate[0].settled if aggregate is not None else None,
+            queue_run[0].settled if queue_run is not None else None,
+            self.queue.output_count(),
         )
         if marker != self._last_run_marker:
             self._last_run_marker = marker
             self.gallery.notify_changed()
-        # A Generate click's queue shows as queue progress once the queue run publishes; until then (and for runs that
-        # are not one-item queues) the row is Generation's.
-        generating = self.activity.generating and not (self.generation.queued_run and state.owner != "generation")
-        local = generating or self.activity.dispatching
-        # Queues running only in another process still get the bar (durable counts, no Stop, no live telemetry).
-        foreign_only = aggregate is not None and not local and not self.queue.generate_settling
-        if not foreign_only and (not local or (not generating and self.queue.generate_settling)):
+        generating = self.activity.generating
+        solo = generating and not self.generation.queued_run
+        # A Generate click's queue shows as queue progress once the queue run publishes; until then, and for runs that
+        # are not queues, the run is Generation's own.
+        shown = self.generation.solo_progress() if solo else queue_run
+        if shown is None and generating:
+            shown = self.generation.solo_progress()
+        presents_generation = solo or (generating and queue_run is None)
+        if shown is None or (not generating and self.queue.generate_settling):
             self.progress_strip.finish("run")
+            if not (generating or self.activity.dispatching):
+                self._period_start = None  # the active set is empty: the next activity is a new period
             return
-        if aggregate is not None and generating:
-            aggregate = None  # a Generate run that is not a queue keeps its own row
-        run_identity = "generation" if generating else "foreign" if foreign_only else f"queue:{state.queue_id}"
+        # One clock for the whole uninterrupted period of generation activity, whichever queue starts or ends in it.
+        if self._period_start is None:
+            self._period_start = time.monotonic()
+        elapsed = clock(time.monotonic() - self._period_start)
+        # Queues running only in another process still get the bar (durable counts, no Stop, no live telemetry).
+        foreign_only = not (generating or self.activity.dispatching)
+        run_identity = (
+            "generation" if presents_generation else "foreign" if foreign_only else f"queue:{self.queue.primary_id}"
+        )
         row = self.progress_strip.rows.get("run")
         if row is not None and row.property("runIdentity") != run_identity:
             self.progress_strip.finish("run")
         if "run" not in self.progress_strip.rows:
-            label = "Generation" if generating else "Queue progress"
+            label = "Generation" if presents_generation else "Queue progress"
             self.progress_strip.finish("generation-result")
             self.progress_strip.finish("queue-result")
             self.progress_strip.start(
                 "run",
                 label,
-                self.generation.cancel if generating else None if foreign_only else self.queue.cancel_run,
+                self.generation.cancel if presents_generation else None if foreign_only else self.queue.cancel_run,
                 stop_text=(
                     ("Stop waiting locally" if not self.generation.queued_run else "Stop")
-                    if generating
+                    if presents_generation
                     else "Stop after current image"
                 ),
             )
             self.progress_strip.rows["run"].setProperty("runIdentity", run_identity)
+        snapshot, eta, target = shown
+        if not eta and not any(queue.totals.paused for queue in snapshot.queues):
+            eta = fallback_eta(snapshot.fill, elapsed)  # approximate: from the bar's own fraction and the same clock
+        text = aggregate_text(snapshot, elapsed=elapsed, eta=eta)
         self.progress_strip.update(
             "run",
-            round(state.fraction * 1000) if state.fraction is not None else state.completed or 0,
-            1000 if state.fraction is not None else state.total or 0,
-            detail=state.detail,
-            elapsed=state.elapsed,
-            eta=state.eta,
-            stage=state.stage,
-            wide=state.wide,
-            queued=state.queued,
-            count=state.count or None,
-            fill_only=state.fraction is not None and not state.count,
+            round(snapshot.fill * 1000),
+            1000,
+            detail=text.full,
+            elapsed=f"Elapsed {elapsed}" if elapsed else "",
+            eta=eta,
+            count=f"{snapshot.settled}/{snapshot.total}",
         )
-        if aggregate is None:
-            self.progress_strip.set_aggregate(None)
-        else:
-            snapshot, eta, target = aggregate
-            eta = eta if eta is not None else state.eta.split(" (")[0]
-            if "?" in eta:
-                eta = ""
-            if not eta and not any(queue.totals.paused for queue in snapshot.queues):
-                eta = self._progress_eta(snapshot.fill, state.elapsed)
-            self.progress_strip.set_aggregate(
-                Aggregate(
-                    snapshot,
-                    elapsed=state.elapsed.removeprefix("Elapsed "),
-                    eta=eta,
-                    stop_target=target,
-                )
-            )
-
-    @staticmethod
-    def _progress_eta(fill: float, elapsed_text: str) -> str:
-        """Fallback ETA when no timing-based one exists: elapsed time scaled by the bar's own fraction (a rough "~")."""
-        try:
-            parts = [int(part) for part in elapsed_text.removeprefix("Elapsed ").split(":")]
-        except ValueError:
-            return ""
-        if not 2 <= len(parts) <= 3 or fill < 0.05:
-            return ""
-        elapsed = 0
-        for part in parts:
-            elapsed = elapsed * 60 + part
-        return f"~{clock(elapsed * (1 - fill) / fill)} left" if elapsed else ""
+        self.progress_strip.set_aggregate(Aggregate(snapshot, elapsed=elapsed, eta=eta, stop_target=target))
 
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)
         startup.mark("show: titlebar prepared")
         self.form.show()
         startup.mark("show: main form shown")
-        QTimer.singleShot(0, self._align_run_control)
         apply_native_dark_titlebar(self.form)
         startup.mark("show: titlebar reapplied")
 

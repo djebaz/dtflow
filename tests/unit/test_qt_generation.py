@@ -170,16 +170,21 @@ def test_generate_keeps_the_event_loop_responsive_and_saves_the_final_image(wind
 
 
 def test_generate_click_is_shown_as_queue_progress_and_keeps_its_sampler_step(window, qtbot, fake):
-    """The header follows the click's queue (#558); Generate keeps the last truthful step across stage-only events."""
+    """The bar follows the click's queue (#558); Generate keeps the last truthful step across stage-only events."""
     use, gate = fake
     use(gate=gate)
     page = window.generation_page
     page.generateButton.click()
-    qtbot.waitUntil(lambda: window.activity.run_state.queue_id is not None, timeout=5000)
+    qtbot.waitUntil(
+        lambda: (
+            "run" in window.progress_strip.rows
+            and window.progress_strip.rows["run"].property("runIdentity").startswith("queue:")
+        ),
+        timeout=5000,
+    )
     qtbot.waitUntil(lambda: page.generationStatusLabel.text().startswith("Generating."), timeout=5000)
-    ring = window.shell.runControl
-    assert ring._phase == "running" and ring._completed == 0 and ring._total == 1
-    assert window.progress_strip.rows["run"].property("runIdentity").startswith("queue:")
+    snapshot = window.queue.aggregate_progress()[0]
+    assert (snapshot.settled, snapshot.total) == (0, 1)
 
     window.generation._event(BackendEvent("r", 100, "progress", "t", stage="sampling", completed=3, total=9))
     assert "step 3/9" in page.generationStatusLabel.text()
@@ -198,7 +203,13 @@ def test_preview_is_shown_but_never_becomes_a_result(window, qtbot, fake):
     use(gate=gate)
     page = window.generation_page
     page.generateButton.click()
-    qtbot.waitUntil(lambda: window.activity.run_state.queue_id is not None, timeout=5000)  # held at gate
+    qtbot.waitUntil(  # held at gate
+        lambda: (
+            "run" in window.progress_strip.rows
+            and window.progress_strip.rows["run"].property("runIdentity").startswith("queue:")
+        ),
+        timeout=5000,
+    )
     png = fixture_png(64, 64, 1)
     preview = ImageArtifact("p", Designation.PREVIEW, "image/png", png, 64, 64)
     window.generation._relay(BackendEvent("r", 99, "preview", "t", artifact=preview))

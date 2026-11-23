@@ -284,6 +284,28 @@ class ProgressSnapshot:
         return min(1.0, sum(queue.contribution for queue in self.queues) / self.total)
 
 
+SOLO_QUEUE = "generate"  # queue id of a Generate run that is not a queue (one item, no durable view)
+
+
+def fallback_eta(fill: float, elapsed: str) -> str:
+    """A rough "~M:SS left" from the elapsed time ("M:SS" or "H:MM:SS") and the bar's own fraction.
+
+    Only for a bar that has no timing-based estimate: the fraction is itself approximate, so this is too."""
+    try:
+        parts = [int(part) for part in elapsed.removeprefix("Elapsed ").split(":")]
+    except ValueError:
+        return ""
+    if not 2 <= len(parts) <= 3 or fill < 0.05:
+        return ""
+    seconds = 0
+    for part in parts:
+        seconds = seconds * 60 + part
+    if not seconds:
+        return ""
+    remaining = int(seconds * (1 - fill) / fill)
+    return f"~{remaining // 60}:{remaining % 60:02d} left"
+
+
 def totals_from_view(view: dict, *, foreign: bool = False, parent: bool = False) -> QueueTotals:
     """Durable counts of one queue view (workflow images are counted as items, as everywhere else).
 

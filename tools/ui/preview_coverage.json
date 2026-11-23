@@ -196,10 +196,7 @@
       "images-24-live-recovery-stabilizing",
       "images-23-snapshot-warning-dismissed"
     ],
-    "run-control": [
-      "shell-11-run-control-ready",
-      "shell-12-run-control-paused",
-      "shell-14-run-control-queue-running",
+    "stopping-caveat": [
       "queues-81-stopping-caveat-400"
     ],
     "queue-popover": [
@@ -472,13 +469,6 @@
         "src/dtflow/ui/diagnostic_notice.py"
       ],
       "why": "diagnostic producer mounting of the shared warning"
-    },
-    {
-      "pack": "run-control",
-      "paths": [
-        "src/dtflow/ui/run_control.py"
-      ],
-      "why": "ready/paused/running control plus stopping caveat"
     },
     {
       "pack": "queue-popover",

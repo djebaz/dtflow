@@ -1557,7 +1557,11 @@ def render_active_queue_states(shell, out):
         return view
 
     # Startup reads may already have queued a delivery before submit is held. Only
-    # explicit synthetic snapshots may replace this fixture's controller views.
+    # explicit synthetic snapshots may replace this fixture's controller views. Let a read in flight land first.
+    deadline = time.monotonic() + 5
+    while queue._reading and time.monotonic() < deadline:
+        QApplication.processEvents()
+        time.sleep(0.01)
     with (
         patch.object(shell.runner, "submit", side_effect=hold_worker),
         patch.object(queue, "_read_done"),
@@ -1584,13 +1588,13 @@ def render_active_queue_states(shell, out):
             ("Request accepted; waiting for first progress", "queues-11d-backend-processing"),
         ):
             live.label, live.label_since, live.counter = stage_name, time.monotonic(), None
-            queue._publish_run_state()
+            queue._sync_run()
             snap(screenshot)
         live.label, live.label_since, live.counter = "Generating", time.monotonic(), (3, 20)
-        queue._publish_run_state()
+        queue._sync_run()
         snap("queues-11e-observed-sampling")
         queue._progress.discard(*running_key)
-        queue._publish_run_state()
+        queue._sync_run()
         # Stop is presentation-only here; never post a real queue control from an offline capture.
         with patch.object(queue, "_post") as posted:
             strip.bar.button.click()
@@ -3768,7 +3772,7 @@ def render_startup_splash(out):
 
 @fixture("shell")
 def render_shell_states(shell, capture):
-    """Window-level notices, close consent and header run-control phases, driven through the real handlers."""
+    """Window-level notices and close consent, driven through the real handlers."""
     strip = activity_strip(shell.form)
 
     def clear():
@@ -3834,16 +3838,6 @@ def render_shell_states(shell, capture):
     strip.complete("info-result", "Nothing to export", "All checked images already exist at the destination.", "info")
     capture("shell-10-overlay-info-result")
     clear()
-    control = shell.shell.runControl
-    for name, phase, kwargs in (
-        ("shell-11-run-control-ready", "ready", {}),
-        ("shell-12-run-control-paused", "paused", {"completed": 1, "total": 3}),
-        ("shell-13-run-control-finishing", "complete", {"detail": "Finishing."}),
-        ("shell-14-run-control-queue-running", "running", {"action": "queue", "completed": 2, "total": 5}),
-    ):
-        control.set_presentation(phase, **kwargs)
-        capture(name)
-    shell._sync_run_control()
 
     # Activity-bar parity fixtures use the real keyed-row projection, with no dispatch/provider work.
     original_size = shell.form.size()
