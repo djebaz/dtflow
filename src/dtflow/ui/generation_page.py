@@ -304,10 +304,6 @@ class GenerationPage:
         self._catalogue_error = ""
         self._catalogue_next = None
         self._catalogue_reading = False
-        self._catalogue_application = None
-        self._catalogue_timer = QTimer(page)
-        self._catalogue_timer.setSingleShot(True)
-        self._catalogue_timer.timeout.connect(self._apply_catalogue_batch)
         self._inventory_snapshot: InventorySnapshot | None = None
         self._relink_pending = False  # imported LoRA names are being matched; Generate waits for the result
         self._relink_swaps: dict[str, str] = {}  # imported name -> prepared name, recorded on the next request
@@ -601,8 +597,6 @@ class GenerationPage:
         self._catalogue_request = None
         self._catalogue_error = ""
         self._catalogue_next = None
-        self._catalogue_timer.stop()
-        self._discard_catalogue_application()
         self._catalogue = Catalogue(self._state, deferred=True)
         self._catalogue_loaded = False
         self.lora._catalogue = self._catalogue
@@ -2005,13 +1999,6 @@ class GenerationPage:
             follow_checkpoint=True,
         )
 
-    def _discard_catalogue_application(self) -> None:
-        if self._catalogue_application is not None:
-            _, _, families, models, _ = self._catalogue_application
-            families.deleteLater()
-            models.deleteLater()
-            self._catalogue_application = None
-
     def _request_catalogue(
         self,
         *,
@@ -2039,8 +2026,6 @@ class GenerationPage:
     def _queue_catalogue(self, options) -> None:
         if self._runner.closed:
             return
-        self._catalogue_timer.stop()
-        self._discard_catalogue_application()
         token = self._catalogue_request = object()
         self._catalogue_options = options
         self._catalogue_error = ""
@@ -2074,73 +2059,52 @@ class GenerationPage:
             self._update_compute_units()
             self._write_inventory_stats()
             return
-        # Build detached Qt models in small turns. The visible choices remain intact until the
-        # final swap, so intermediate rows never trigger filter changes or overwrite saved choices.
+        # Worker work is complete. Build detached models and publish once on Qt; no
+        # event-loop turn separates the validated result from the final selector swap.
         families, models = QStandardItemModel(self.page), QStandardItemModel(self.page)
-        self._catalogue_application = (token, context, families, models, result)
-        self._catalogue_timer.start(0)
-
-    def _apply_catalogue_batch(self) -> None:
-        pending = self._catalogue_application
-        if pending is None:
-            return
-        token, context, families, models, result = pending
-        if self._runner.closed or token is not self._catalogue_request or context != self._catalogue_context():
-            self._discard_catalogue_application()
-            return
-        for _ in range(16):
-            if families.rowCount() < len(result.families):
-                family, label = result.families[families.rowCount()]
-                item = QStandardItem(label)
-                item.setData(family, Qt.ItemDataRole.UserRole)
-                families.appendRow(item)
-            elif models.rowCount() < len(result.checkpoints):
-                models.appendRow(QStandardItem(result.checkpoints[models.rowCount()]))
-            else:
-                self._catalogue_application = None
-                self._catalogue_request = None
-                self._catalogue = result.catalogue
-                self._catalogue_loaded = True
-                self.lora._catalogue = result.catalogue
-                self._updating_catalogue = True
-                try:
-                    page = self.page
-                    retired = [
-                        model
-                        for model in (page.baseModelCombo.model(), page.modelCombo.model())
-                        if model.parent() is page
-                    ]
-                    with (
-                        QSignalBlocker(page.baseModelCombo),
-                        QSignalBlocker(page.modelCombo),
-                        QSignalBlocker(page.includeNicheCheck),
-                    ):
-                        page.includeNicheCheck.setChecked(result.include_niche)
-                        page.baseModelCombo.setModel(families)
-                        page.baseModelCombo.setCurrentIndex(page.baseModelCombo.findData(result.family))
-                        page.modelCombo.setModel(models)
-                        page.modelCombo.setCurrentText(result.checkpoint)
-                    for old in retired:
-                        old.deleteLater()
-                    models.rowsInserted.connect(self._sync_checkpoint_steppers)
-                    models.rowsRemoved.connect(self._sync_checkpoint_steppers)
-                    self._catalogue_checkpoint_changed()
-                    self._update_compute_units()
-                    self._video_model_changed(page.modelCombo.currentText())
-                finally:
-                    self._updating_catalogue = False
-                self.lora.set_candidates(
-                    result.loras, checkpoint_versions=result.versions, checkpoint=result.checkpoint
-                )
-                if result.checkpoint and not result.versions:
-                    self.lora.show_checkpoint_architecture_unknown()
-                if self._inventory_snapshot is not None:
-                    self._pending_family = None
-                self._sync_checkpoint_steppers()
-                self._sync_generate()
-                self._show_catalogue_counts()
-                return
-        self._catalogue_timer.start(0)
+        for family, label in result.families:
+            item = QStandardItem(label)
+            item.setData(family, Qt.ItemDataRole.UserRole)
+            families.appendRow(item)
+        for checkpoint in result.checkpoints:
+            models.appendRow(QStandardItem(checkpoint))
+        self._catalogue_request = None
+        self._catalogue = result.catalogue
+        self._catalogue_loaded = True
+        self.lora._catalogue = result.catalogue
+        self._updating_catalogue = True
+        try:
+            page = self.page
+            retired = [
+                model for model in (page.baseModelCombo.model(), page.modelCombo.model()) if model.parent() is page
+            ]
+            with (
+                QSignalBlocker(page.baseModelCombo),
+                QSignalBlocker(page.modelCombo),
+                QSignalBlocker(page.includeNicheCheck),
+            ):
+                page.includeNicheCheck.setChecked(result.include_niche)
+                page.baseModelCombo.setModel(families)
+                page.baseModelCombo.setCurrentIndex(page.baseModelCombo.findData(result.family))
+                page.modelCombo.setModel(models)
+                page.modelCombo.setCurrentText(result.checkpoint)
+            for old in retired:
+                old.deleteLater()
+            models.rowsInserted.connect(self._sync_checkpoint_steppers)
+            models.rowsRemoved.connect(self._sync_checkpoint_steppers)
+            self._catalogue_checkpoint_changed()
+            self._update_compute_units()
+            self._video_model_changed(page.modelCombo.currentText())
+        finally:
+            self._updating_catalogue = False
+        self.lora.set_candidates(result.loras, checkpoint_versions=result.versions, checkpoint=result.checkpoint)
+        if result.checkpoint and not result.versions:
+            self.lora.show_checkpoint_architecture_unknown()
+        if self._inventory_snapshot is not None:
+            self._pending_family = None
+        self._sync_checkpoint_steppers()
+        self._sync_generate()
+        self._show_catalogue_counts()
 
     def _show_catalogue_counts(self) -> None:
         page = self.page

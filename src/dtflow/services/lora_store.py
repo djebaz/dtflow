@@ -169,8 +169,8 @@ class LoraStore:
     def find_many(self, identities: Iterable[tuple[str, int]]) -> dict[tuple[str, int], RetainedFile]:
         """One index observation for advisory library reads, never byte-verification authority.
 
-        Preserve find's first matching record and path checks. An unsafe/missing entry is
-        omitted independently; callers still stat/inspect (and verify when required) its file.
+        Like find, a missing first match falls through to a later duplicate. An unsafe/unreadable
+        match fails that identity closed. Callers still stat/inspect and verify when required.
         Uploads and mutations continue to use fresh find/verify through their existing paths.
         """
         wanted = set(identities)
@@ -184,12 +184,13 @@ class LoraStore:
             identity = (sha256, size)
             if identity not in wanted:
                 continue
-            wanted.remove(identity)  # first matching record wins, even if it cannot be used
             try:
                 path = self._path(item)
                 if path.is_file():
                     found[identity] = RetainedFile(path.name, sha256, size, path)
+                    wanted.remove(identity)
             except (OSError, ValidationError):
+                wanted.discard(identity)
                 continue
         return found
 

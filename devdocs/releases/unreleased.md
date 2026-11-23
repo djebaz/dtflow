@@ -41,7 +41,7 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 
 ## Fixed
 
-- Connection's LoRA library reuses cells and controls, avoids repeated automatic column sizing and retains selection and eligible actions during updates. Catalogue loading stays in the background; family/format scans avoid repeated index reads (PR #581, refs #565; [before/after Windows acceptance pending](../plans/2026-11-23-lora-table-responsiveness.md)).
+- Connection's LoRA library reuses cells and controls, avoids repeated automatic column sizing and retains selection and eligible actions during updates. Catalogue loading stays in the background; family/format scans reuse unchanged file observations and wait for SDK preload at startup (PR #581, refs #565; [final Windows acceptance pending](../plans/2026-11-23-lora-table-responsiveness.md)).
 
 - **Deferred saved editor inputs (PR #556, refs #555):** A remembered ControlNet photo/pose map no longer starts ONNX detection or map fitting while DTFlow opens on Connection; the saved pose automatically restores when Generate → ControlNet becomes visible (owner Windows confirmation). The separate remembered Inpaint source no longer triggers “Load source image” at startup: it loads on first visible Generate → Inpaint entry, retaining its path if the app closes sooner. The Inpaint extension is source-reviewed only, pending a quick no-credit Windows navigation check.
 

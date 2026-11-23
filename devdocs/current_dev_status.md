@@ -2,7 +2,7 @@
 
 ## In review: retained-LoRA table and catalogue responsiveness (#565, PR #581; 2026-11-23)
 
-LoRA refreshes reuse cells/controls, batch column sizing and retain selection and eligible actions during bounded updates. Catalogue preparation remains asynchronous. The owner-authorized profile follow-up removes repeated worker index reads/header traversal and adds idle-Connection/slice diagnostics; generation/provider behavior stays unchanged. Before/after Windows timing and behavior acceptance remain pending. See the [implementation and evidence boundary](plans/2026-11-23-lora-table-responsiveness.md).
+LoRA refreshes reuse cells/controls, batch column sizing and retain selection and eligible actions during bounded updates. Catalogue preparation remains asynchronous with one-turn selector publication. Family/format observations now reuse unchanged per-file fingerprints, and initial inspection waits for SDK preload. Owner Windows evidence at the earlier head supports unchanged-table navigation and switching during generation (largest gap 384 ms); final startup ordering/cache timings and full behavior acceptance remain pending. Generation/provider behavior stays unchanged. See the [implementation and evidence boundary](plans/2026-11-23-lora-table-responsiveness.md).
 
 ## In review: video receiving to disk and local encoder controls (#550)
 

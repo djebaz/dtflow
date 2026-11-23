@@ -701,6 +701,8 @@ class MainWindow:
         self._lora_status_icons = {}
         self._lora_families_reading = False
         self._lora_families_again = False
+        self._lora_families_enabled = False
+        self._lora_inspection_cache = {}  # worker-owned, display-only; never dispatch or q8p verification authority
         self._lora_selection_target = None
         self._lora_actions_timer = QTimer(table)
         self._lora_actions_timer.setSingleShot(True)
@@ -2398,11 +2400,8 @@ class MainWindow:
         self.workflows.prompt_hints.refresh()
         self._render_lora_table()  # the retained files show at once; metadata columns follow from a separate read
         self._read_summary("lora_records", self._read_lora_records, self._lora_library_read)
-        if rescan:
+        if rescan or self._lora_families_again:
             self._schedule_lora_families()
-        else:
-            self._lora_families_again = False
-            self._summary_reads.pop("lora_families", None)  # Discard an older scan's stale result.
         self._read_summary("lora_unretained", self._read_unretained_loras, self._lora_unretained_read)
 
     def _update_retained_status(self) -> None:
@@ -2436,13 +2435,17 @@ class MainWindow:
             self._render_lora_table()
 
     def _schedule_lora_families(self) -> None:
-        if self.runner.closed or self._removing_retained_lora:
+        if self.runner.closed:
+            return
+        if self._removing_retained_lora or not self._lora_families_enabled:
+            self._lora_families_again = True
             return
         if self._lora_families_reading:
             self._lora_families_again = True
             self._summary_reads.pop("lora_families", None)  # a newer request retires the in-flight observation
             return
         self._lora_families_reading = True
+        self._lora_families_again = False
         token = self._summary_reads["lora_families"] = object()
 
         def finished(entries, error):
@@ -2450,10 +2453,30 @@ class MainWindow:
             if self._summary_reads.get("lora_families") is token:
                 self._lora_families_read(entries, error)
             if self._lora_families_again:
-                self._lora_families_again = False
                 self._schedule_lora_families()
 
         self.runner.submit(asyncio.to_thread(self._read_lora_families), finished)
+
+    def finish_startup_preload(self, _result, _error) -> None:
+        """The shared runner delivers on Qt after preload settles, including a handled import failure."""
+        if not self.runner.closed:
+            self._lora_families_enabled = True
+            if self._lora_families_again:
+                self._schedule_lora_families()
+
+    @staticmethod
+    def _lora_inspection_stamp(retained):
+        if retained is None:
+            return None
+        try:
+            if retained.path.is_symlink():
+                return None
+            stat = retained.path.stat()
+            if stat.st_size != retained.size:
+                return None
+            return (retained.name, stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns, stat.st_ctime_ns)
+        except OSError:
+            return None
 
     def _read_lora_families(self):
         """Slow local work (hashes whole files), off the first paint: auto-naming once per run, then family detection."""
@@ -2469,23 +2492,49 @@ class MainWindow:
             for entry in entries
             if isinstance(entry.get("sha256"), str) and isinstance(entry.get("size"), int)
         ]
-        found = retained_families(self.state_dir, identities, verify=False)  # dispatch re-verifies the bytes itself
+        retained = store.find_many(identities)
+        stamps = {identity: self._lora_inspection_stamp(retained.get(identity)) for identity in identities}
+        cache = self._lora_inspection_cache
+        self._lora_inspection_cache = cache = {
+            identity: observation
+            for identity, observation in cache.items()
+            if stamps.get(identity) is not None and stamps[identity] == observation[0]
+        }
+        pending = [entry for entry in entries if (entry.get("sha256"), entry.get("size")) not in cache]
+        unknown = [
+            (entry["sha256"], entry["size"])
+            for entry in pending
+            if isinstance(entry.get("sha256"), str) and isinstance(entry.get("size"), int)
+        ]
+        found = retained_families(self.state_dir, unknown, verify=False)  # dispatch still re-verifies every use
         detected = time.monotonic()
-        for entry in entries:
-            entry["detected_family"] = found.get((entry.get("sha256"), entry.get("size")))
-        formats = library_formats(self.state_dir, entries)
+        formats = library_formats(self.state_dir, pending)
         formatted = time.monotonic()
+        for identity in unknown:
+            stamp = stamps[identity]
+            if (
+                stamp is not None
+                and formats.get(identity) is not None
+                and identity in found
+                and stamp == self._lora_inspection_stamp(retained.get(identity))
+            ):
+                cache[identity] = (stamp, found[identity], formats[identity])
+        # q8p availability has independent verified-file semantics: never reuse it from this display cache.
         quantized = available_quantizations(self.state_dir, entries)
         quantized_at = time.monotonic()
         for entry in entries:
             identity = (entry.get("sha256"), entry.get("size"))
-            entry["observed_format"] = formats.get(identity)
+            observation = cache.get(identity)
+            entry["detected_family"] = observation[1] if observation else found.get(identity)
+            entry["observed_format"] = observation[2] if observation else formats.get(identity)
             entry["has_q8p"] = identity in quantized
         diagnostic_event(
             log,
             "connection.retained_loras_slow_read",
             data={
                 "files": len(entries),
+                "inspected": len(unknown),
+                "reused": len(identities) - len(unknown),
                 "naming_ms": round((named - started) * 1000),
                 "families_ms": round((time.monotonic() - named) * 1000),
                 "detection_ms": round((detected - named) * 1000),
@@ -2815,6 +2864,11 @@ class MainWindow:
                             self._lora_selection_target = self._selected_lora_identity()
                     if time.perf_counter() >= deadline:
                         break
+        except Exception:
+            # Do not leave a failed generator/cache signature parked as if the pass succeeded.
+            self._lora_reconcile = self._lora_control_updates = None
+            self._lora_table_state = self._lora_controls_state = None
+            log.exception("LoRA table update failed; a later refresh can rebuild it.")
         finally:
             table.setUpdatesEnabled(updates)
         self._retained_lora_selection_changed()
@@ -2826,15 +2880,6 @@ class MainWindow:
             return
         identity = host._lora_identity
         button = host.quantizeButton if quantize else host.prepareButton
-        pressed = getattr(button, "_lora_press_context", None)
-        button._lora_press_context = None
-        if pressed != (identity, self._lora_key_revision):
-            InlineNotice.warning(
-                self.form,
-                "LoRA library changed",
-                "The row or selected key changed during the click. Select the action again.",
-            )
-            return
         row = host._lora_row
         cell = self.form.retainedLorasTable.item(row, 0)
         if (
@@ -2879,12 +2924,6 @@ class MainWindow:
             # current identity/metadata at click time instead of retaining a stale signal closure.
             host.quantizeButton.clicked.connect(lambda _checked=False: self._lora_action_clicked(host, quantize=True))
             host.prepareButton.clicked.connect(lambda _checked=False: self._lora_action_clicked(host))
-            for button in (host.quantizeButton, host.prepareButton):
-                button.pressed.connect(
-                    lambda button=button: setattr(
-                        button, "_lora_press_context", (host._lora_identity, self._lora_key_revision)
-                    )
-                )
             table.setCellWidget(row, 4, host)
         host._lora_identity = identity
         host._lora_row = row
@@ -3205,6 +3244,9 @@ class MainWindow:
         self._lora_actions_timer.stop()
         self._lora_reconcile = self._lora_control_updates = None
         self._lora_table_state = self._lora_controls_state = None
+        if self._lora_families_reading:
+            self._summary_reads.pop("lora_families", None)
+            self._lora_families_again = True
 
     def _confirm_remove_unretained(self, identity: tuple[str, int]) -> None:
         """A LoRA with no local copy has only registry records: confirm in the window, then delete those alone."""
@@ -3244,6 +3286,8 @@ class MainWindow:
     def _unretained_lora_removed(self, identity: tuple[str, int], removed, error) -> None:
         self._removing_retained_lora = False
         self.form.retainedLorasTable.setEnabled(True)
+        if self._lora_families_again:
+            self._schedule_lora_families()
         if error is not None:
             known = isinstance(error, (ValidationError, PersistenceError))
             InlineNotice.error(
@@ -3296,6 +3340,8 @@ class MainWindow:
     def _retained_lora_removed(self, removed, error, *, identity=None) -> None:
         self._removing_retained_lora = False
         self.form.retainedLorasTable.setEnabled(True)
+        if self._lora_families_again:
+            self._schedule_lora_families()
         if error is None and removed and identity is not None:
             self._lora_entries = [
                 entry for entry in self._lora_entries if (entry.get("sha256"), entry.get("size")) != identity
