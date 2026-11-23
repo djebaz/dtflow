@@ -136,6 +136,9 @@ MAX_QUERY_ITEMS = gallery_limits.MAX_READ  # GalleryQuery retains its existing p
 THUMBNAIL_SIDE = 600
 THUMBNAIL_CONCURRENCY = 6
 AUTO_REFRESH_MS = 1000  # file-metadata poll only; unchanged polls never rebuild the page
+SLIDESHOW_VIDEO_MIN_INTERVAL_MS = (
+    2000  # shorter F6 intervals leave clips as posters: a player torn down at start-up crashes
+)
 SLIDESHOW_VIDEO_SETTLE_MS = 600  # F6 starts a clip only after it has stayed this long, however short the interval
 SELECTION_SETTLE_MS = 200  # Next/Previous bursts load only the item they settle on
 PUSH_DEBOUNCE_MS = 250  # coalesce in-process change hints before the metadata check
@@ -3651,10 +3654,12 @@ class GalleryPage(QObject):
                 and not self._recycle_busy
             ):
                 if self.slideshow.active:
-                    # A short F6 interval must not create a native player per advance; only a clip that stays
-                    # on screen starts, the rest keep their poster.
-                    self._autoplay_pending = (generation, identity, path)
-                    self._autoplay_timer.start()
+                    # A short F6 interval must not create a native player per advance: with a short interval
+                    # clips stay posters (a player released while it is still starting crashed on Windows);
+                    # otherwise only a clip that stays on screen starts.
+                    if self.slideshow._milliseconds() >= SLIDESHOW_VIDEO_MIN_INTERVAL_MS:
+                        self._autoplay_pending = (generation, identity, path)
+                        self._autoplay_timer.start()
                 else:
                     self._start_video(path)
             else:
