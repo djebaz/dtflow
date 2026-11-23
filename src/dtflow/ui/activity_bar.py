@@ -17,7 +17,7 @@ TIER_S = 520
 TIER_L = 760
 PAD = 6
 # Approved queue colours for the aggregate bar; the strip assigns one per active queue by stable queue id.
-QUEUE_PALETTE = ("#285D84", "#3A5F8A", "#4B5D90", "#5A5696", "#674B96", "#74488F")
+QUEUE_PALETTE = ("#3B527C", "#4B538A", "#5B4F94", "#694991", "#76458A", "#82477D")
 
 
 @dataclass(frozen=True, slots=True)
