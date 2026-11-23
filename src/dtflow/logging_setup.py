@@ -141,7 +141,7 @@ def configure_logging(
     dev: bool = False,
     build: dict[str, str] | None = None,
     backend: str = "-",
-    video_decoder: str = "upstream",
+    video_decoder: str = "lut",
     session: str | None = None,
     report_error=None,
 ) -> LogSession:
