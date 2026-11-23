@@ -49,6 +49,7 @@ class VideoPlayer(QObject):
         on_navigate=None,
         navigation_allowed=None,
         on_autoplay_changed=None,
+        on_playing=None,
     ) -> None:
         super().__init__(surface)
         self.surface = surface
@@ -57,6 +58,8 @@ class VideoPlayer(QObject):
         self._on_navigate = on_navigate
         self._navigation_allowed = navigation_allowed
         self._on_autoplay_changed = on_autoplay_changed
+        self._on_playing = on_playing
+        self._playing_announced = False
         self.autoplay = False
         self._panel: QWidget | None = None
         self._player = None
@@ -133,6 +136,7 @@ class VideoPlayer(QObject):
         panel.raise_()
         if self._on_playback_changed is not None:
             self._on_playback_changed(True)
+        self._playing_announced = False
         player.setSource(QUrl.fromLocalFile(path))
         player.play()
 
@@ -202,6 +206,10 @@ class VideoPlayer(QObject):
             if self._player is not player:
                 return
             active = player.playbackState() == QMediaPlayer.PlaybackState.PlayingState
+            if active and not self._playing_announced:
+                self._playing_announced = True
+                if self._on_playing is not None:
+                    self._on_playing()
             ended = player.mediaStatus() == QMediaPlayer.MediaStatus.EndOfMedia
             toggle.setIcon(QIcon(str(ICONS / ("video-pause.svg" if active else "video-play.svg"))))
             description = "Pause video (K / S)" if active else "Replay video (K / S)" if ended else "Play video (K / S)"

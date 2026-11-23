@@ -16,6 +16,31 @@ from dtflow.logging_setup import dev_enabled, sanitize
 _QT_MULTIMEDIA_HANDLER = None
 
 
+def _silence_native_output() -> None:
+    """Keep FFmpeg and Qt multimedia chatter off the console without any Python callback.
+
+    Qt's multimedia categories are switched off through logging rules (evaluated natively), and the bundled
+    FFmpeg's global log level is set to quiet through its own C function, which needs no GIL. Both are best
+    effort and respect an explicit QT_LOGGING_RULES.
+    """
+    os.environ.setdefault("QT_LOGGING_RULES", "qt.multimedia.*=false")
+    try:
+        import ctypes
+        from pathlib import Path
+
+        import PySide6
+
+        library = next(iter(sorted(Path(PySide6.__file__).parent.glob("avutil*.dll"))), None)
+        if library is None:
+            library = next(iter(sorted(Path(PySide6.__file__).parent.glob("Qt/lib/libavutil*"))), None)
+        if library is not None:
+            set_level = ctypes.CDLL(str(library)).av_log_set_level
+            set_level.argtypes = [ctypes.c_int]
+            set_level(-8)  # AV_LOG_QUIET
+    except (ImportError, OSError, AttributeError):
+        pass
+
+
 def install_qt_multimedia_logging() -> None:
     """Opt-in only: set DTFLOW_QT_MULTIMEDIA_LOG=1 to route Qt multimedia/FFmpeg messages into diagnostics.
 
@@ -29,6 +54,7 @@ def install_qt_multimedia_logging() -> None:
     in development mode only; unrelated Qt and fatal messages are left alone.
     """
     if not os.environ.get("DTFLOW_QT_MULTIMEDIA_LOG"):
+        _silence_native_output()
         return
     global _QT_MULTIMEDIA_HANDLER
     if _QT_MULTIMEDIA_HANDLER is not None:
