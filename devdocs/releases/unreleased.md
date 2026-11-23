@@ -41,7 +41,7 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 
 ## Fixed
 
-- Connection's LoRA library avoids unnecessary refreshes and keeps selection and eligible actions available during updates; catalogue loading runs in the background (PR #581, refs #565; [Windows acceptance pending](../plans/2026-11-23-lora-table-responsiveness.md)).
+- Connection's LoRA library reuses cells and controls, avoids repeated automatic column sizing and retains selection and eligible actions during updates. Catalogue loading stays in the background; family/format scans avoid repeated index reads (PR #581, refs #565; [before/after Windows acceptance pending](../plans/2026-11-23-lora-table-responsiveness.md)).
 
 - **Deferred saved editor inputs (PR #556, refs #555):** A remembered ControlNet photo/pose map no longer starts ONNX detection or map fitting while DTFlow opens on Connection; the saved pose automatically restores when Generate → ControlNet becomes visible (owner Windows confirmation). The separate remembered Inpaint source no longer triggers “Load source image” at startup: it loads on first visible Generate → Inpaint entry, retaining its path if the app closes sooner. The Inpaint extension is source-reviewed only, pending a quick no-credit Windows navigation check.
 
@@ -70,4 +70,4 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 ## Release audit
 
 - PRs: #499, #504, #510, #511, #513, #522, #545, #547, #551, #553, #556, #581.
-- Scope: Version bump 6.4.1 and release-note consolidation; Controlnet generation, pose queues and local map-owning templates; queue composer corrections and direct pose editing/map replacement; local LoRA cleanup and startup/navigation corrections; pose queue-behind repair; video-control design alignment, crop inspection and availability/progress corrections; bounded video queue capture, dispatch and per-item presentation; staged FFmpeg for source runs; disk-spooled local video encoding with an encoder limit; deferred ControlNet and Inpaint saved sources until their modes are visible; retained-LoRA refresh deduplication, bounded changed-row/control updates, asynchronous catalogue setup and review repairs.
+- Scope: Version bump 6.4.1 and release-note consolidation; Controlnet generation, pose queues and local map-owning templates; queue composer corrections and direct pose editing/map replacement; local LoRA cleanup and startup/navigation corrections; pose queue-behind repair; video-control design alignment, crop inspection and availability/progress corrections; bounded video queue capture, dispatch and per-item presentation; staged FFmpeg for source runs; disk-spooled local video encoding with an encoder limit; deferred ControlNet and Inpaint saved sources until their modes are visible; retained-LoRA cell/control reuse and bounded sizing, async catalogue/review repairs, worker scan optimizations and expanded Connection diagnostics.

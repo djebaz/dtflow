@@ -27,10 +27,19 @@ def library_formats(state: Path, entries: list[dict]) -> dict[tuple[str, int], s
     """Bounded tensor-header observations only; no weight decoding or whole-file hashing."""
     store = LoraStore(state)
     formats = {}
+    identities = [
+        (entry["sha256"], entry["size"])
+        for entry in entries
+        if isinstance(entry.get("sha256"), str) and isinstance(entry.get("size"), int)
+    ]
+    try:
+        retained_files = store.find_many(identities)
+    except (OSError, ValidationError):
+        return formats
     for entry in entries:
         identity = (entry.get("sha256"), entry.get("size"))
         try:
-            retained = store.find(*identity)
+            retained = retained_files.get(identity)
             if retained is None or not retained.path.is_file() or retained.path.stat().st_size != retained.size:
                 continue
             with closing(sqlite3.connect(retained.path.as_uri() + "?mode=ro", uri=True, timeout=1)) as db:
@@ -52,12 +61,27 @@ def available_quantizations(state: Path, entries: list[dict]) -> frozenset[tuple
     """Only a verified, still-managed output disables quantization of its recorded source."""
     store = LoraStore(state)
     result = set()
+    identities = [
+        (entry["sha256"], entry["size"])
+        for entry in entries
+        if isinstance(entry.get("quantized_from"), list)
+        and isinstance(entry.get("sha256"), str)
+        and isinstance(entry.get("size"), int)
+    ]
+    try:
+        retained_files = store.find_many(identities)
+    except (OSError, ValidationError):
+        return frozenset()
     for entry in entries:
         sources = entry.get("quantized_from")
-        if not isinstance(sources, list):
+        if (
+            not isinstance(sources, list)
+            or not isinstance(entry.get("sha256"), str)
+            or not isinstance(entry.get("size"), int)
+        ):
             continue
         try:
-            retained = store.find(entry["sha256"], entry["size"])
+            retained = retained_files.get((entry["sha256"], entry["size"]))
             if retained is None:
                 continue
             store.verify(retained)

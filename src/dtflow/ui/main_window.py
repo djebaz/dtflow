@@ -669,7 +669,9 @@ class MainWindow:
         table.setIconSize(QSize(6, 6))  # Small status light; the full status cell keeps its tooltip hitbox.
         header = table.horizontalHeader()
         for column in (0, 1, 2):
-            header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
+            # Auto-sizing here re-enters Qt's content measurement on every cell change.
+            # Accumulate text widths during reconciliation and publish once per completed pass.
+            header.setSectionResizeMode(column, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(3, QHeaderView.ResizeMode.Fixed)
         table.setColumnWidth(3, 32)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
@@ -695,6 +697,10 @@ class MainWindow:
         self._lora_reconcile = None
         self._lora_control_updates = None
         self._lora_current_entries = {}
+        self._lora_column_widths = []
+        self._lora_status_icons = {}
+        self._lora_families_reading = False
+        self._lora_families_again = False
         self._lora_selection_target = None
         self._lora_actions_timer = QTimer(table)
         self._lora_actions_timer.setSingleShot(True)
@@ -1764,6 +1770,8 @@ class MainWindow:
             operation = ",".join(operations)[:128]
         elif images and self.form.isVisible() and not self.form.isMinimized():
             operation = "gallery_browsing"
+        elif current is self.form.connectionPage and self.form.isVisible() and not self.form.isMinimized():
+            operation = "connection_browsing"
         else:
             return None
         workspace = {
@@ -2391,8 +2399,9 @@ class MainWindow:
         self._render_lora_table()  # the retained files show at once; metadata columns follow from a separate read
         self._read_summary("lora_records", self._read_lora_records, self._lora_library_read)
         if rescan:
-            self._read_summary("lora_families", self._read_lora_families, self._lora_families_read)
+            self._schedule_lora_families()
         else:
+            self._lora_families_again = False
             self._summary_reads.pop("lora_families", None)  # Discard an older scan's stale result.
         self._read_summary("lora_unretained", self._read_unretained_loras, self._lora_unretained_read)
 
@@ -2426,6 +2435,26 @@ class MainWindow:
         if changed:
             self._render_lora_table()
 
+    def _schedule_lora_families(self) -> None:
+        if self.runner.closed or self._removing_retained_lora:
+            return
+        if self._lora_families_reading:
+            self._lora_families_again = True
+            self._summary_reads.pop("lora_families", None)  # a newer request retires the in-flight observation
+            return
+        self._lora_families_reading = True
+        token = self._summary_reads["lora_families"] = object()
+
+        def finished(entries, error):
+            self._lora_families_reading = False
+            if self._summary_reads.get("lora_families") is token:
+                self._lora_families_read(entries, error)
+            if self._lora_families_again:
+                self._lora_families_again = False
+                self._schedule_lora_families()
+
+        self.runner.submit(asyncio.to_thread(self._read_lora_families), finished)
+
     def _read_lora_families(self):
         """Slow local work (hashes whole files), off the first paint: auto-naming once per run, then family detection."""
         started = time.monotonic()
@@ -2441,10 +2470,13 @@ class MainWindow:
             if isinstance(entry.get("sha256"), str) and isinstance(entry.get("size"), int)
         ]
         found = retained_families(self.state_dir, identities, verify=False)  # dispatch re-verifies the bytes itself
+        detected = time.monotonic()
         for entry in entries:
             entry["detected_family"] = found.get((entry.get("sha256"), entry.get("size")))
         formats = library_formats(self.state_dir, entries)
+        formatted = time.monotonic()
         quantized = available_quantizations(self.state_dir, entries)
+        quantized_at = time.monotonic()
         for entry in entries:
             identity = (entry.get("sha256"), entry.get("size"))
             entry["observed_format"] = formats.get(identity)
@@ -2456,6 +2488,9 @@ class MainWindow:
                 "files": len(entries),
                 "naming_ms": round((named - started) * 1000),
                 "families_ms": round((time.monotonic() - named) * 1000),
+                "detection_ms": round((detected - named) * 1000),
+                "formats_ms": round((formatted - detected) * 1000),
+                "quantized_ms": round((quantized_at - formatted) * 1000),
             },
         )
         return entries
@@ -2594,6 +2629,7 @@ class MainWindow:
         entries = self._lora_entries
         entries_by_identity = self._lora_current_entries
         table = self.form.retainedLorasTable
+        self._lora_column_widths = [table.horizontalHeader().sectionSizeHint(column) for column in (0, 1, 2)]
         self._lora_names = {
             key: name
             for key, name in self._lora_names.items()
@@ -2633,17 +2669,7 @@ class MainWindow:
                 "Remove deletes only this managed copy, not the original, remote asset, or history."
             )
             self._lora_names[(sha256, size)] = name
-            for column, text in zip((0, 1, 2, 3, 5), cells, strict=True):
-                item = QTableWidgetItem(text)
-                item.setToolTip(tooltip)
-                if column == 0:
-                    item.setData(Qt.ItemDataRole.UserRole, (sha256, size))
-                elif column == 3:
-                    item.setIcon(QIcon(status_dot(status_level, 6)))
-                    item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    item.setToolTip(status)
-                    item.setData(Qt.ItemDataRole.AccessibleTextRole, status)
-                table.setItem(row, column, item)
+            self._update_lora_cells(row, (sha256, size), cells, tooltip, status, status_level)
             self._lora_row_actions(row, (sha256, size), version, record)
             self._lora_row_painted(row, (sha256, size))
             yield
@@ -2691,22 +2717,46 @@ class MainWindow:
                 record.get("trigger_words") or "—",
             )
             self._lora_names[(sha256, size)] = name
-            for column, text in zip((0, 1, 2, 3, 5), cells, strict=True):
-                cell = QTableWidgetItem(text)
-                cell.setToolTip(tooltip)
-                if column == 0:
-                    cell.setData(Qt.ItemDataRole.UserRole, (sha256, size))
-                elif column == 3:
-                    cell.setIcon(QIcon(status_dot("warning", 6)))
-                    cell.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
-                    cell.setToolTip(status)
-                    cell.setData(Qt.ItemDataRole.AccessibleTextRole, status)
-                table.setItem(row, column, cell)
+            self._update_lora_cells(row, (sha256, size), cells, tooltip, status, "warning")
             self._lora_row_painted(row, (sha256, size))
             yield
         while table.rowCount() > first + len(rows):
             table.removeRow(table.rowCount() - 1)
             yield
+        for column, width in enumerate(self._lora_column_widths):
+            if table.columnWidth(column) != width:
+                table.setColumnWidth(column, width)
+
+    def _update_lora_cells(self, row, identity, cells, tooltip, status, level) -> None:
+        table = self.form.retainedLorasTable
+        for column, text in zip((0, 1, 2, 3, 5), cells, strict=True):
+            cell = table.item(row, column)
+            created = cell is None
+            if created:
+                cell = QTableWidgetItem(text)
+                if column == 3:
+                    cell.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
+            if cell.text() != text:
+                cell.setText(text)
+            tip = status if column == 3 else tooltip
+            if cell.toolTip() != tip:
+                cell.setToolTip(tip)
+            if column == 0 and cell.data(Qt.ItemDataRole.UserRole) != identity:
+                cell.setData(Qt.ItemDataRole.UserRole, identity)
+            elif column == 3:
+                if cell.data(Qt.ItemDataRole.UserRole) != level:
+                    if level not in self._lora_status_icons:
+                        self._lora_status_icons[level] = QIcon(status_dot(level, 6))
+                    cell.setIcon(self._lora_status_icons[level])
+                    cell.setData(Qt.ItemDataRole.UserRole, level)
+                if cell.data(Qt.ItemDataRole.AccessibleTextRole) != status:
+                    cell.setData(Qt.ItemDataRole.AccessibleTextRole, status)
+            if created:
+                table.setItem(row, column, cell)
+            if column in (0, 1, 2):
+                self._lora_column_widths[column] = max(
+                    self._lora_column_widths[column], table.fontMetrics().horizontalAdvance(text) + 24
+                )
 
     def _lora_row_painted(self, row, identity) -> None:
         if identity == self._lora_selection_target:
@@ -2737,6 +2787,7 @@ class MainWindow:
                     host.setEnabled(False)
             yield
 
+    @profile_slow_gui_callback("connection.lora_table_slice")
     def _mount_lora_actions(self) -> None:
         """Cooperative 8 ms slices, not a platform-dependent timer delay for every row."""
         if self.runner.closed:
@@ -2748,19 +2799,24 @@ class MainWindow:
             return
         table = self.form.retainedLorasTable
         deadline = time.perf_counter() + 0.008
-        with QSignalBlocker(table):
-            while self._lora_control_updates is not None or self._lora_reconcile is not None:
-                controls = self._lora_control_updates is not None
-                try:
-                    next(self._lora_control_updates if controls else self._lora_reconcile)
-                except StopIteration:
-                    if controls:
-                        self._lora_control_updates = None
-                    else:
-                        self._lora_reconcile = None
-                        self._lora_selection_target = self._selected_lora_identity()
-                if time.perf_counter() >= deadline:
-                    break
+        updates = table.updatesEnabled()
+        table.setUpdatesEnabled(False)
+        try:
+            with QSignalBlocker(table):
+                while self._lora_control_updates is not None or self._lora_reconcile is not None:
+                    controls = self._lora_control_updates is not None
+                    try:
+                        next(self._lora_control_updates if controls else self._lora_reconcile)
+                    except StopIteration:
+                        if controls:
+                            self._lora_control_updates = None
+                        else:
+                            self._lora_reconcile = None
+                            self._lora_selection_target = self._selected_lora_identity()
+                    if time.perf_counter() >= deadline:
+                        break
+        finally:
+            table.setUpdatesEnabled(updates)
         self._retained_lora_selection_changed()
         if self._lora_reconcile is not None or self._lora_control_updates is not None:
             self._lora_actions_timer.start(0)

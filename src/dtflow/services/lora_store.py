@@ -15,7 +15,7 @@ import os
 import uuid
 import re
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -165,6 +165,33 @@ class LoraStore:
                 if path.is_file():
                     return RetainedFile(path.name, sha256, size, path)
         return None
+
+    def find_many(self, identities: Iterable[tuple[str, int]]) -> dict[tuple[str, int], RetainedFile]:
+        """One index observation for advisory library reads, never byte-verification authority.
+
+        Preserve find's first matching record and path checks. An unsafe/missing entry is
+        omitted independently; callers still stat/inspect (and verify when required) its file.
+        Uploads and mutations continue to use fresh find/verify through their existing paths.
+        """
+        wanted = set(identities)
+        if not wanted:
+            return {}
+        found = {}
+        for item in self._read():
+            sha256, size = item.get("sha256"), item.get("size")
+            if not isinstance(sha256, str) or not isinstance(size, int):
+                continue
+            identity = (sha256, size)
+            if identity not in wanted:
+                continue
+            wanted.remove(identity)  # first matching record wins, even if it cannot be used
+            try:
+                path = self._path(item)
+                if path.is_file():
+                    found[identity] = RetainedFile(path.name, sha256, size, path)
+            except (OSError, ValidationError):
+                continue
+        return found
 
     def verify(self, retained: RetainedFile) -> None:
         """Re-measure before use; a missing, resized or altered file is never trusted."""
