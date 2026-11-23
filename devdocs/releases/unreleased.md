@@ -59,7 +59,7 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 - Startup always opens on Connection; selecting Generate later opens its remembered sub-mode, including Scripts, without a startup redirect (#511).
 - Removing a registry-only LoRA updates the affected row without rescanning all retained LoRAs or rebuilding the entire table (#511).
 - Images Detail Next/Previous (button and Left/Right keys) update the position immediately but load the image, saved details and automatic video start only for the item a burst settles on (200 ms), so passing through videos with Autoplay on no longer starts a media player for every skipped item. The inline video panel, video widget and media player are now created once and reused for later clips instead of being rebuilt for each one, avoiding a repeated start-up stall on Windows (#580).
-- While a video plays in Images Detail, the position and dimensions overlays stay visible below the transport bar instead of being hidden, and the F6 slideshow pager and controls are raised above the video when it starts (#580).
+- While a video plays in Images Detail, the position and dimensions overlays stay visible in a strip below the transport bar instead of being hidden, and during F6 the video leaves a strip at the top for the slideshow pager and controls, because the native video widget cannot be stacked under other widgets (#580).
 
 ## Upgrade and compatibility
 
