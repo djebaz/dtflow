@@ -1320,20 +1320,25 @@ class QueuePage:
         entries = []
         for queue_id in owned:
             view = self._views.get(queue_id)
-            if view is not None and view["status"] in ("running", "paused"):
-                entries.append((view, False))
+            if view is not None and view["status"] in ("running", "paused", "queued"):
+                entries.append((view, False))  # a queue this window now dispatches counts from its first moment
         for view in self._views.values():
             if view["queue_id"] not in owned and view["status"] == "running" and view.get("owner_active") is True:
                 entries.append((view, True))
-        if not entries:
-            self._period.clear()  # nothing runs any more: the activity period and its finished segments end
-            return None
         active = list(entries)
         shown = {view["queue_id"] for view, _ in entries}
         for queue_id, foreign in self._period.items():
             view = self._views.get(queue_id)
             if queue_id not in shown and view is not None and view["status"] in ("finished", "cancelled"):
                 entries.append((view, foreign))  # a finished queue keeps its settled segment until the period ends
+        if not active:
+            # Between two auto-play queues this window already owns the next one, whose view is not read yet: the period
+            # (and its finished segments) goes on. Otherwise nothing runs any more and the period ends.
+            if not (self._dispatching and self._views.get(self._dispatching) is None):
+                self._period.clear()
+                return None
+        if not entries:
+            return None
         self._period = {view["queue_id"]: foreign for view, foreign in entries}
         snapshot = self._progress.snapshot(
             [totals_from_view(view, foreign=foreign, parent=view.get("kind") in RUN_KINDS) for view, foreign in entries]
