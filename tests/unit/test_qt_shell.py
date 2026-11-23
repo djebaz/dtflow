@@ -765,22 +765,22 @@ def test_logs_form_is_created_once_only_on_demand(window, qtbot, monkeypatch):
 
 
 def test_first_event_turn_starts_check_but_shutdown_cannot_start_work(window, monkeypatch):
-    from types import SimpleNamespace
     from unittest.mock import Mock
 
     from dtflow.ui import app
 
     start = Mock()
-    thread = Mock()
+    submit = Mock(side_effect=lambda work, done: work.close())
     monkeypatch.setattr(window, "start_startup_check", start)
-    monkeypatch.setattr(app, "threading", SimpleNamespace(Thread=thread))
+    monkeypatch.setattr(window.runner, "submit", submit)
     app._start_background_work(window)
     start.assert_called_once()
-    thread.return_value.start.assert_called_once()
+    submit.assert_called_once()
+    assert submit.call_args.args[1] == window.finish_startup_preload
     window.runner.shutdown()
     app._start_background_work(window)
     start.assert_called_once()
-    thread.return_value.start.assert_called_once()
+    submit.assert_called_once()
 
 
 def test_cloud_missing_credentials_are_reported_not_raised(window, qtbot, monkeypatch):
