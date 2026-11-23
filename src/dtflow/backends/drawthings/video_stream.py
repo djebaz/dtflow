@@ -18,6 +18,7 @@ import threading
 import time
 from contextlib import AsyncExitStack, closing
 from dataclasses import replace
+from functools import lru_cache
 from pathlib import Path
 
 import betterproto
@@ -57,17 +58,62 @@ log = logging.getLogger(__name__)
 GENERATE_METHOD = "/ImageGenerationService/GenerateImage"
 
 
+@lru_cache(maxsize=1)
+def _half_to_byte_lut():
+    """Map every float16 bit pattern using the exact drawthings-py 0.4.0 pixel formula."""
+    import numpy as np
+
+    values = np.arange(1 << 16, dtype=np.uint16).view(np.float16)
+    # NaN tensors are rejected before lookup. Ignore warnings for unused NaN entries.
+    with np.errstate(invalid="ignore", over="ignore"):
+        return np.clip(np.round((values + 1) * 127.5), 0, 255).astype(np.uint8)
+
+
+def _frame_rgb_candidate(tensor: bytes, width: int, height: int, channels: int, mode: str) -> bytes:
+    """Experimental video decoder: compare half-float lookup with direct float32 mapping."""
+    import fpzip
+    import numpy as np
+
+    count = width * height * channels
+    if struct.unpack_from("<I", tensor)[0] == 1012247:  # drawthings-py 0.4.0 FPZIP magic
+        # The fp32 candidate preserves FPZIP's float32 output instead of converting it to float16.
+        dtype = np.float16 if mode == "lut" else np.float32
+        values = np.asarray(fpzip.decompress(tensor[68:], order="C"), dtype=dtype).reshape(-1)[:count]
+    else:
+        expected = 68 + count * 2
+        if len(tensor) < expected:
+            raise ValueError(f"Tensor payload is too short: expected {expected} bytes, got {len(tensor)} bytes")
+        values = np.frombuffer(tensor, dtype="<f2", count=count, offset=68)
+    if values.size != count:
+        raise ValueError(f"Tensor payload size mismatch: expected {count} values, got {values.size}")
+    if np.isnan(values).any():
+        raise ValueError("Tensor payload contains NaN values")
+
+    if mode == "lut":
+        pixels = _half_to_byte_lut()[values.view(np.uint16)]
+    else:
+        # The uncompressed wire format is float16; float32 is only zero-copy after FPZIP.
+        floats = values.astype(np.float32, copy=False)
+        pixels = np.clip(np.round((floats + 1) * 127.5), 0, 255).astype(np.uint8)
+    return np.ascontiguousarray(pixels.reshape(height, width, channels)[:, :, :3]).tobytes()
+
+
 def _frame_rgb(tensor: bytes) -> tuple[int, int, bytes]:
     """One received frame tensor to packed RGB bytes (worker thread)."""
-    import numpy as np
-    from drawthings_py.image.image_buffer import ImageBuffer
-
     if len(tensor) < 68:
         raise ValueError("Video tensor header is truncated.")
     height, width, channels = struct.unpack_from("<3I", tensor, 24)
     if not width or not height or width * height > 2048 * 2048 or channels not in (3, 4):
         raise ValueError("Video frame exceeds the bounded pixel/channel policy.")
+    if video_encode.video_decoder in ("lut", "fp32"):
+        return width, height, _frame_rgb_candidate(tensor, width, height, channels, video_encode.video_decoder)
+
+    import numpy as np
+    from drawthings_py.image.image_buffer import ImageBuffer
+
     buffer = ImageBuffer.from_tensor(tensor)
+    if buffer.channels == 3:
+        return buffer.width, buffer.height, buffer.data  # already packed RGB: avoid a per-frame copy
     pixels = np.frombuffer(buffer.data, dtype=np.uint8).reshape(buffer.height, buffer.width, buffer.channels)
     return buffer.width, buffer.height, np.ascontiguousarray(pixels[:, :, :3]).tobytes()
 
