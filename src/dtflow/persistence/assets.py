@@ -5,8 +5,8 @@ A receipt row is a *local candidate*, not remote inventory. The content-keyed
 editable metadata. Account/name-scoped DT+ receipts remain separate. No legacy schema
 migration is provided for disposable pre-release state; incompatible state is never deleted.
 
-Writers (``prepare`` and ``reconcile``) hold an exclusive ``assets.lock`` for their lifetime; opening as a writer
-turns any leftover ``intent``/``transferring`` operation of an interrupted process into explicit ``unknown`` evidence.
+Writers serialize short SQLite transactions. A per-writer OS lease distinguishes live
+operations from interrupted ones; opening another writer never interrupts a live upload.
 Readers (``list``/``show``) take no lock and change nothing. Connections are short and per operation, so reading never
 blocks behind a long transfer.
 """
@@ -14,7 +14,6 @@ blocks behind a long transfer.
 from __future__ import annotations
 
 import asyncio
-import os
 import re
 import sqlite3
 from contextlib import closing
@@ -33,6 +32,7 @@ from dtflow.core.models import (
 )
 from dtflow.persistence import lora_sources as _sources
 from dtflow.persistence import store
+from dtflow.persistence.asset_leases import AssetsBusyError, lock_file as _lock_file, wait_lock
 from dtflow.persistence.store import PersistenceError
 
 if TYPE_CHECKING:
@@ -118,32 +118,6 @@ def newest_per_name(choices, current=None) -> tuple:
     return tuple(newest.values())
 
 
-class AssetsBusyError(PersistenceError):
-    """Another process holds the asset writer lock; nothing was prepared, uploaded or changed."""
-
-
-def _lock_file(path: Path):
-    handle = path.open("a+b")
-    try:
-        handle.seek(0)
-        if os.name == "nt":
-            import msvcrt
-
-            if handle.read(1) == b"":
-                handle.write(b"0")
-                handle.flush()
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl
-
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError as exc:
-        handle.close()
-        raise AssetsBusyError("Another process is preparing or reconciling assets in this state directory.") from exc
-    return handle
-
-
 _LORA_COLUMNS = (
     "r.detected_version, r.detected_source, r.declared_version, r.short_name, r.managed_identifier, "
     "r.format_code, r.format_source, r.trigger_words"
@@ -174,14 +148,16 @@ def _record(row: sqlite3.Row) -> dict[str, Any]:
 
 
 class AssetRegistry:
-    """Open with ``writer=True`` to prepare/reconcile (exclusive), or read-only for inspection."""
+    """Open with ``writer=True`` for short transactional writes, or read-only for inspection."""
 
     def __init__(self, directory: Path, *, writer: bool = False, recover: bool = True):
         self.directory = Path(directory).resolve()
         self.writer = writer
-        # ``recover=False`` is a scoped writer: it takes the lock but leaves other operations' states alone.
+        # Scoped source writers need no operation recovery.
         self.recover = recover
         self._lock = None
+        self._owner = uuid4().hex
+        self._operations: set[str] = set()
         self._ready = False
 
     @property
@@ -210,28 +186,56 @@ class AssetRegistry:
             self._ready = True
             return
         self.directory.mkdir(parents=True, exist_ok=True)
-        self._lock = _lock_file(self.directory / "assets.lock")
+        owners = self.directory / "asset_owners"
+        owners.mkdir(exist_ok=True)
+        self._lock = _lock_file(owners / (self._owner + ".lock"))
         try:
-            with closing(self._connect()) as db:
-                self._check_version(db, create=True)
-                now = _now()
-                db.execute("BEGIN IMMEDIATE")
-                try:
-                    # Writers are exclusive, so an unresolved operation here belongs to a process that no longer runs.
-                    for table in ("asset_operations", "assets") if self.recover else ():
-                        db.execute(
-                            f"UPDATE {table} SET state='unknown', evidence='interrupted', updated_at_utc=? "
-                            "WHERE state IN ('intent','transferring')",
-                            (now,),
-                        )
-                    db.execute("COMMIT")
-                except BaseException:
-                    db.execute("ROLLBACK")
-                    raise
+            # Only schema/recovery work takes the legacy lock. Never span provider I/O.
+            with wait_lock(self.directory / "assets.lock"):
+                with closing(self._connect()) as db:
+                    self._check_version(db, create=True)
+                    db.execute("BEGIN IMMEDIATE")
+                    try:
+                        if self.recover:
+                            self._recover_interrupted(db)
+                        db.execute("COMMIT")
+                    except BaseException:
+                        db.execute("ROLLBACK")
+                        raise
         except BaseException:
             self._release()
             raise
         self._ready = True
+
+    def _recover_interrupted(self, db) -> None:
+        rows = db.execute(
+            "SELECT o.operation_id, o.asset_id, w.owner_id FROM asset_operations o "
+            "LEFT JOIN asset_operation_owners w USING(operation_id) "
+            "WHERE o.state IN ('intent','transferring')"
+        ).fetchall()
+        for row in rows:
+            owner = row["owner_id"]
+            if owner:
+                try:
+                    probe = _lock_file(self.directory / "asset_owners" / (owner + ".lock"))
+                except AssetsBusyError:
+                    continue  # A live writer owns this operation, including in another process.
+                probe.close()
+            self._interrupt(db, row["operation_id"], row["asset_id"])
+
+    @staticmethod
+    def _interrupt(db, operation, asset) -> None:
+        now = _now()
+        changed = db.execute(
+            "UPDATE asset_operations SET state='unknown', evidence='interrupted', updated_at_utc=? "
+            "WHERE operation_id=? AND state IN ('intent','transferring')", (now, operation),
+        ).rowcount
+        if not changed:
+            return
+        db.execute(
+            "UPDATE assets SET state='unknown', evidence='interrupted', updated_at_utc=? "
+            "WHERE asset_id=? AND state IN ('intent','transferring')", (now, asset),
+        )
 
     def _check_version(self, db: sqlite3.Connection, *, create: bool) -> None:
         version = db.execute("PRAGMA user_version").fetchone()[0]
@@ -250,6 +254,10 @@ class AssetRegistry:
             try:
                 for statement in (*SCHEMA, *_sources.SCHEMA_STATEMENTS):  # additive tables: no version bump
                     db.execute(statement)
+                db.execute(
+                    "CREATE TABLE IF NOT EXISTS asset_operation_owners ("
+                    "operation_id TEXT PRIMARY KEY REFERENCES asset_operations(operation_id), owner_id TEXT NOT NULL)"
+                )
                 db.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
                 db.execute("COMMIT")
             except BaseException:
@@ -257,11 +265,11 @@ class AssetRegistry:
                 raise
 
     def _connect(self) -> sqlite3.Connection:
-        db = sqlite3.connect(self.path, timeout=2.0, isolation_level=None)
+        db = sqlite3.connect(self.path, timeout=30.0, isolation_level=None)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA synchronous=FULL")
         db.execute("PRAGMA foreign_keys=ON")
-        db.execute("PRAGMA busy_timeout=2000")
+        db.execute("PRAGMA busy_timeout=30000")
         return db
 
     def _release(self) -> None:
@@ -270,8 +278,19 @@ class AssetRegistry:
             self._lock = None
 
     async def aclose(self) -> None:
-        self._release()
-        self._ready = False
+        try:
+            if self.writer and self._ready:
+                await asyncio.to_thread(self._write, self._close_operations)
+        finally:
+            self._release()
+            self._ready = False
+
+    def _close_operations(self, db) -> None:
+        for operation in self._operations:
+            row = db.execute("SELECT asset_id FROM asset_operations WHERE operation_id=?", (operation,)).fetchone()
+            if row is not None:
+                self._interrupt(db, operation, row["asset_id"])
+
 
     # -- operations -----------------------------------------------------------------------------------------------
 
@@ -309,7 +328,13 @@ class AssetRegistry:
         """Atomically accept a managed name and persist intent before provider negotiation."""
         if lora_metadata is not None and (action != "prepare" or content.kind != "lora"):
             raise ValidationError("Managed LoRA metadata can only be accepted during explicit Prepare.")
-        return await self._run(self._write, self._begin, content, backend_id, origin, action, family, lora_metadata)
+        def begin_owned(db):
+            result = self._begin(db, content, backend_id, origin, action, family, lora_metadata)
+            db.execute("INSERT INTO asset_operation_owners VALUES (?,?)", (result[1], self._owner))
+            self._operations.add(result[1])
+            return result
+
+        return await self._run(self._write, begin_owned)
 
     @staticmethod
     def _begin(
@@ -1075,3 +1100,4 @@ class AssetRegistry:
             record.get("family"),
             record.get("family_source", "unknown"),
         )
+
