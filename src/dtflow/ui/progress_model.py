@@ -42,7 +42,7 @@ PHASE_CODE = {
 }  # "preparing" (before the request is sent) has no code
 PHASE_WORDS = {
     "preparing": "preparing",
-    "waiting": "waiting for local video resources",
+    "waiting": "waiting for this PC",
     "cloud": "DT+ Cloud processing",
     "sampling": "sampling",
     "second_pass": "second pass",
@@ -174,7 +174,7 @@ class ItemProgress:
             if event.stage in ("waiting_backend_response", "backend_response_received"):
                 self.phase, self.done, self.total, self.text = "cloud", None, None, "DT+ Cloud processing"
             else:
-                waiting = event.stage == "waiting_video_resources" or (
+                waiting = event.stage in ("waiting_video_disk", "waiting_video_clip_limit", "waiting_video_memory") or (
                     not self.video and event.stage in ("waiting_execution_lane", "waiting_provider_slot")
                 )
                 self.phase, self.text, self.done, self.total = (
@@ -382,7 +382,10 @@ class ProgressModel:
         elif event.sequence <= item.last_sequence and (event.sequence or item.last_sequence):
             return None  # local preparation milestones all carry sequence 0 and repeat; numbered events stay ordered
         item.last_sequence = max(item.last_sequence, event.sequence)
-        if mode == "video" or event.stage in ("waiting_video_resources", "video_preparing"):
+        if mode == "video" or event.stage in (
+            *("waiting_video_disk", "waiting_video_clip_limit", "waiting_video_memory"),
+            "video_preparing",
+        ):
             item.mode = "video"
         presented = item._observe(event, now)
         label = event_stage(event)

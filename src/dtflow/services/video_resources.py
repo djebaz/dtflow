@@ -20,8 +20,28 @@ SPOOL_RESERVE = 500 * MIB
 SCRATCH_RESERVE = SPOOL_RESERVE + 2 * MP4_LIMIT + AUDIO_LIMIT + 24 * MIB
 # Final MP4 (256 MiB), poster (at most 32 MiB), and bounded sidecar/commit overhead.
 OUTPUT_RESERVE = 300 * MIB
+MIN_MP4_ESTIMATE = 8 * MIB
+AUDIO_BYTES_PER_SECOND = 300_000  # measured about 0.28 MB/s
+OUTPUT_OVERHEAD = 32 * MIB  # poster and sidecar/commit overhead
 DISK_HEADROOM = 256 * MIB
 MEMORY_BUDGET = 4 * 1024 * MIB
+
+
+def spool_estimate(request) -> int:
+    """Estimated received-frame spool for this clip (measured 1.00-1.05 of w*h*3*frames, plus 10%), never above SPOOL_RESERVE."""
+    return min(SPOOL_RESERVE, int(request.num_frames * request.width_px * request.height_px * 3 * 1.1))
+
+
+def clip_reservations(request) -> tuple[int, int, int]:
+    """(spool, temp, output) disk bytes reserved for this clip; each is at most today's flat reservation."""
+    from dtflow.core.video import duration_seconds
+
+    spool = spool_estimate(request)
+    mp4 = min(MP4_LIMIT, max(MIN_MP4_ESTIMATE, spool // 2))
+    audio = min(AUDIO_LIMIT, int(duration_seconds(request.model_id, request.num_frames) * AUDIO_BYTES_PER_SECOND))
+    return spool, spool + 2 * mp4 + audio + 24 * MIB, min(OUTPUT_RESERVE, mp4 + OUTPUT_OVERHEAD)
+
+
 _lock = threading.Lock()
 _active: dict["VideoLease", tuple[int, dict[int, tuple[Path, int]]]] = {}
 
@@ -31,12 +51,14 @@ class VideoLease:
         self.request, self.output = request, Path(output)
         # Conservative admission accounting for frame conversion, bounded payload queues, audio and poster.
         # External SDK/FFmpeg allocations and whole-process RSS are not certified by this estimate.
+        self.spool, self.scratch, self.output_reserve = clip_reservations(request)
+        self.wait_reason: str | None = None  # why acquire() last returned False: "clip_limit", "memory" or "disk"
         self.memory = 192 * MIB + request.width_px * request.height_px * 3 * 16
 
     def _disks(self):
         self.output.mkdir(parents=True, exist_ok=True)
         disks = {}
-        for path, amount in ((Path(tempfile.gettempdir()), SCRATCH_RESERVE), (self.output, OUTPUT_RESERVE)):
+        for path, amount in ((Path(tempfile.gettempdir()), self.scratch), (self.output, self.output_reserve)):
             volume = path.stat().st_dev
             previous = disks.get(volume, (path, 0))
             disks[volume] = path, previous[1] + amount
@@ -63,13 +85,15 @@ class VideoLease:
 
     def acquire(self) -> bool:
         with _lock:
-            if (
-                len(_active) >= MAX_QUEUE_CONCURRENCY
-                or sum(value[0] for value in _active.values()) + self.memory > MEMORY_BUDGET
-            ):
+            if len(_active) >= MAX_QUEUE_CONCURRENCY:
+                self.wait_reason = "clip_limit"
+                return False
+            if sum(value[0] for value in _active.values()) + self.memory > MEMORY_BUDGET:
+                self.wait_reason = "memory"
                 return False
             disks = self._disks()
             if not self._check_disks(disks, wait_for_reserved=True):
+                self.wait_reason = "disk"
                 return False
             _active[self] = self.memory, disks
             return True
@@ -82,7 +106,7 @@ class VideoLease:
             self._check_disks(_active[self][1], include_peers=False)
 
     def grow_spool(self, chunk: int) -> None:
-        """The spool outgrew its SPOOL_RESERVE estimate: it may take ``chunk`` more bytes only if the disk still
+        """The spool outgrew this clip's estimate: it may take ``chunk`` more bytes only if the disk still
         covers the other admitted clips' reservations, this clip's remaining files and the headroom."""
         with _lock:
             if self not in _active:
@@ -90,7 +114,7 @@ class VideoLease:
             disks = dict(_active[self][1])
             volume = Path(tempfile.gettempdir()).stat().st_dev
             path, amount = disks[volume]
-            disks[volume] = path, amount - SPOOL_RESERVE + chunk  # the spool's own estimate is already on disk
+            disks[volume] = path, amount - self.spool + chunk  # the spool's own estimate is already on disk
             try:
                 self._check_disks(disks)
             except ValidationError as exc:
@@ -119,7 +143,8 @@ def grow_video_spool(request_id: str, chunk: int) -> None:
 
 
 @asynccontextmanager
-async def video_admission(request, output):
+async def video_admission(request, output, on_wait=None):
+    """``on_wait(reason)`` is called when the clip starts waiting and whenever the cause changes."""
     lease = VideoLease(request, output)
     if request.width_px * request.height_px > 2048 * 2048 or lease.memory > MEMORY_BUDGET:
         raise BackendError(
@@ -133,7 +158,11 @@ async def video_admission(request, output):
     try:
         try:
             # The lease object exists before the worker starts; cancellation cannot lose an acquired reservation.
+            reported = None
             while not await settle(asyncio.to_thread(lease.acquire)):
+                if on_wait is not None and lease.wait_reason != reported:
+                    reported = lease.wait_reason
+                    on_wait(reported)
                 await asyncio.sleep(0.1)
         except (OSError, ValueError) as exc:
             raise BackendError(
