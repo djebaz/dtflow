@@ -20,6 +20,7 @@ _LONG = {"W": "waiting", "C": "in DT+ Cloud", "E": "encoding", "V": "saving"}
 @dataclass(frozen=True, slots=True)
 class AggregateText:
     candidates: tuple[str, ...]  # richest first; the last is the global settled/total alone
+    timed: int  # the leading candidates that may be shown beside elapsed/ETA (those still holding every count group)
     full: str  # everything, for the tooltip and accessible name
 
 
@@ -83,6 +84,7 @@ def aggregate_text(snapshot: ProgressSnapshot, *, elapsed: str = "", eta: str = 
     percent = f"~{int(snapshot.fill * 100)}%" if snapshot.total else ""
     full = _line(snapshot, short=False, percent=percent, times=times, wait=True, queues=True)
     candidates: list[str] = []
+    timed = 0
     for level in range(5):
         for short in (False, True):
             text = _line(
@@ -95,7 +97,9 @@ def aggregate_text(snapshot: ProgressSnapshot, *, elapsed: str = "", eta: str = 
             )
             if text and text not in candidates:
                 candidates.append(text)
+        if level == 1:
+            timed = len(candidates)
     minimal = f"{snapshot.settled}/{snapshot.total}"
     if minimal not in candidates:
         candidates.append(minimal)
-    return AggregateText(tuple(candidates), full)
+    return AggregateText(tuple(candidates), timed, full)

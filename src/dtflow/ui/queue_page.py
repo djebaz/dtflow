@@ -1308,7 +1308,7 @@ class QueuePage:
 
         Returns the snapshot, a bar-level ETA override (None: the primary queue's own ETA stands) and the name of what
         Stop reaches when several queues run. Up-next queues are not counted; a paused current dispatch stays in.
-        A non-queue Generate run, a script and a workflow keep their own single row."""
+        A script or workflow counts as one parent item. A non-queue Generate run keeps its own single row."""
         if self._generate_presents:
             return None
         owned = [queue_id for queue_id in (self._dispatching, *sorted(self._overlapping)) if queue_id]
@@ -1316,20 +1316,15 @@ class QueuePage:
         for queue_id in owned:
             view = self._views.get(queue_id)
             if view is not None and view["status"] in ("running", "paused"):
-                if view.get("kind") in ("script", "workflow"):
-                    return None
                 entries.append((view, False))
+        for view in self._views.values():
+            if view["queue_id"] not in owned and view["status"] == "running" and view.get("owner_active") is True:
+                entries.append((view, True))
         if not entries:
             return None
-        for view in self._views.values():
-            if (
-                view["queue_id"] not in owned
-                and view["status"] == "running"
-                and view.get("owner_active") is True
-                and view.get("kind") not in ("script", "workflow")
-            ):
-                entries.append((view, True))
-        snapshot = self._progress.snapshot([totals_from_view(view, foreign=foreign) for view, foreign in entries])
+        snapshot = self._progress.snapshot(
+            [totals_from_view(view, foreign=foreign, parent=view.get("kind") in RUN_KINDS) for view, foreign in entries]
+        )
         eta = None
         if len(entries) > 1:
             names = [view["backend"]["name"] for view, _ in entries if view["status"] == "running"]
@@ -1340,7 +1335,7 @@ class QueuePage:
                 eta = ""  # no usable estimate: show elapsed time only, never a placeholder
         primary = self._run_view()
         target = ""
-        if len([1 for _, foreign in entries if not foreign]) > 1 and primary is not None:
+        if len(entries) > 1 and primary is not None:
             target = f"stops queue {primary['queue_id'][:8]} only"
         return snapshot, eta, target
 

@@ -248,6 +248,7 @@ class QueueTotals:
     running: int = 0
     paused: bool = False
     foreign: bool = False  # running in another process: durable counts only, no live evidence
+    parent: bool = False  # a script or workflow: one parent item, its steps stay in their own views
 
 
 @dataclass(frozen=True, slots=True)
@@ -283,9 +284,23 @@ class ProgressSnapshot:
         return min(1.0, sum(queue.contribution for queue in self.queues) / self.total)
 
 
-def totals_from_view(view: dict, *, foreign: bool = False) -> QueueTotals:
-    """Durable counts of one queue view (workflow images are counted as items, as everywhere else)."""
+def totals_from_view(view: dict, *, foreign: bool = False, parent: bool = False) -> QueueTotals:
+    """Durable counts of one queue view (workflow images are counted as items, as everywhere else).
+
+    A script or workflow (``parent``) counts as one item that settles when the run ends."""
     from dtflow.ui.queue_presenter import item_counts, summarize
+
+    if parent:
+        ended = view.get("status") not in ("running", "paused")
+        return QueueTotals(
+            view["queue_id"],
+            int(ended),
+            1,
+            running=int(not ended),
+            paused=view.get("status") == "paused",
+            foreign=foreign,
+            parent=True,
+        )
 
     counts = item_counts(view)
     summary = summarize(view)
@@ -420,7 +435,7 @@ class ProgressModel:
 
     def _queue(self, totals: QueueTotals, now: float) -> QueueSnapshot:
         # Foreign-process queues have no live events here; their durable counts alone are shown.
-        items = () if totals.foreign else self.items(totals.queue_id)
+        items = () if totals.foreign or totals.parent else self.items(totals.queue_id)
         # An item can never outnumber the durable running count (stale evidence of an earlier item is ignored).
         if totals.running and len(items) > totals.running:
             items = items[-totals.running :]  # the most recently started ones; earlier records are likelier settled

@@ -1527,12 +1527,15 @@ class MainWindow:
         # A Generate click's queue shows as queue progress once the queue run publishes; until then (and for runs that
         # are not one-item queues) the row is Generation's.
         generating = self.activity.generating and not (self.generation.queued_run and state.owner != "generation")
-        if not (generating or self.activity.dispatching) or (not generating and self.queue.generate_settling):
+        local = generating or self.activity.dispatching
+        # Queues running only in another process still get the bar (durable counts, no Stop, no live telemetry).
+        foreign_only = aggregate is not None and not local and not self.queue.generate_settling
+        if not foreign_only and (not local or (not generating and self.queue.generate_settling)):
             self.progress_strip.finish("run")
             return
         if aggregate is not None and generating:
             aggregate = None  # a Generate run that is not a queue keeps its own row
-        run_identity = "generation" if generating else f"queue:{state.queue_id}"
+        run_identity = "generation" if generating else "foreign" if foreign_only else f"queue:{state.queue_id}"
         row = self.progress_strip.rows.get("run")
         if row is not None and row.property("runIdentity") != run_identity:
             self.progress_strip.finish("run")
@@ -1543,7 +1546,7 @@ class MainWindow:
             self.progress_strip.start(
                 "run",
                 label,
-                self.generation.cancel if generating else self.queue.cancel_run,
+                self.generation.cancel if generating else None if foreign_only else self.queue.cancel_run,
                 stop_text=(
                     ("Stop waiting locally" if not self.generation.queued_run else "Stop")
                     if generating
