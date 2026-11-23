@@ -1557,7 +1557,11 @@ def render_active_queue_states(shell, out):
         return view
 
     # Startup reads may already have queued a delivery before submit is held. Only
-    # explicit synthetic snapshots may replace this fixture's controller views.
+    # explicit synthetic snapshots may replace this fixture's controller views. Let a read in flight land first.
+    deadline = time.monotonic() + 5
+    while queue._reading and time.monotonic() < deadline:
+        QApplication.processEvents()
+        time.sleep(0.01)
     with (
         patch.object(shell.runner, "submit", side_effect=hold_worker),
         patch.object(queue, "_read_done"),
@@ -1584,13 +1588,13 @@ def render_active_queue_states(shell, out):
             ("Request accepted; waiting for first progress", "queues-11d-backend-processing"),
         ):
             live.label, live.label_since, live.counter = stage_name, time.monotonic(), None
-            queue._publish_run_state()
+            queue._sync_run()
             snap(screenshot)
         live.label, live.label_since, live.counter = "Generating", time.monotonic(), (3, 20)
-        queue._publish_run_state()
+        queue._sync_run()
         snap("queues-11e-observed-sampling")
         queue._progress.discard(*running_key)
-        queue._publish_run_state()
+        queue._sync_run()
         # Stop is presentation-only here; never post a real queue control from an offline capture.
         with patch.object(queue, "_post") as posted:
             strip.bar.button.click()
