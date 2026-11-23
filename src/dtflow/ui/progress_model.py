@@ -57,7 +57,7 @@ PHASE_WORDS = {
 # counter. Values are rough shares of a typical run, not measurements.
 VIDEO_WINDOWS = {
     "preparing": (0.00, 0.03, 6.0),
-    "waiting": (0.03, 0.50, 60.0),
+    "waiting": (0.03, 0.03, 60.0),  # a local wait (resources, slot): no progress is implied
     "cloud": (0.03, 0.50, 60.0),
     "sampling": (0.50, 0.80, 120.0),
     "second_pass": (0.70, 0.80, 60.0),
@@ -69,7 +69,7 @@ VIDEO_WINDOWS = {
 }
 IMAGE_WINDOWS = {
     "preparing": (0.00, 0.05, 6.0),
-    "waiting": (0.05, 0.10, 60.0),
+    "waiting": (0.05, 0.05, 60.0),
     "cloud": (0.05, 0.10, 60.0),
     "sampling": (0.10, 0.90, 120.0),
     "second_pass": (0.10, 0.90, 60.0),
@@ -333,9 +333,21 @@ class ProgressModel:
         now: float | None = None,
     ) -> ItemProgress | None:
         """Fold one event into its item; None when it belongs to a superseded attempt or repeats a sequence."""
+        if not item_id:
+            return None  # a queue-level notice (for example waiting for capacity) is not an item
         now = time.monotonic() if now is None else now
         key = (queue_id, item_id)
         item = self._items.get(key)
+        if (
+            item is not None
+            and event.request_id == item.request_id
+            and event.kind == "preparing"
+            and event.stage == "retrying"
+        ):
+            item._begin(now)  # the automatic retry announces itself under the old identity: the attempt starts over
+            item.last_sequence = 0
+            self._items[key] = self._items.pop(key)
+            return item
         if item is None:
             item = self._items[key] = ItemProgress(queue_id, item_id, event.request_id, mode or "image", now)
         elif event.request_id != item.request_id:
