@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dtflow.ui.video_progress import clock
 from dtflow.ui import file_dialogs
 from dtflow.ui.file_dialogs import QFileDialog
 from dtflow import startup
@@ -1569,7 +1570,9 @@ class MainWindow:
             snapshot, eta, target = aggregate
             eta = eta if eta is not None else state.eta.split(" (")[0]
             if "?" in eta:
-                eta = ""  # an unknown ETA is left out of the bar
+                eta = ""
+            if not eta and not any(queue.totals.paused for queue in snapshot.queues):
+                eta = self._progress_eta(snapshot.fill, state.elapsed)
             self.progress_strip.set_aggregate(
                 Aggregate(
                     snapshot,
@@ -1578,6 +1581,20 @@ class MainWindow:
                     stop_target=target,
                 )
             )
+
+    @staticmethod
+    def _progress_eta(fill: float, elapsed_text: str) -> str:
+        """Fallback ETA when no timing-based one exists: elapsed time scaled by the bar's own fraction (a rough "~")."""
+        try:
+            parts = [int(part) for part in elapsed_text.removeprefix("Elapsed ").split(":")]
+        except ValueError:
+            return ""
+        if not 2 <= len(parts) <= 3 or fill < 0.05:
+            return ""
+        elapsed = 0
+        for part in parts:
+            elapsed = elapsed * 60 + part
+        return f"~{clock(elapsed * (1 - fill) / fill)} left" if elapsed else ""
 
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)
