@@ -4631,6 +4631,9 @@ class GalleryPage(QObject):
         """
         overlays = [self._widget(name) for name in ("galleryPositionOverlay", "galleryDimensionsOverlay")]
         top = bottom = 0
+        if self.slideshow.active:
+            # The strip above a clip is reserved for them, so show them with it; they hide again when it ends.
+            self.slideshow._reveal_controls()
         if active:
             origin = self.surface.mapToGlobal(QPoint(0, 0)).y()
             tops = [

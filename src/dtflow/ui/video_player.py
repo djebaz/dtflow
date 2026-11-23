@@ -111,6 +111,11 @@ class VideoPlayer(QObject):
         """True while loading, playing, paused or finished in the inline player."""
         return self._panel is not None
 
+    @property
+    def panel_shown(self) -> bool:
+        """True while the video panel is on screen, including the gap kept between two autoplaying clips."""
+        return self._panel is not None or self._held
+
     def start(self, path: str) -> None:
         """Start a local MP4 already resolved on the gallery worker.
 

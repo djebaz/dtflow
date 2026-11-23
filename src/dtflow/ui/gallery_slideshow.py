@@ -548,6 +548,8 @@ class GallerySlideshow(QObject):
         if QApplication.activePopupWidget() is not None or self.scrubbing:
             self.idle_timer.start()
             return
+        if self.gallery.video_player.panel_shown:
+            return  # a clip keeps its top strip for the pager and controls, so they stay visible over it
         self.pager.hide()
         self.controls.hide()
 
