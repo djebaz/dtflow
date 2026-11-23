@@ -93,6 +93,10 @@ class GallerySlideshow(QObject):
         self.idle_timer.setSingleShot(True)
         self.idle_timer.setInterval(2500)
         self.idle_timer.timeout.connect(self._hide_controls)
+        self.flash_timer = QTimer(self)  # a shortcut lights its overlay like a hover, then lets it fade again
+        self.flash_timer.setSingleShot(True)
+        self.flash_timer.setInterval(700)
+        self.flash_timer.timeout.connect(self._sync_opacity)
         self.wheel_timer = QTimer(self)
         self.wheel_timer.setSingleShot(True)
         self.wheel_timer.setInterval(180)
@@ -183,6 +187,7 @@ class GallerySlideshow(QObject):
     def stop(self) -> None:
         self.timer.stop()
         self.idle_timer.stop()
+        self.flash_timer.stop()
         if not self.active:
             return
         self.active = False
@@ -572,6 +577,7 @@ class GallerySlideshow(QObject):
         ):
             if event.type() == QEvent.Type.KeyPress:
                 self.interval.stepBy(-1 if event.key() == Qt.Key.Key_Plus else 1)
+                self._flash_controls()
             event.accept()
             return True
         if (
@@ -584,6 +590,7 @@ class GallerySlideshow(QObject):
         ):
             if event.type() == QEvent.Type.KeyPress:
                 self._held_keys.add(event.key())
+                self._flash_controls()
                 self._preview_step(-1 if event.key() == Qt.Key.Key_Left else 1, wrap=True)
             elif event.type() == QEvent.Type.KeyRelease and not event.isAutoRepeat():
                 self._held_keys.discard(event.key())
@@ -623,6 +630,11 @@ class GallerySlideshow(QObject):
         elif event.type() in (QEvent.Type.Leave, QEvent.Type.FocusOut):
             QTimer.singleShot(0, self, self._sync_opacity)
         return False
+
+    def _flash_controls(self) -> None:
+        """Brighten the controls as if hovered when a shortcut acts on them; they dim again shortly after."""
+        self.opacity.setOpacity(1.0)
+        self.flash_timer.start()
 
     def _sync_opacity(self) -> None:
         focus = QApplication.focusWidget()
