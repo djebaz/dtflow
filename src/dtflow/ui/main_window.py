@@ -29,6 +29,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from dtflow.ui.activity_bar import clock
+from dtflow.ui.progress_model import fallback_eta
 from dtflow.ui.progress_text import aggregate_text
 from dtflow.ui import file_dialogs
 from dtflow.ui.file_dialogs import QFileDialog
@@ -392,6 +394,7 @@ class MainWindow:
         form.rootLayout.addWidget(self.shell)
         startup.mark("workspace: shell inserted into root layout")
         self._last_run_marker = None
+        self._period_start: float | None = None  # monotonic start of the current period of generation activity
         startup.mark("workspace: activity strip constructor entered")
         self.progress_strip = ActivityStrip(form)
         startup.mark("workspace: activity strip created")
@@ -1466,7 +1469,13 @@ class MainWindow:
         presents_generation = solo or (generating and queue_run is None)
         if shown is None or (not generating and self.queue.generate_settling):
             self.progress_strip.finish("run")
+            if not (generating or self.activity.dispatching):
+                self._period_start = None  # the active set is empty: the next activity is a new period
             return
+        # One clock for the whole uninterrupted period of generation activity, whichever queue starts or ends in it.
+        if self._period_start is None:
+            self._period_start = time.monotonic()
+        elapsed = clock(time.monotonic() - self._period_start)
         # Queues running only in another process still get the bar (durable counts, no Stop, no live telemetry).
         foreign_only = not (generating or self.activity.dispatching)
         run_identity = (
@@ -1490,7 +1499,9 @@ class MainWindow:
                 ),
             )
             self.progress_strip.rows["run"].setProperty("runIdentity", run_identity)
-        snapshot, elapsed, eta, target = shown
+        snapshot, eta, target = shown
+        if not eta and not any(queue.totals.paused for queue in snapshot.queues):
+            eta = fallback_eta(snapshot.fill, elapsed)  # approximate: from the bar's own fraction and the same clock
         text = aggregate_text(snapshot, elapsed=elapsed, eta=eta)
         self.progress_strip.update(
             "run",

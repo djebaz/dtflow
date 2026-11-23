@@ -68,7 +68,7 @@ from dtflow.ui.activity import Activity
 from dtflow.ui.controlnet_editor import PoseJob
 from dtflow.ui.performance import profile_slow_gui_callback
 from dtflow.ui.activity_bar import clock
-from dtflow.ui.progress_model import ProgressSnapshot, fallback_eta, totals_from_view
+from dtflow.ui.progress_model import ProgressSnapshot, totals_from_view
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.generation_presenter import FormError
 from dtflow.ui.inline_feedback import confirm_action, feedback
@@ -106,7 +106,6 @@ from dtflow.ui.queue_presenter import (
     STATUS_TEXT,
     QueueCountdown,
     controls,
-    elapsed_text,
     estimate_remaining,
     eta_text,
     event_lines,
@@ -1143,12 +1142,12 @@ class QueuePage:
         view = None if self._generate_presents else self._run_view()
         return view["queue_id"] if view is not None else None
 
-    def aggregate_progress(self) -> tuple[ProgressSnapshot, str, str, str] | None:
+    def aggregate_progress(self) -> tuple[ProgressSnapshot, str, str] | None:
         """Every queue this window runs, plus running queues of another process (durable counts only), for the global bar.
 
-        Returns (snapshot, elapsed, ETA, Stop target): the elapsed time and ETA of the primary queue, or a bar-level ETA
-        when several queues run (the maximum credible one for independent queues, else none); a rough one from the
-        bar's own fraction when no timing estimate exists. The Stop target names what Stop reaches when several queues
+        Returns (snapshot, ETA, Stop target): the primary queue's grounded ETA, or a bar-level one when several queues
+        run (the maximum credible one for independent queues, else none). The window adds the elapsed time of the whole
+        activity period and, when no grounded ETA exists, a rough one from the bar's own fraction. The Stop target names what Stop reaches when several queues
         run. Up-next queues are not counted; a paused current dispatch stays in. A script or workflow counts as one
         parent item. A non-queue Generate run presents itself (``GenerationPage.solo_progress``)."""
         if self._generate_presents:
@@ -1177,15 +1176,10 @@ class QueuePage:
             [totals_from_view(view, foreign=foreign, parent=view.get("kind") in RUN_KINDS) for view, foreign in entries]
         )
         primary = self._run_view()
-        elapsed = eta = ""
+        eta = ""
         if primary is not None:
             remaining = self._countdown.remaining(primary, monotonic())
             eta = eta_text(primary, remaining=remaining).split(" (")[0]
-        # One clock for the whole workload the fill describes: since the earliest start of any queue in it.
-        started = [view for view, _ in entries if view.get("started_at_utc")]
-        clock_view = min(started, key=lambda view: view["started_at_utc"]) if started else primary
-        if clock_view is not None:
-            elapsed = elapsed_text(clock_view).removeprefix("Elapsed ")
         if len(entries) > 1:
             names = [view["backend"]["name"] for view, _ in entries if view["status"] == "running"]
             seconds = [estimate_remaining(view) for view, _ in entries if view["status"] == "running"]
@@ -1193,12 +1187,10 @@ class QueuePage:
                 eta = f"~{clock(math.ceil(max(seconds)))} left"
             else:
                 eta = ""  # shared capacity or too little evidence: no grounded bar-level ETA
-        if not eta and not any(queue.totals.paused for queue in snapshot.queues):
-            eta = fallback_eta(snapshot.fill, elapsed)
         target = ""
         if len(entries) > 1 and primary is not None:
             target = f"stops queue {primary['queue_id'][:8]} only"
-        return snapshot, elapsed, eta, target
+        return snapshot, eta, target
 
     def _is_video(self, queue_id: str, item_id: str) -> bool:
         item = self._progress.get(queue_id, item_id)

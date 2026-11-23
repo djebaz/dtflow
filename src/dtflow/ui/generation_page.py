@@ -87,7 +87,6 @@ from dtflow.ui.generation_presenter import (
 )
 from dtflow.ui.generation_grid import GenerationGrid
 from dtflow.ui.inline_feedback import InlineNotice, edit_text
-from dtflow.ui.activity_bar import clock
 from dtflow.ui.progress_model import SOLO_QUEUE, ItemProgress, ProgressModel, ProgressSnapshot, QueueTotals
 from dtflow.ui.video_panel import VideoPanel
 from dtflow.core import video as rules
@@ -1301,8 +1300,8 @@ class GenerationPage:
         item = self._solo.observe(*_SOLO, event, mode="video")
         return item is not None and item.presented
 
-    def solo_progress(self) -> tuple[ProgressSnapshot, str, str, str] | None:
-        """The Activity Bar's view of this click: (snapshot, elapsed, ETA override, Stop target), or None.
+    def solo_progress(self) -> tuple[ProgressSnapshot, str, str] | None:
+        """The Activity Bar's view of this click: (snapshot, ETA, Stop target), or None.
 
         A run that is not a queue is one item under its own pseudo-queue. A queued click has no record here yet (the
         Queues page owns it once it publishes), so only its preparing moment is shown from this page."""
@@ -1310,11 +1309,7 @@ class GenerationPage:
             return None
         totals = QueueTotals(SOLO_QUEUE, 0, 1, running=1)
         snapshot = self._solo.snapshot([totals]) if not self._queued_run else ProgressModel().snapshot([totals])
-        origin = self._run_started
-        item = self._solo.get(*_SOLO) if not self._queued_run else None
-        if item is not None:
-            origin = item.sent_at if item.sent_at is not None else item.started
-        return snapshot, clock(time.monotonic() - origin), "", ""
+        return snapshot, "", ""
 
     def _tick_video(self) -> None:
         """Keep the elapsed time moving while DT+ is silent."""
