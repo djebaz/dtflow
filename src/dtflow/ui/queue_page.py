@@ -329,6 +329,9 @@ class QueuePage:
         self._dispatching: str | None = None
         self._seen_order: dict[str, int] = {}  # first-seen rank of each queue in the global bar
         self._seen_next = 0
+        self._period: dict[
+            str, bool
+        ] = {}  # queues of the running activity period (id -> foreign), finished ones included
         self._read_idle = False  # the latest read started while this window dispatched nothing
         self._foreign_known = False  # the views come from such a read, so `owner_active` means another process
         self._dispatch_started = False
@@ -1150,7 +1153,9 @@ class QueuePage:
         run (the maximum credible one for independent queues, else none). The window adds the elapsed time of the whole
         activity period and, when no grounded ETA exists, a rough one from the bar's own fraction. The Stop target names what Stop reaches when several queues
         run. Up-next queues are not counted; a paused current dispatch stays in. A script or workflow counts as one
-        parent item. A non-queue Generate run presents itself (``GenerationPage.solo_progress``)."""
+        parent item. A non-queue Generate run presents itself (``GenerationPage.solo_progress``).
+        A queue that finishes while others still run keeps its settled segment, and stays in the settled/total, until
+        nothing runs any more."""
         if self._generate_presents:
             return None
         owned = [queue_id for queue_id in (self._dispatching, *sorted(self._overlapping)) if queue_id]
@@ -1164,7 +1169,15 @@ class QueuePage:
                 if view["queue_id"] not in owned and view["status"] == "running" and view.get("owner_active") is True:
                     entries.append((view, True))
         if not entries:
+            self._period.clear()  # nothing runs any more: the activity period and its finished segments end
             return None
+        active = list(entries)
+        shown = {view["queue_id"] for view, _ in entries}
+        for queue_id, foreign in self._period.items():
+            view = self._views.get(queue_id)
+            if queue_id not in shown and view is not None and view["status"] in ("finished", "cancelled"):
+                entries.append((view, foreign))  # a finished queue keeps its settled segment until the period ends
+        self._period = {view["queue_id"]: foreign for view, foreign in entries}
         # Segments keep the order in which this window first saw each queue (a joining queue never shifts the others).
         order = {key: rank for key, rank in self._seen_order.items() if any(key == v["queue_id"] for v, _ in entries)}
         for view, _ in entries:
@@ -1181,15 +1194,15 @@ class QueuePage:
         if primary is not None:
             remaining = self._countdown.remaining(primary, monotonic())
             eta = eta_text(primary, remaining=remaining).split(" (")[0]
-        if len(entries) > 1:
-            names = [view["backend"]["name"] for view, _ in entries if view["status"] == "running"]
-            seconds = [estimate_remaining(view) for view, _ in entries if view["status"] == "running"]
+        if len(active) > 1:
+            names = [view["backend"]["name"] for view, _ in active if view["status"] == "running"]
+            seconds = [estimate_remaining(view) for view, _ in active if view["status"] == "running"]
             if names and len(set(names)) == len(names) and all(value is not None for value in seconds):
                 eta = f"~{clock(math.ceil(max(seconds)))} left"
             else:
                 eta = ""  # shared capacity or too little evidence: no grounded bar-level ETA
         target = ""
-        if len(entries) > 1 and primary is not None:
+        if len(active) > 1 and primary is not None:
             target = f"stops queue {primary['queue_id'][:8]} only"
         return snapshot, eta, target
 
