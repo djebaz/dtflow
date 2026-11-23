@@ -43,6 +43,7 @@ class BarModel:
     # first; the painter picks the first that fits the real text rectangle.
     segments: tuple[tuple[float, str], ...] = ()
     texts: tuple[str, ...] = ()
+    timed: int = 0  # leading texts that keep every count group and so may share the strip with elapsed/ETA
 
 
 def clock(seconds: float) -> str:
@@ -214,7 +215,7 @@ class _Strip(QWidget):
         options = [t for t in (f"{model.elapsed} · {model.eta}" if model.eta else "", model.elapsed) if t]
         for times in options:
             room = width - 2 * PAD - metrics.horizontalAdvance(times) - 8
-            for text in model.texts[:-1]:
+            for text in model.texts[: model.timed]:
                 if metrics.horizontalAdvance(text) <= room:
                     return text, times
         room = width - 2 * PAD

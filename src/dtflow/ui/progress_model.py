@@ -248,6 +248,7 @@ class QueueTotals:
     running: int = 0
     paused: bool = False
     foreign: bool = False  # running in another process: durable counts only, no live evidence
+    parent: bool = False  # a script or workflow: one parent item, its steps stay in their own views
 
 
 @dataclass(frozen=True, slots=True)
@@ -283,9 +284,23 @@ class ProgressSnapshot:
         return min(1.0, sum(queue.contribution for queue in self.queues) / self.total)
 
 
-def totals_from_view(view: dict, *, foreign: bool = False) -> QueueTotals:
-    """Durable counts of one queue view (workflow images are counted as items, as everywhere else)."""
+def totals_from_view(view: dict, *, foreign: bool = False, parent: bool = False) -> QueueTotals:
+    """Durable counts of one queue view (workflow images are counted as items, as everywhere else).
+
+    A script or workflow (``parent``) counts as one item that settles when the run ends."""
     from dtflow.ui.queue_presenter import item_counts, summarize
+
+    if parent:
+        ended = view.get("status") not in ("running", "paused")
+        return QueueTotals(
+            view["queue_id"],
+            int(ended),
+            1,
+            running=int(not ended),
+            paused=view.get("status") == "paused",
+            foreign=foreign,
+            parent=True,
+        )
 
     counts = item_counts(view)
     summary = summarize(view)
@@ -329,9 +344,10 @@ class ProgressModel:
             kept = (*item.superseded, item.request_id)[-_SUPERSEDED_KEPT:]
             item.superseded, item.request_id, item.last_sequence = list(kept), event.request_id, 0
             item._begin(now)  # a retry starts over: counters and estimate reset
-        elif event.sequence <= item.last_sequence:
-            return None
-        item.last_sequence = event.sequence
+            self._items[key] = self._items.pop(key)  # and it is the newest attempt of the queue again
+        elif event.sequence <= item.last_sequence and (event.sequence or item.last_sequence):
+            return None  # local preparation milestones all carry sequence 0 and repeat; numbered events stay ordered
+        item.last_sequence = max(item.last_sequence, event.sequence)
         if mode == "video" or event.stage in ("waiting_video_resources", "video_preparing"):
             item.mode = "video"
         presented = item._observe(event, now)
@@ -419,10 +435,10 @@ class ProgressModel:
 
     def _queue(self, totals: QueueTotals, now: float) -> QueueSnapshot:
         # Foreign-process queues have no live events here; their durable counts alone are shown.
-        items = () if totals.foreign else self.items(totals.queue_id)
-        # An item can never outnumber the durable running count (stale evidence of a settled item is ignored).
+        items = () if totals.foreign or totals.parent else self.items(totals.queue_id)
+        # An item can never outnumber the durable running count (stale evidence of an earlier item is ignored).
         if totals.running and len(items) > totals.running:
-            items = items[: totals.running]
+            items = items[-totals.running :]  # the most recently started ones; earlier records are likelier settled
         elif not totals.running and not totals.paused:
             items = ()
         shots = tuple(
