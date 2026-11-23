@@ -357,6 +357,9 @@ class QueuePage:
         self._manual_queues: set[str] = set()  # queues Generate created: Generate reports them, not the queue strip
         self._manual_relay = EventRelay(self._manual_delivered, page)
         self._overlapping: set[str] = set()  # queues auto-started early by this window's dispatch
+        self._period: dict[
+            str, bool
+        ] = {}  # queues of the running activity period (id -> foreign), finished ones included
         self.model = QueueItemModel(page)
         page.queueItemsView.setModel(self.model)
         for view in (page.queueItemsView, page.planTableView):
@@ -1308,7 +1311,9 @@ class QueuePage:
 
         Returns the snapshot, a bar-level ETA override (None: the primary queue's own ETA stands) and the name of what
         Stop reaches when several queues run. Up-next queues are not counted; a paused current dispatch stays in.
-        A script or workflow counts as one parent item. A non-queue Generate run keeps its own single row."""
+        A script or workflow counts as one parent item. A non-queue Generate run keeps its own single row.
+        A queue that finishes while others still run keeps its settled segment, and stays in the settled/total, until
+        nothing runs any more."""
         if self._generate_presents:
             return None
         owned = [queue_id for queue_id in (self._dispatching, *sorted(self._overlapping)) if queue_id]
@@ -1321,21 +1326,29 @@ class QueuePage:
             if view["queue_id"] not in owned and view["status"] == "running" and view.get("owner_active") is True:
                 entries.append((view, True))
         if not entries:
+            self._period.clear()  # nothing runs any more: the activity period and its finished segments end
             return None
+        active = list(entries)
+        shown = {view["queue_id"] for view, _ in entries}
+        for queue_id, foreign in self._period.items():
+            view = self._views.get(queue_id)
+            if queue_id not in shown and view is not None and view["status"] in ("finished", "cancelled"):
+                entries.append((view, foreign))  # a finished queue keeps its settled segment until the period ends
+        self._period = {view["queue_id"]: foreign for view, foreign in entries}
         snapshot = self._progress.snapshot(
             [totals_from_view(view, foreign=foreign, parent=view.get("kind") in RUN_KINDS) for view, foreign in entries]
         )
         eta = None
-        if len(entries) > 1:
-            names = [view["backend"]["name"] for view, _ in entries if view["status"] == "running"]
-            seconds = [estimate_remaining(view) for view, _ in entries if view["status"] == "running"]
+        if len(active) > 1:
+            names = [view["backend"]["name"] for view, _ in active if view["status"] == "running"]
+            seconds = [estimate_remaining(view) for view, _ in active if view["status"] == "running"]
             if names and len(set(names)) == len(names) and all(value is not None for value in seconds):
                 eta = f"~{clock(math.ceil(max(seconds)))} left"
             else:
                 eta = ""  # no usable estimate: show elapsed time only, never a placeholder
         primary = self._run_view()
         target = ""
-        if len(entries) > 1 and primary is not None:
+        if len(active) > 1 and primary is not None:
             target = f"stops queue {primary['queue_id'][:8]} only"
         return snapshot, eta, target
 
