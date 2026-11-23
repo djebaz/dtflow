@@ -206,22 +206,38 @@ class _Strip(QWidget):
                 times,
             )
 
-    def aggregate_text(self, model: BarModel, width: int | None = None) -> str:
-        """The richest candidate whose measured advance fits the text rectangle; the last always shows."""
+    def _aggregate_layout(self, model: BarModel, width: int) -> tuple[str, str]:
+        """(left text, right-aligned times): the times stay while a richer-than-minimal text still fits beside them."""
         font = self.font()
         font.setPointSizeF(9)
-        room = (self.width() if width is None else width) - 2 * PAD
         metrics = QFontMetrics(font)
+        options = [t for t in (f"{model.elapsed} · {model.eta}" if model.eta else "", model.elapsed) if t]
+        for times in options:
+            room = width - 2 * PAD - metrics.horizontalAdvance(times) - 8
+            for text in model.texts[:-1]:
+                if metrics.horizontalAdvance(text) <= room:
+                    return text, times
+        room = width - 2 * PAD
         for text in model.texts:
             if metrics.horizontalAdvance(text) <= room:
-                return text
-        return model.texts[-1]
+                return text, ""
+        return model.texts[-1], ""
+
+    def aggregate_text(self, model: BarModel, width: int | None = None) -> str:
+        """The left text that is shown for this width (the last candidate always shows)."""
+        return self._aggregate_layout(model, self.width() if width is None else width)[0]
 
     def _paint_aggregate(self, painter, model, metrics, width: int, height: int) -> None:
-        text = self.aggregate_text(model, width)
+        text, times = self._aggregate_layout(model, width)
         painter.setPen(self._text)
         # The numbers are never elided: when even the last candidate is too wide it is clipped by the strip edge.
         painter.drawText(QRectF(PAD, 0, width - 2 * PAD, height), int(Qt.AlignmentFlag.AlignVCenter), text)
+        if times:
+            painter.drawText(
+                QRectF(0, 0, width - PAD, height),
+                int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
+                times,
+            )
         self.shown_text = text
 
 

@@ -1567,11 +1567,14 @@ class MainWindow:
             self.progress_strip.set_aggregate(None)
         else:
             snapshot, eta, target = aggregate
+            eta = eta if eta is not None else state.eta.split(" (")[0]
+            if "?" in eta:
+                eta = ""  # an unknown ETA is left out of the bar
             self.progress_strip.set_aggregate(
                 Aggregate(
                     snapshot,
                     elapsed=state.elapsed.removeprefix("Elapsed "),
-                    eta=eta if eta is not None else state.eta.split(" (")[0],
+                    eta=eta,
                     stop_target=target,
                 )
             )

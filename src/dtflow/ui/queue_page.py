@@ -1337,7 +1337,7 @@ class QueuePage:
             if names and len(set(names)) == len(names) and all(value is not None for value in seconds):
                 eta = f"~{clock(math.ceil(max(seconds)))} left"
             else:
-                eta = "~?"
+                eta = ""  # no usable estimate: show elapsed time only, never a placeholder
         primary = self._run_view()
         target = ""
         if len([1 for _, foreign in entries if not foreign]) > 1 and primary is not None:
