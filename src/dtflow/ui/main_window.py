@@ -674,7 +674,7 @@ class MainWindow:
         table.setColumnWidth(3, 32)
         header.setSectionResizeMode(4, QHeaderView.ResizeMode.Fixed)
         header.setSectionResizeMode(5, QHeaderView.ResizeMode.Stretch)
-        table.itemSelectionChanged.connect(self._retained_lora_selection_changed)
+        table.itemSelectionChanged.connect(self._lora_user_selection_changed)
         table.itemDoubleClicked.connect(lambda _item: self.edit_lora_metadata())
         form.editLoraMetadataButton.clicked.connect(self.edit_lora_metadata)
         self._lora_records: dict[tuple[str, int], dict] = {}
@@ -691,7 +691,9 @@ class MainWindow:
         self._lora_formats = {}
         self._lora_quantized = frozenset()
         self._lora_table_state = None
-        self._lora_action_rows = []
+        self._lora_reconcile = None
+        self._lora_selection_target = None
+        self._lora_painted_rows = set()
         self._lora_actions_timer = QTimer(table)
         self._lora_actions_timer.setSingleShot(True)
         self._lora_actions_timer.timeout.connect(self._mount_lora_actions)
@@ -806,8 +808,9 @@ class MainWindow:
             },
         )
         self._backend_changed(form.backendCombo.currentText())
+        self._startup_selection_revision = self._selection_revision
         self.generation.sync_backend()
-        startup.mark("backend and restored catalogue applied")
+        startup.mark("backend and catalogue setup scheduled")
         self.refresh_credentials(background=True)
         self.refresh_download_tokens()
         self.check_civitai_connection()
@@ -2512,11 +2515,26 @@ class MainWindow:
             self._render_lora_table()
 
     def _render_lora_table(self) -> None:
-        """Reconcile changed presentation only; create new Designer action forms between GUI turns."""
+        """Reconcile changed cells and controls one row per GUI turn, including reused hosts."""
         if self.runner.closed:
             return
         state = (
-            self._lora_entries,
+            [
+                {
+                    key: entry[key]
+                    for key in (
+                        "name",
+                        "sha256",
+                        "size",
+                        "detected_family",
+                        "observed_format",
+                        "quantization_metadata",
+                        "has_q8p",
+                    )
+                    if key in entry
+                }
+                for entry in self._lora_entries
+            ],
             self._lora_records,
             self._lora_unretained,
             self._lora_formats,
@@ -2530,32 +2548,31 @@ class MainWindow:
             self._retained_lora_selection_changed()
             return
         self._lora_actions_timer.stop()
-        self._lora_action_rows.clear()
         table = self.form.retainedLorasTable
-        table.setUpdatesEnabled(False)
-        try:
-            with QSignalBlocker(table):
-                self._fill_lora_table()
-                self._lora_table_state = deepcopy(state)
-        finally:
-            table.setUpdatesEnabled(True)
+        selected = self._selected_lora_identity()
+        if selected is not None or self._lora_reconcile is None:
+            self._lora_selection_target = selected
+        with QSignalBlocker(table):
+            table.clearSelection()
+        self._lora_painted_rows.clear()
+        self._lora_table_state = deepcopy(state)
+        self._lora_reconcile = self._fill_lora_table()
         self._retained_lora_selection_changed()
-        if self._lora_action_rows:
-            self._lora_actions_timer.start(1)
+        self._lora_actions_timer.start(1)
 
-    def _fill_lora_table(self) -> None:
+    def _fill_lora_table(self):
         records, entries = self._lora_records, self._lora_entries
         entries_by_identity = {(e.get("sha256"), e.get("size")): e for e in entries}
         table = self.form.retainedLorasTable
-        identity = self._selected_lora_identity()
         self._lora_names = {}
         rows = []
         for entry in sorted(entries, key=lambda item: str(item.get("name", "")).casefold()):
             name, sha256, size = entry.get("name"), entry.get("sha256"), entry.get("size")
             if isinstance(name, str) and isinstance(sha256, str) and isinstance(size, int):
                 rows.append((name, sha256, size, entry.get("detected_family")))
-        table.setRowCount(len(rows))
         for row, (name, sha256, size, found) in enumerate(rows):
+            if row >= table.rowCount():
+                table.insertRow(row)
             record = records.get((sha256, size)) or {}
             entry = entries_by_identity[(sha256, size)]
             record = {
@@ -2597,15 +2614,12 @@ class MainWindow:
                     item.setToolTip(status)
                     item.setData(Qt.ItemDataRole.AccessibleTextRole, status)
                 table.setItem(row, column, item)
-            if table.cellWidget(row, 4) is None:
-                self._lora_action_rows.append((row, (sha256, size), version, record))
-            else:
-                self._lora_row_actions(row, (sha256, size), version, record)
-            if (sha256, size) == identity:
-                table.selectRow(row)
-        self._render_no_copy_rows(len(rows), set(entries_by_identity), identity)
+            self._lora_row_actions(row, (sha256, size), version, record)
+            self._lora_row_painted(row, (sha256, size))
+            yield
+        yield from self._render_no_copy_rows(len(rows), set(entries_by_identity))
 
-    def _render_no_copy_rows(self, first: int, retained: set, identity) -> None:
+    def _render_no_copy_rows(self, first: int, retained: set):
         """Managed LoRAs the asset registry knows but the retained index does not: listed once, removable by records."""
         table = self.form.retainedLorasTable
         owner = self._lora_prepare_owner
@@ -2619,9 +2633,10 @@ class MainWindow:
             rows.append((str(name or "Unnamed LoRA"), key, item, record))
         rows.sort(key=lambda row: row[0].casefold())
         self._lora_no_copy = {key for _, key, _, _ in rows}
-        table.setRowCount(first + len(rows))
         for offset, (name, (sha256, size), item, record) in enumerate(rows):
             row = first + offset
+            if row >= table.rowCount():
+                table.insertRow(row)
             table.removeCellWidget(row, 4)
             version = record.get("family")
             architecture = FAMILY_LABELS.get(version, version) if version else "Unknown"
@@ -2656,28 +2671,66 @@ class MainWindow:
                     cell.setToolTip(status)
                     cell.setData(Qt.ItemDataRole.AccessibleTextRole, status)
                 table.setItem(row, column, cell)
-            if (sha256, size) == identity:
-                table.selectRow(row)
+            self._lora_row_painted(row, (sha256, size))
+            yield
+        while table.rowCount() > first + len(rows):
+            table.removeRow(table.rowCount() - 1)
+            yield
+
+    def _lora_row_painted(self, row, identity) -> None:
+        self._lora_painted_rows.add(row)
+        if identity == self._lora_selection_target:
+            self.form.retainedLorasTable.selectRow(row)
+
+    def _lora_user_selection_changed(self) -> None:
+        # A selection made between batches wins over the original restoration target.
+        table = self.form.retainedLorasTable
+        rows = table.selectionModel().selectedRows() if table.selectionModel() else []
+        identity = self._selected_lora_identity()
+        if identity is None and rows and self._lora_reconcile is not None:
+            with QSignalBlocker(table):
+                table.clearSelection()
+        else:
+            self._lora_selection_target = identity
+        self._retained_lora_selection_changed()
 
     def _mount_lora_actions(self) -> None:
-        """At most one new form per turn, never one uninterrupted load/polish loop over the library."""
+        """One complete row per turn: cells, existing controls and any missing Designer host."""
         if self.runner.closed:
-            self._lora_action_rows.clear()
+            self._lora_reconcile = None
             return
         if self._removing_retained_lora:
             # The parent table is disabled for removal. Do not explicitly disable newly mounted
             # children: a failed/no-op removal can restore the same cached presentation afterward.
             # Both removal completions resume this pending list once the parent is enabled again.
             return
-        if not self._lora_action_rows:
+        if self._lora_reconcile is None:
             return
-        row, identity, family, metadata = self._lora_action_rows.pop(0)
         table = self.form.retainedLorasTable
-        item = table.item(row, 0)
-        if item is not None and item.data(Qt.ItemDataRole.UserRole) == identity and identity not in self._lora_no_copy:
-            self._lora_row_actions(row, identity, family, metadata)
-        if self._lora_action_rows:
+        with QSignalBlocker(table):
+            try:
+                next(self._lora_reconcile)
+            except StopIteration:
+                self._lora_reconcile = None
+                self._lora_selection_target = self._selected_lora_identity()
+        self._retained_lora_selection_changed()
+        if self._lora_reconcile is not None:
             self._lora_actions_timer.start(1)
+
+    def _lora_action_clicked(self, host, *, quantize=False) -> None:
+        # A button may still show its old enabled state while newer row work is pending.
+        # Never let that presentation authorize an action with an old identity/key/busy state.
+        if self._lora_reconcile is not None or self._lora_actions_busy():
+            return
+        identity = host._lora_identity
+        if identity in self._lora_no_copy or identity not in self._lora_names:
+            return
+        if quantize:
+            if not host.quantizeButton.isEnabled():
+                return
+            self.generation.lora.quantize_managed(identity, dict(host._lora_metadata))
+        elif host.prepareButton.isEnabled():
+            self._prepare_managed_lora(identity)
 
     def _lora_actions_busy(self) -> bool:
         panel = self.generation.lora
@@ -2697,12 +2750,8 @@ class MainWindow:
             host = load_ui(FORMS_DIR / "managed_lora_actions.ui", table)
             # A reused row can represent different content after an insertion/removal. Resolve the
             # current identity/metadata at click time instead of retaining a stale signal closure.
-            host.quantizeButton.clicked.connect(
-                lambda _checked=False: self.generation.lora.quantize_managed(
-                    host._lora_identity, dict(host._lora_metadata)
-                )
-            )
-            host.prepareButton.clicked.connect(lambda _checked=False: self._prepare_managed_lora(host._lora_identity))
+            host.quantizeButton.clicked.connect(lambda _checked=False: self._lora_action_clicked(host, quantize=True))
+            host.prepareButton.clicked.connect(lambda _checked=False: self._lora_action_clicked(host))
             table.setCellWidget(row, 4, host)
         host._lora_identity = identity
         host._lora_metadata = metadata
@@ -2778,6 +2827,8 @@ class MainWindow:
     def _selected_lora_identity(self) -> tuple[str, int] | None:
         table = self.form.retainedLorasTable
         rows = table.selectionModel().selectedRows() if table.selectionModel() else []
+        if self._lora_reconcile is not None and (not rows or rows[0].row() not in self._lora_painted_rows):
+            return None
         item = table.item(rows[0].row(), 0) if rows else None
         return item.data(Qt.ItemDataRole.UserRole) if item else None
 
@@ -2785,7 +2836,7 @@ class MainWindow:
         """Open the single-record metadata overlay for the one selected library row."""
         identity = self._selected_lora_identity()
         record = self._lora_records.get(identity) if identity else None
-        if identity is None or self._removing_retained_lora:
+        if identity is None or self._removing_retained_lora or self._lora_reconcile is not None:
             return
         if record is None:
             InlineNotice.error(
@@ -2864,7 +2915,7 @@ class MainWindow:
         )
 
     def _retained_lora_selection_changed(self) -> None:
-        selected = self._selected_lora_identity() is not None
+        selected = self._selected_lora_identity() is not None and self._lora_reconcile is None
         busy = self.generation.lora._q8p_running or self.generation.lora.preparing
         self.form.removeRetainedLoraButton.setEnabled(not self._removing_retained_lora and not busy and selected)
         no_copy = self._selected_lora_identity() in self._lora_no_copy
@@ -2997,7 +3048,12 @@ class MainWindow:
 
     def remove_retained_lora(self) -> None:
         """Click Remove or press Delete on a selected retained copy: no confirmation or other deletion."""
-        if self._removing_retained_lora or self.generation.lora._q8p_running or self.generation.lora.preparing:
+        if (
+            self._lora_reconcile is not None
+            or self._removing_retained_lora
+            or self.generation.lora._q8p_running
+            or self.generation.lora.preparing
+        ):
             return
         identity = self._selected_lora_identity()
         if identity is None:
@@ -3022,7 +3078,12 @@ class MainWindow:
         name = self._lora_names.get(identity, "this LoRA")
 
         def proceed():
-            if self._removing_retained_lora:
+            if (
+                self._removing_retained_lora
+                or self._lora_reconcile is not None
+                or self._selected_lora_identity() != identity
+                or identity not in self._lora_no_copy
+            ):
                 return
             self._removing_retained_lora = True
             button.setEnabled(False)
@@ -3047,7 +3108,7 @@ class MainWindow:
     def _unretained_lora_removed(self, identity: tuple[str, int], removed, error) -> None:
         self._removing_retained_lora = False
         self.form.retainedLorasTable.setEnabled(True)
-        if self._lora_action_rows and not self.runner.closed:
+        if self._lora_reconcile is not None and not self.runner.closed:
             self._lora_actions_timer.start(1)
         if error is not None:
             known = isinstance(error, (ValidationError, PersistenceError))
@@ -3099,7 +3160,7 @@ class MainWindow:
     def _retained_lora_removed(self, removed, error) -> None:
         self._removing_retained_lora = False
         self.form.retainedLorasTable.setEnabled(True)
-        if self._lora_action_rows and not self.runner.closed:
+        if self._lora_reconcile is not None and not self.runner.closed:
             self._lora_actions_timer.start(1)
         if error is not None:
             InlineNotice.error(self.form, "Retained LoRA not removed", str(error))
@@ -3197,6 +3258,10 @@ class MainWindow:
     def start_startup_check(self) -> None:
         """One non-generative check after the app's first event-loop turn, never periodic polling."""
         if not self._startup_check_started and not self.runner.closed:
+            if self._selection_revision != self._startup_selection_revision:
+                # An explicit edit before first paint/background startup supersedes restoration.
+                self._startup_check_started = True
+                return
             self.check(automatic=True)
 
     def check(self, *, automatic: bool = False) -> None:
@@ -3242,6 +3307,8 @@ class MainWindow:
         return await check_connection(selection, saved=saved)
 
     def _checked(self, status, failure, revision=None, credential_context=None, token=None) -> None:
+        if self.runner.closed:
+            return
         if token is not None and token is not self._check_token:
             return
         self._check_future = None

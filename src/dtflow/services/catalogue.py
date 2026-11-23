@@ -17,7 +17,7 @@ from functools import cache
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from dtflow.core.model_profiles import community_model_ids
+from dtflow.core.model_profiles import community_model_ids, profile_for
 from dtflow.core.models import InventorySnapshot
 from dtflow.diagnostics import event as diagnostic_event
 
@@ -303,13 +303,14 @@ def import_user_loras(source: Path, state_dir: Path) -> int:
 class Catalogue:
     """Static classification plus one active provider's availability."""
 
-    def __init__(self, state_dir: Path, *, bundled_dir: Path = CATALOGUE_DIR):
+    def __init__(self, state_dir: Path, *, bundled_dir: Path = CATALOGUE_DIR, deferred: bool = False):
         self.state_dir = Path(state_dir)
         self.bundled_dir = Path(bundled_dir)
-        self._prime = self._load("Models_prime.json", kind="checkpoint", tier="prime")
-        self._niche = self._load("Models_niche.json", kind="checkpoint", tier="niche")
-        self._bundled_loras = self._load("Loras.json", kind="lora")
-        self._controls = self._load("Control.json", kind="control")
+        self._prime = () if deferred else self._load("Models_prime.json", kind="checkpoint", tier="prime")
+        self._niche = () if deferred else self._load("Models_niche.json", kind="checkpoint", tier="niche")
+        self._bundled_loras = () if deferred else self._load("Loras.json", kind="lora")
+        self._controls = () if deferred else self._load("Control.json", kind="control")
+        self._snapshot = deferred
         self._inventory: InventorySnapshot | None = None
         self._cached_view: CatalogueView | None = None
         self._cached_user_loras: tuple[CatalogueEntry, ...] = ()
@@ -324,6 +325,8 @@ class Catalogue:
         return tuple(entry for entry in entries if entry is not None)
 
     def user_loras(self) -> tuple[CatalogueEntry, ...]:
+        if self._snapshot:
+            return self._cached_user_loras
         path = self.user_loras_path
         try:
             stat = path.stat()
@@ -343,6 +346,24 @@ class Catalogue:
         self._cached_user_loras_signature = signature
         self._cached_view = None
         return loaded
+
+    @classmethod
+    def read_snapshot(cls, state_dir: Path, inventory: InventorySnapshot | None) -> "Catalogue":
+        """Worker-owned read, then an in-memory classification snapshot for desktop presentation.
+
+        No Qt objects or provider calls. Callers replace the snapshot after metadata/inventory changes;
+        GUI consumers never stat or reread the user catalogue through this instance.
+        """
+        result = cls(state_dir)
+        result.user_loras()
+        result.set_inventory(inventory)
+        result.view()
+        community_model_ids()
+        profile_for("")
+        _bundled_exact_versions()
+        _bundled_families()
+        result._snapshot = True
+        return result
 
     @property
     def user_loras_path(self) -> Path:

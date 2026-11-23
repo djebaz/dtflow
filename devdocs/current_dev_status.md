@@ -1,8 +1,8 @@
 # Current development status
 
-## In review: retained-LoRA table responsiveness (#565, PR #581; 2026-11-23)
+## In review: retained-LoRA table and catalogue responsiveness (#565, PR #581; 2026-11-23)
 
-The table skips unchanged presentation snapshots, preserves family/format observations while refreshing, reuses row action controls and mounts missing Designer action forms one per GUI turn. This targets repeated synchronous form loads in the issue's reported 96-file stall stacks, not the separate slow family scan. Source/static evidence only; the 500 ms Windows responsiveness gate and preserved-behavior owner smoke remain unverified. See the [implementation and evidence boundary](plans/2026-11-23-lora-table-responsiveness.md).
+The table skips unchanged presentation snapshots, preserves family/format observations while refreshing, and reconciles changed cells and reused/new action controls one row per GUI turn. The owner-requested follow-up prepares catalogue choices on a worker, applies selector models in bounded GUI batches and strengthens the existing one-time asynchronous startup-check guards; generation/provider behavior and the slow family scan stay out of scope. Source/static evidence only; the 500 ms Windows responsiveness gate, preserved-behavior smoke and follow-up Windows acceptance remain unverified. See the [implementation and evidence boundary](plans/2026-11-23-lora-table-responsiveness.md).
 
 ## In review: video receiving to disk and local encoder controls (#550)
 
