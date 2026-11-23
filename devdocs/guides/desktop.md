@@ -112,7 +112,15 @@ uv run dtflow -x -perf gui
 uv run dtflow gui -nc
 ```
 
-**Experimental video decoder comparison (#562):** From the source checkout, launch `uv run dtflow -x gui -vd upstream` (the default), `uv run dtflow -x gui -vd lut` (float16 lookup), or `uv run dtflow -x gui -vd fp32` (direct float32-to-RGB conversion after FPZIP; experimental). The packaged desktop accepts the same `-vd upstream|lut|fp32` option. Restart between comparisons and retain equivalent video inputs and FFmpeg settings. The first `session.started` INFO object in `logs/dtflow-<session>.jsonl` contains `data.video_decoder`, so the selected mode is visible before generating a video. The owner previously observed a large local encoding-time improvement with LUT compared with upstream; **fp32 has not been benchmarked**, and its pixel rounding may differ. This temporary developer option is not a persistent or user-facing Connection preference.
+**Video decoder comparison (#562, experimental):** DTFlow retains three launch-time video decoding modes for practical Windows evaluation: `upstream` (default), `lut` (float16 lookup) and `fp32` (direct conversion after FPZIP). The mode applies for the entire application session; it is not a persisted setting or a Connection-panel control. From a Python source checkout, launch `uv run dtflow -x gui -vd upstream`, `uv run dtflow -x gui -vd lut` or `uv run dtflow -x gui -vd fp32`. The standalone **one-file Windows EXE** uses the same `-vd` argument without a `gui` subcommand:
+
+```powershell
+& ".\dist\dtflow-<version>-g<sha>-windows-x64.exe" -vd upstream
+& ".\dist\dtflow-<version>-g<sha>-windows-x64.exe" -vd lut
+& ".\dist\dtflow-<version>-g<sha>-windows-x64.exe" -vd fp32
+```
+
+Replace the placeholder filename with the actual built artifact and close DTFlow between runs. The first `session.started` INFO object includes `data.video_decoder` even before generating a video. Owner Windows source measurements showed substantial improvements from LUT and FP32 compared with upstream, but different source videos/concurrency mean the ratios are not controlled benchmarks; FP32's pixel rounding can differ and its visual comparison remains open. The three modes are retained deliberately for short-term use, with a later cleanup decision rather than maintaining all three indefinitely. The packaged EXE argument paths are verified from source, **not yet validated by an owner one-file EXE smoke run**.
 
 There is no menu bar: About DTFlow is the small help icon at the right of the bottom status bar. The Draw Things provider library loads in the background after the window first paints; with `-x`, structured `app.startup_timings` records describe startup phases and, with `-x -perf`, a separate `app.provider_preloaded` measurement records the background import. These observations do not imply provider connectivity or successful generation. In the packaged desktop, unavailable/incomplete diagnostic logging uses a once-only shared inline warning, never a native dialog from the writer thread. Warnings before window creation wait for the window; shutdown does not reopen a window to display them. Native acceptance remains pending.
 
