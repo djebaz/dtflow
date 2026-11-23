@@ -41,8 +41,8 @@ from dtflow.core.models import (
 )
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import dev_enabled
-from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, catalogue_family_versions
-from dtflow.services.catalogue_setup import UNCLASSIFIED_FAMILY, read_choices
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS
+from dtflow.services.catalogue_setup import family_picker_versions, lora_candidates, read_choices
 from dtflow.services.checkpoint_metadata import resolve_checkpoint_metadata
 from dtflow.services.connection import (
     Presentation,
@@ -300,6 +300,8 @@ class GenerationPage:
         self._catalogue = Catalogue(self._state, deferred=True)
         self._catalogue_loaded = False
         self._catalogue_request = None
+        self._catalogue_options = None
+        self._catalogue_error = ""
         self._catalogue_next = None
         self._catalogue_reading = False
         self._catalogue_application = None
@@ -597,6 +599,7 @@ class GenerationPage:
         self._inventory_snapshot = None
         self._inventory_how = ""
         self._catalogue_request = None
+        self._catalogue_error = ""
         self._catalogue_next = None
         self._catalogue_timer.stop()
         self._discard_catalogue_application()
@@ -2020,11 +2023,7 @@ class GenerationPage:
     ) -> None:
         if self._runner.closed:
             return
-        self._catalogue_timer.stop()
-        self._discard_catalogue_application()
-        token = self._catalogue_request = object()
         page = self.page
-        context = self._catalogue_context()
         options = dict(
             domain=self._catalogue_domain(),
             include_cloud=self._backend()[0] == "local" and page.includeCloudCheck.isChecked(),
@@ -2035,7 +2034,19 @@ class GenerationPage:
             preserve_selection=preserve_selection,
             follow_checkpoint=follow_checkpoint,
         )
-        self._catalogue_next = (token, context, self._inventory_snapshot, options)
+        self._queue_catalogue(options)
+
+    def _queue_catalogue(self, options) -> None:
+        if self._runner.closed:
+            return
+        self._catalogue_timer.stop()
+        self._discard_catalogue_application()
+        token = self._catalogue_request = object()
+        self._catalogue_options = options
+        self._catalogue_error = ""
+        self._catalogue_next = (token, self._catalogue_context(), self._inventory_snapshot, options)
+        self._update_compute_units()
+        self._write_inventory_stats()
         self._start_catalogue_read()
 
     def _start_catalogue_read(self) -> None:
@@ -2059,13 +2070,15 @@ class GenerationPage:
             return
         if error is not None:
             self._catalogue_request = None
-            self.page.inventoryEvidenceLabel.setText("Catalogue could not be loaded; refresh models to retry.")
+            self._catalogue_error = "Catalogue could not be loaded. Refresh models or change a filter to retry."
+            self._update_compute_units()
+            self._write_inventory_stats()
             return
         # Build detached Qt models in small turns. The visible choices remain intact until the
         # final swap, so intermediate rows never trigger filter changes or overwrite saved choices.
         families, models = QStandardItemModel(self.page), QStandardItemModel(self.page)
         self._catalogue_application = (token, context, families, models, result)
-        self._catalogue_timer.start(1)
+        self._catalogue_timer.start(0)
 
     def _apply_catalogue_batch(self) -> None:
         pending = self._catalogue_application
@@ -2121,12 +2134,13 @@ class GenerationPage:
                 )
                 if result.checkpoint and not result.versions:
                     self.lora.show_checkpoint_architecture_unknown()
-                self._pending_family = None
+                if self._inventory_snapshot is not None:
+                    self._pending_family = None
                 self._sync_checkpoint_steppers()
                 self._sync_generate()
                 self._show_catalogue_counts()
                 return
-        self._catalogue_timer.start(1)
+        self._catalogue_timer.start(0)
 
     def _show_catalogue_counts(self) -> None:
         page = self.page
@@ -2162,27 +2176,21 @@ class GenerationPage:
         self._rebuild_catalogue(preferred_checkpoint=self.page.modelCombo.currentText(), preserve_selection=True)
 
     def _chosen_family_versions(self) -> frozenset[str]:
-        """Exact versions of the family chosen in the left panel, for when no checkpoint is selected."""
-        family = self.page.baseModelCombo.currentData()
-        if family and family != UNCLASSIFIED_FAMILY:
-            return catalogue_family_versions(family)
-        return frozenset()
+        """Shared browsing-family rule, also used by the Queue composer's choice projection."""
+        return family_picker_versions(self.page.baseModelCombo.currentData())
 
     def _filter_loras(self) -> None:
         if not self._catalogue_loaded:
             return  # Restoration must not read cold catalogue files or prune saved selections.
         checkpoint = self.page.modelCombo.currentText().strip()
         include_cloud = self._backend()[0] == "local" and self.page.includeCloudCheck.isChecked()
-        model = self._catalogue.checkpoint(checkpoint, include_unavailable=include_cloud)
-        version = checkpoint_picker_versions(checkpoint, self._inventory_snapshot)
-        if not checkpoint:
-            version = self._chosen_family_versions()
-        entries = (
-            self._catalogue.compatible_loras(
-                checkpoint, domain=self._catalogue_domain(), include_unavailable=include_cloud
-            )
-            if version and model is not None and model.base_model is not None
-            else None
+        entries, version = lora_candidates(
+            self._catalogue,
+            self._inventory_snapshot,
+            checkpoint=checkpoint,
+            family=self.page.baseModelCombo.currentData(),
+            domain=self._catalogue_domain(),
+            include_cloud=include_cloud,
         )
         # Filter new choices only. Saved selections remain visible, and shared
         # preflight will reject a confirmed mismatch even if the UI is bypassed.
@@ -2194,7 +2202,7 @@ class GenerationPage:
         """Read the same current form settings for the meter and explicit inspector."""
         page = self.page
         if not self._catalogue_loaded:
-            return ComputeUnitEstimate(None, "Catalogue is loading.")
+            return ComputeUnitEstimate(None, self._catalogue_error or "Catalogue is loading.")
         model_id = page.modelCombo.currentText().strip()
         entry = self._catalogue.checkpoint(model_id, include_unavailable=True) if model_id else None
         return estimate_compute_units(
@@ -2309,7 +2317,12 @@ class GenerationPage:
         label = self.page.inventoryEvidenceLabel
         snapshot = self._inventory_snapshot
         if snapshot is None:
-            label.setText(self._inventory_notice or "No model list yet. Refresh to discover models.")
+            label.setText(
+                self._catalogue_error
+                or ("Loading catalogue…" if self._catalogue_request is not None and not self._catalogue_loaded else "")
+                or self._inventory_notice
+                or "No model list yet. Refresh to discover models."
+            )
             label.setToolTip(self._inventory_error)
             return
         models = len(eligible_model_ids(snapshot))
@@ -2330,6 +2343,8 @@ class GenerationPage:
         lines = [counts, f"{self._inventory_how} · observed {observed}"]
         if self._inventory_notice:
             lines.append(self._inventory_notice)
+        if self._catalogue_error:
+            lines.append(self._catalogue_error)
         selected = self.page.modelCombo.currentText().strip()
         if selected:
             entry = self._catalogue.checkpoint(selected, include_unavailable=True)
@@ -2403,16 +2418,25 @@ class GenerationPage:
             self._inventory_notice = ""
         if result is None:
             if revalidate:
+                pending_options = self._catalogue_options if self._catalogue_request is not None else None
+                checkpoint = self.page.modelCombo.currentText()
                 self._inventory_notice = self._inventory_error = ""
                 self._pending_family = self.page.baseModelCombo.currentData() or self._pending_family
                 self._clear_inventory()
-                self._rebuild_catalogue(
-                    preferred_checkpoint=self.page.modelCombo.currentText(), preserve_selection=True
-                )
+                if pending_options is not None:
+                    self._queue_catalogue(pending_options)
+                else:
+                    self._rebuild_catalogue(
+                        preferred_family=self._pending_family, preferred_checkpoint=checkpoint, preserve_selection=True
+                    )
             self._write_inventory_stats()
             return
         snapshot, how = result
         if snapshot is self._inventory_snapshot:
+            # Credential revalidation can return the very same observation. It still retires
+            # the old revision: resume the latest filter/selection intent under the new one.
+            if self._catalogue_request is not None and self._catalogue_options is not None:
+                self._queue_catalogue(self._catalogue_options)
             self._write_inventory_stats()
         else:
             if revalidate:
@@ -2432,7 +2456,11 @@ class GenerationPage:
                 # Never show key A's models as key B's while a matching cached read is pending.
                 self._cache_request = None
                 self._inventory_notice = self._inventory_error = ""
+                self._pending_family = self.page.baseModelCombo.currentData() or self._pending_family
                 self._clear_inventory()
+                self._rebuild_catalogue(
+                    preferred_family=self._pending_family, preferred_checkpoint="", preserve_selection=True
+                )
             self.request_cached(revalidate=not switched)
             if switched:
                 self._refresh_after_key_switch = True

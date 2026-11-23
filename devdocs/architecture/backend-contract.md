@@ -14,8 +14,6 @@ Before Phase 4, run a small throwaway Qt/asyncio worker-thread spike covering si
 
 No synchronous backend facade or qasync dependency is required initially. Blocking codecs/file operations run in bounded workers where necessary; task cancellation cannot kill a Python thread, so guard late results and preserve submission evidence. Pure core imports need neither Qt nor provider libraries.
 
-Desktop catalogue setup (#565, PR #581) reads classification data and computes selector choices on a worker, returning an in-memory `Catalogue` snapshot. Qt builds detached selector models in bounded GUI-thread turns before publication, with request/backend/key-revision and shutdown guards. Metadata/inventory changes request a replacement snapshot; snapshots never authorize generation or asset work. Startup's one-time non-generative connection check stays on the shared runner, independent of catalogue readiness, and an early explicit connection edit supersedes the restored check. See the [implementation and pending Windows evidence](../plans/2026-11-23-lora-table-responsiveness.md).
-
 ## Durable state and layer enforcement
 
 Use standard-library sqlite3 for canonical execution state. Start with requests/attempts in the Phase 2A working slice; extend the same store with queues, reservations and asset receipts in Phase 3B. Use a local application state directory, WAL mode, synchronous=FULL, foreign_keys=ON per connection, a bounded busy timeout and short transactions. Keep database work off the event loop through a single owned worker; never hold a transaction across network or artifact I/O. SQLite permits one writer at a time; concurrent generation is separate from concurrent database writes.

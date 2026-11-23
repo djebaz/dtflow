@@ -22,6 +22,22 @@ class CatalogueChoices:
     versions: frozenset[str]
 
 
+def family_picker_versions(family: str | None) -> frozenset[str]:
+    return catalogue_family_versions(family) if family != UNCLASSIFIED_FAMILY else frozenset()
+
+
+def lora_candidates(catalogue, inventory, *, checkpoint, family, domain, include_cloud):
+    """One candidate rule for worker setup and subsequent in-memory checkpoint filtering."""
+    model = catalogue.checkpoint(checkpoint, include_unavailable=include_cloud)
+    versions = checkpoint_picker_versions(checkpoint, inventory) if checkpoint else family_picker_versions(family)
+    entries = (
+        catalogue.compatible_loras(checkpoint, domain=domain, include_unavailable=include_cloud)
+        if versions and model is not None and model.base_model is not None
+        else None
+    )
+    return entries, versions
+
+
 def read_choices(
     state_dir: Path,
     inventory: InventorySnapshot | None,
@@ -71,11 +87,7 @@ def read_choices(
         or (checkpoint and catalogue.checkpoint(checkpoint) is None)
     ):
         checkpoint = ""
-    model = catalogue.checkpoint(checkpoint, include_unavailable=include_cloud)
-    versions = checkpoint_picker_versions(checkpoint, inventory) if checkpoint else catalogue_family_versions(family)
-    loras = (
-        catalogue.compatible_loras(checkpoint, domain=domain, include_unavailable=include_cloud)
-        if versions and model is not None and model.base_model is not None
-        else None
+    loras, versions = lora_candidates(
+        catalogue, inventory, checkpoint=checkpoint, family=family, domain=domain, include_cloud=include_cloud
     )
     return CatalogueChoices(catalogue, families, family, selectable, checkpoint, include_niche, loras, versions)
