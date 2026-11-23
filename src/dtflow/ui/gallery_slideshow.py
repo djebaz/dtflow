@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow import gallery_limits
+from dtflow.core.video import clip_summary
 from dtflow.services.gallery import locate_output, query_outputs
 from dtflow.ui.gallery_detail_preview import toggle_image_focus
 
@@ -26,6 +27,8 @@ DIRECTIONS = ("forward", "backward", "new")
 DIRECTION_TEXT = {"forward": "Forward →", "backward": "Backward ←", "new": "New ✦"}
 DIRECTION_NAMES = {"forward": "Forward", "backward": "Backward", "new": "New"}
 SUCCESSOR_COUNT = 8  # following identities kept with the resume anchor in case the anchor itself disappears
+
+VIDEO_MIN_DWELL_MS = 2000  # a clip stays at least this long in F6, whatever shorter interval photos use
 
 
 class GallerySlideshow(QObject):
@@ -181,7 +184,7 @@ class GallerySlideshow(QObject):
         self._reveal_controls()
         self._position_controls()
         self.sync_position()
-        self.timer.start(self._milliseconds())
+        self.timer.start(self.dwell_ms())
 
     @Slot()
     def stop(self) -> None:
@@ -236,6 +239,14 @@ class GallerySlideshow(QObject):
     def _milliseconds(self) -> int:
         return round(self.interval.value() * 1000)
 
+    def dwell_ms(self) -> int:
+        """The interval for photos; clips are never advanced sooner than ``VIDEO_MIN_DWELL_MS``."""
+        interval = self._milliseconds()
+        item = self.gallery._presented_item
+        if item is not None and clip_summary(self.gallery._request(item)) is not None:
+            return max(interval, VIDEO_MIN_DWELL_MS)
+        return interval
+
     def transition_timing(self) -> tuple[int, int]:
         """Spend one third of the configured interval fading at a fixed 60 Hz target."""
         duration = max(1, round(self._milliseconds() / 3))
@@ -247,7 +258,7 @@ class GallerySlideshow(QObject):
         self.gallery._schedule_save()
         if self.active:
             self._reveal_controls()
-            self.timer.start(self._milliseconds())
+            self.timer.start(self.dwell_ms())
 
     def _position_controls(self) -> None:
         self.pager.setGeometry(0, 0, self.gallery.surface.width(), self.pager.height())
@@ -284,7 +295,7 @@ class GallerySlideshow(QObject):
             self.gallery._apply_live(1 if self.new_available() else 0)
             self._read_head()
             self._reveal_controls()
-            self.timer.start(self._milliseconds())
+            self.timer.start(self.dwell_ms())
 
     def _cycle_direction(self) -> None:
         self._set_mode(DIRECTIONS[(DIRECTIONS.index(self.mode) + 1) % len(DIRECTIONS)])
@@ -486,7 +497,7 @@ class GallerySlideshow(QObject):
             self._seek_target = number
             self.gallery.slideshow_seek(number)
             self.sync_position()
-            self.timer.start(self._milliseconds())
+            self.timer.start(self.dwell_ms())
 
     def wants_position(self, number: int) -> bool:
         return self._seek_target is None or number == min(self._seek_target, self.gallery.total)
@@ -653,7 +664,7 @@ class GallerySlideshow(QObject):
     def image_ready(self) -> None:
         if self.active and not self.scrubbing:
             self.sync_position()
-            self.timer.start(self._milliseconds())
+            self.timer.start(self.dwell_ms())
 
     def _advance(self) -> None:
         gallery = self.gallery
@@ -698,4 +709,4 @@ class GallerySlideshow(QObject):
             self.drop_run()
         gallery.slideshow_step(delta)
         # image_ready restarts the full dwell after decoding; a slow read/paging is only polled.
-        self.timer.start(100 if gallery._loading or gallery._image_pending else self._milliseconds())
+        self.timer.start(100 if gallery._loading or gallery._image_pending else self.dwell_ms())

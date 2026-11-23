@@ -136,9 +136,6 @@ MAX_QUERY_ITEMS = gallery_limits.MAX_READ  # GalleryQuery retains its existing p
 THUMBNAIL_SIDE = 600
 THUMBNAIL_CONCURRENCY = 6
 AUTO_REFRESH_MS = 1000  # file-metadata poll only; unchanged polls never rebuild the page
-SLIDESHOW_VIDEO_MIN_INTERVAL_MS = (
-    2000  # shorter F6 intervals leave clips as posters: a player torn down at start-up crashes
-)
 SELECTION_SETTLE_MS = 200  # Next/Previous bursts load only the item they settle on
 PUSH_DEBOUNCE_MS = 250  # coalesce in-process change hints before the metadata check
 LIVE_RECOVERY_INTERVAL_S = 5  # full live reads during snapshot/failure episodes keep their original spacing
@@ -3451,7 +3448,6 @@ class GalleryPage(QObject):
                 and self._active
                 and self.mode == "Detail"
                 and selected_video_entry
-                and (not self.slideshow.active or self.slideshow._milliseconds() >= SLIDESHOW_VIDEO_MIN_INTERVAL_MS)
             )
             self.video_player.show_for_video(False, keep_panel=will_autoplay)
         self.detail_check.setText("Select video" if clip else "Select image")
@@ -3571,10 +3567,7 @@ class GalleryPage(QObject):
             video and self.video_player.autoplay and self._active and self.mode == "Detail" and selected_video_entry
         )
         # A clip that is about to autoplay replaces its poster directly: no cover image flashes before it.
-        skip_poster = autoplay and (
-            not self.slideshow.active or self.slideshow._milliseconds() >= SLIDESHOW_VIDEO_MIN_INTERVAL_MS
-        )
-        self.surface_painter.hide_image = bool(skip_poster)
+        self.surface_painter.hide_image = bool(autoplay)
         self.surface.update()
 
         def load() -> None:
@@ -3614,7 +3607,7 @@ class GalleryPage(QObject):
     def _video_started_playing(self) -> None:
         """F6 counts a clip's dwell from when it actually plays, not from when its poster was decoded."""
         if self.slideshow.active:
-            self.slideshow.timer.start(self.slideshow._milliseconds())
+            self.slideshow.timer.start(self.slideshow.dwell_ms())
 
     def _run_pending_load(self) -> None:
         load, self._pending_load = self._pending_load, None
@@ -3656,10 +3649,7 @@ class GalleryPage(QObject):
                 and self.video_player.autoplay
                 and not self._recycle_busy
             ):
-                # Very short F6 intervals leave clips as posters: a player replaced while it is still starting
-                # is the churn that used to freeze the app.
-                if not self.slideshow.active or self.slideshow._milliseconds() >= SLIDESHOW_VIDEO_MIN_INTERVAL_MS:
-                    self._start_video(path)
+                self._start_video(path)
             else:
                 self.video_player.show_for_video(True)
 
