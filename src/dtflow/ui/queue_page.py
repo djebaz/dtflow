@@ -932,8 +932,9 @@ class QueuePage:
             button.setVisible(available.reorder)
             button.setEnabled(available.reorder)
         removable = self._removable(view)
-        if not removable and feedback(page)._armed and feedback(page)._armed[0] is page.removeQueueButton:
-            feedback(page).dismiss()  # the queue started or went away: the pending consent no longer applies
+        pending = getattr(page.window(), "_inline_feedback", None)  # absent while the window is torn down
+        if not removable and pending is not None and pending._armed and pending._armed[0] is page.removeQueueButton:
+            pending.dismiss()  # the queue started or went away: the pending consent no longer applies
         page.removeQueueButton.setEnabled(removable)
         has_items = view is not None and bool(sum(view["summary"].values()))
         kind = view.get("kind") if view is not None else None
