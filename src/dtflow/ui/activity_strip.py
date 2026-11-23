@@ -600,9 +600,13 @@ class ActivityStrip(QObject):
         """One press outside the overlay and the bar dismisses every visible notice; running work is untouched."""
         if not self._live() or not isValid(target) or target.window() is not self.window:
             return  # a popup, menu or dialog press belongs to its own window
-        for widget in (self.form, self.bar):
-            if isValid(widget) and widget.isVisible() and widget.rect().contains(widget.mapFromGlobal(point)):
-                return
+        # The bar protects only a notice it shows; a bar that merely shows running progress is outside the notice.
+        model = self.bar.strip.model if isValid(self.bar) else None
+        showing_notice = model is not None and model.kind != "running"
+        for widget in (self.form, self.bar if showing_notice else None):
+            if widget is not None and isValid(widget) and widget.isVisible():
+                if widget.rect().contains(widget.mapFromGlobal(point)):
+                    return
         keys = self._result_keys()
         if keys:
             # Qt may be iterating the application's filter list: remove rows (and the filter) after this event.
