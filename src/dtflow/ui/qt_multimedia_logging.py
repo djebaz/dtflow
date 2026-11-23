@@ -17,12 +17,19 @@ _QT_MULTIMEDIA_HANDLER = None
 
 
 def install_qt_multimedia_logging() -> None:
-    """Hide routine playback output and log useful warnings only in development mode.
+    """Opt-in only: set DTFLOW_QT_MULTIMEDIA_LOG=1 to route Qt multimedia/FFmpeg messages into diagnostics.
 
-    Qt's FFmpeg plugin normally writes directly to stderr. QT_FFMPEG_DEBUG
-    routes its messages through Qt but also enables verbose decoder output.
-    Discard those extra messages; leave unrelated Qt and fatal messages alone.
+    The handler is Python code, so every Qt/FFmpeg log line written by a decoder thread needs the GIL.
+    Stopping or replacing a clip makes the GUI thread wait for those threads while holding the GIL, and the
+    two block each other forever (py-spy dump of a frozen Gallery, #580: GUI thread in `QMediaPlayer.stop`
+    waiting on the playback engine; decoder threads in `av_log` -> Qt message output -> `PyGILState_Ensure`).
+    By default no handler is installed, so Qt's FFmpeg plugin writes to stderr natively without the GIL.
+
+    When enabled, Qt's FFmpeg plugin routes its messages through Qt (QT_FFMPEG_DEBUG) and they are logged
+    in development mode only; unrelated Qt and fatal messages are left alone.
     """
+    if not os.environ.get("DTFLOW_QT_MULTIMEDIA_LOG"):
+        return
     global _QT_MULTIMEDIA_HANDLER
     if _QT_MULTIMEDIA_HANDLER is not None:
         return
