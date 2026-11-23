@@ -91,6 +91,13 @@ def parser() -> argparse.ArgumentParser:
     )
     add_gallery_limit_arguments(gui)
     gui.add_argument(
+        "-vd",
+        "--video-decoder",
+        choices=("upstream", "lut", "fp32"),
+        default="lut",
+        help="Video tensor decoder: lut (default), upstream, or experimental fp32 for CPU comparison.",
+    )
+    gui.add_argument(
         "-format",
         "--format",
         choices=("jpg", "webp"),
@@ -1018,7 +1025,11 @@ def start_logging(args: argparse.Namespace):
     """File logging is best effort: a destination failure is reported and never blocks or alters the command."""
     try:
         return configure_logging(
-            directory=args.logs, dev=args.dev, build=identity(), backend=getattr(args, "backend", None) or "-"
+            directory=args.logs,
+            dev=args.dev,
+            build=identity(),
+            backend=getattr(args, "backend", None) or "-",
+            video_decoder=getattr(args, "video_decoder", "lut"),
         )
     except LoggingSetupError as exc:
         print(f"Logging unavailable: {exc} Continuing without a log file.", file=sys.stderr)
@@ -1038,6 +1049,9 @@ def main(argv: list[str] | None = None) -> int:
     logging_session = None if args.command == "test" else start_logging(args)
     try:
         if args.command == "gui":
+            from dtflow.services import video_encode
+
+            video_encode.set_video_decoder(args.video_decoder)
             startup.mark("logging configured")
             try:
                 gallery_limits = resolve_gallery_limits(getattr(args, "load", None), getattr(args, "cards", None))

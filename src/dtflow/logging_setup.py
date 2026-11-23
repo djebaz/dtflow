@@ -141,6 +141,7 @@ def configure_logging(
     dev: bool = False,
     build: dict[str, str] | None = None,
     backend: str = "-",
+    video_decoder: str = "lut",
     session: str | None = None,
     report_error=None,
 ) -> LogSession:
@@ -149,14 +150,20 @@ def configure_logging(
         raise LoggingSetupError("Diagnostic configuration is already in progress.")
     try:
         result = _configure_logging(
-            directory=directory, dev=dev, build=build, backend=backend, session=session, report_error=report_error
+            directory=directory,
+            dev=dev,
+            build=build,
+            backend=backend,
+            video_decoder=video_decoder,
+            session=session,
+            report_error=report_error,
         )
         return result
     finally:
         _CONFIGURATION.release()
 
 
-def _configure_logging(*, directory, dev, build, backend, session, report_error) -> LogSession:
+def _configure_logging(*, directory, dev, build, backend, video_decoder, session, report_error) -> LogSession:
     logger = logging.getLogger(LOGGER)
     if any(isinstance(handler, CaptureHandler) for handler in logger.handlers):
         raise LoggingSetupError("A diagnostic session is already configured.")
@@ -198,6 +205,7 @@ def _configure_logging(*, directory, dev, build, backend, session, report_error)
         "source_status": sanitize(status),
         "runtime": f"Python {sys.version_info.major}.{sys.version_info.minor}",
         "platform": sys.platform,
+        "video_decoder": video_decoder,
         "dev": dev,
         "instrumentation_version": INSTRUMENTATION_VERSION,
         "schema_version": 1,
