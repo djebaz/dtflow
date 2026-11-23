@@ -66,7 +66,7 @@ from dtflow.services.session import (
     read_attempt,
     selection_for,
 )
-from dtflow.ui.activity import Activity, RunState
+from dtflow.ui.activity import Activity
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.brand import tinted_icon
 from dtflow.ui.empty_hint import EmptyListHint
@@ -87,8 +87,8 @@ from dtflow.ui.generation_presenter import (
 )
 from dtflow.ui.generation_grid import GenerationGrid
 from dtflow.ui.inline_feedback import InlineNotice, edit_text
-from dtflow.ui.progress_model import ItemProgress, ProgressModel
-from dtflow.ui.video_progress import present_video
+from dtflow.ui.activity_bar import clock
+from dtflow.ui.progress_model import SOLO_QUEUE, ItemProgress, ProgressModel, ProgressSnapshot, QueueTotals
 from dtflow.ui.video_panel import VideoPanel
 from dtflow.core import video as rules
 from dtflow.core.video import VIDEO_TOTAL_TIMEOUT
@@ -258,7 +258,7 @@ RAIL_LABELS = (
 )
 
 
-_SOLO = ("generate", "run")  # the model key of a Generate run that is not a queue
+_SOLO = (SOLO_QUEUE, "run")  # the model key of a Generate run that is not a queue
 
 
 class GenerationPage:
@@ -342,7 +342,7 @@ class GenerationPage:
         self._run_pose = False
         self._run_video = False
         self._solo = ProgressModel()  # a run that is not a queue: one record under _SOLO
-        self._video_started = 0.0  # submission time of the video run, until its first event creates the record
+        self._run_started = 0.0  # submission time of the run, until its first event creates the record
         self._stage_tick = QTimer(page)  # a queued click's page text keeps counting while the provider is silent
         self._stage_tick.setInterval(1000)
         self._stage_tick.timeout.connect(self._tick_stage)
@@ -1120,7 +1120,8 @@ class GenerationPage:
         return request, name, endpoint, self.lora.receipt_ids()
 
     def _present_progress(self, stage: str, completed: int | None = None, total: int | None = None) -> None:
-        """Keep the last observed sampler step across stage-only events; never synthesize progress."""
+        """Present one observed stage of this click. A queued click is worded in this page's status line; a run that is
+        not a queue feeds the shared progress model (see ``_observe``), which the Activity Bar reads."""
         if not self._generating:
             return
         reported = type(completed) is int and type(total) is int and total > 0 and 0 <= completed <= total
@@ -1129,26 +1130,6 @@ class GenerationPage:
                 self._queued_steps = (completed, total)
             self._queued_stage, self._queued_stage_since = stage, time.monotonic()  # every report restarts the count
             self._show_queued_stage()
-            return
-        if not reported:
-            current = self._activity.run_state
-            if current.owner == "generation" and current.phase == "running":
-                completed, total = current.completed, current.total
-            else:
-                completed, total = None, None
-        detail = stage
-        if completed is not None and total is not None:
-            qualifier = "step" if reported else "last reported step"
-            detail = f"{detail} · {qualifier} {completed}/{total}"
-        self._activity.present_run(
-            RunState(
-                owner="generation",
-                phase="running",
-                completed=completed,
-                total=total,
-                detail=detail,
-            )
-        )
 
     def _show_queued_stage(self) -> None:
         """The shown click's last observed stage and step, with how long that stage has been the latest news."""
@@ -1320,13 +1301,28 @@ class GenerationPage:
         item = self._solo.observe(*_SOLO, event, mode="video")
         return item is not None and item.presented
 
+    def solo_progress(self) -> tuple[ProgressSnapshot, str, str, str] | None:
+        """The Activity Bar's view of this click: (snapshot, elapsed, ETA override, Stop target), or None.
+
+        A run that is not a queue is one item under its own pseudo-queue. A queued click has no record here yet (the
+        Queues page owns it once it publishes), so only its preparing moment is shown from this page."""
+        if not self._generating:
+            return None
+        totals = QueueTotals(SOLO_QUEUE, 0, 1, running=1)
+        snapshot = self._solo.snapshot([totals]) if not self._queued_run else ProgressModel().snapshot([totals])
+        origin = self._run_started
+        item = self._solo.get(*_SOLO) if not self._queued_run else None
+        if item is not None:
+            origin = item.sent_at if item.sent_at is not None else item.started
+        return snapshot, clock(time.monotonic() - origin), "", ""
+
     def _tick_video(self) -> None:
         """Keep the elapsed time moving while DT+ is silent."""
         if not self._runner.closed and self._generating and self._run_video:
             if self._queued_run:
                 self._show_video_stage()
-            elif (item := self._video_item()) is not None:
-                present_video(item, self._activity)
+            else:
+                self._activity.refresh()
         else:
             self._video_tick.stop()
 
@@ -1334,7 +1330,7 @@ class GenerationPage:
         """A queued video's phase and elapsed time in this page's status line (the header bar shows the queue)."""
         progress = self._video_item()
         if progress is None:  # the queue has not reported yet: count from the click
-            text, origin = "Preparing", self._video_started
+            text, origin = "Preparing", self._run_started
         else:
             text, origin = progress.text, progress.sent_at if progress.sent_at is not None else progress.started
         detail = f"{text} · {int(max(0.0, time.monotonic() - origin))} s"
@@ -1395,9 +1391,10 @@ class GenerationPage:
         self._run_edit = isinstance(edit, EditJob)
         self._run_pose = isinstance(edit, PoseJob)
         self._run_video = request.num_frames is not None
+        self._run_started = time.monotonic()
+        if not manual:
+            self._solo.begin(*_SOLO, request.request_id, "video" if self._run_video else "image")
         if self._run_video:
-            self._video_started = time.monotonic()
-            self._solo.begin(*_SOLO, request.request_id, "video")
             self._video_tick.start()
         self._last_submission = (request, name, endpoint, tuple(asset_ids), prefix, simulation, edit)
         self._last_manual, self._queued_run = bool(manual), bool(manual)
@@ -1452,14 +1449,7 @@ class GenerationPage:
             self._queued_stage, self._queued_steps = "Preparing generation", None
             self._queued_stage_since = time.monotonic()
             self._stage_tick.start()
-        self._activity.set(
-            generating=True,
-            run_state=RunState(
-                owner="generation",
-                phase="running",
-                detail="Preparing generation",
-            ),
-        )
+        self._activity.set(generating=True)
         self._sync_generate()
         if manual:
             if isinstance(manual, str):
@@ -1595,14 +1585,10 @@ class GenerationPage:
         self._generated(outcome, failure if (outcome is not None or failure is not None) else asyncio.CancelledError())
 
     def _end_run(self) -> None:
-        """The click's run is over. A queued click leaves the run state to the queue it shared; others reset it."""
-        queued = self._queued_run
+        """The click's run is over (a queued click's progress stays with the queue it shared)."""
         self._generating, self._queued_run = False, False
         self._stage_tick.stop()
-        if queued and self._activity.run_state.owner != "generation":
-            self._activity.set(generating=False)
-        else:
-            self._activity.set(generating=False, run_state=RunState())
+        self._activity.set(generating=False)
 
     def refused(self, presentation: Presentation) -> None:
         """Another process owns dispatch: the request waits paused in Queues, nothing was sent."""
@@ -1640,8 +1626,11 @@ class GenerationPage:
             if self._queued_run:  # the queue run owns the bar; this page words the same observed phase
                 self._show_video_stage()
             else:
-                present_video(self._video_item(), self._activity)
+                self._activity.refresh()
             return
+        if not self._queued_run and not self._run_video:
+            self._solo.observe(*_SOLO, event)
+            self._activity.refresh()
         if event.kind == "progress":
             from dtflow.ui.progress_stages import event_stage
 

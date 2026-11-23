@@ -64,11 +64,11 @@ from dtflow.services.queue_session import (
 )
 from dtflow.services.queue_templates import TemplatePose
 from dtflow.services.session import bind_prepared, script_asset_choices, selection_for
-from dtflow.ui.activity import Activity, RunState
+from dtflow.ui.activity import Activity
 from dtflow.ui.controlnet_editor import PoseJob
 from dtflow.ui.performance import profile_slow_gui_callback
 from dtflow.ui.activity_bar import clock
-from dtflow.ui.progress_model import PHASE_WORDS, ProgressSnapshot, totals_from_view
+from dtflow.ui.progress_model import ProgressSnapshot, fallback_eta, totals_from_view
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.generation_presenter import FormError
 from dtflow.ui.inline_feedback import confirm_action, feedback
@@ -122,8 +122,6 @@ from dtflow.ui.queue_presenter import (
     progress_text,
     script_progress,
     workflow_bar,
-    workflow_of,
-    workflow_stage,
     queue_entries,
     lora_text,
     queue_facts,
@@ -330,6 +328,8 @@ class QueuePage:
         self._selected: str | None = None
         self._select_after: str | None = None
         self._dispatching: str | None = None
+        self._read_idle = False  # the latest read started while this window dispatched nothing
+        self._foreign_known = False  # the views come from such a read, so `owner_active` means another process
         self._dispatch_started = False
         self._future = None
         self._reading = False
@@ -574,6 +574,9 @@ class QueuePage:
         if self._reading:
             return
         self._reading = True
+        # Only a read that started and ended while this window dispatched nothing can tell another process's queue from
+        # a queue of this window that has just ended (`owner_active` is one flag for the whole state).
+        self._read_idle = self._dispatching is None and not self._activity.generating
         self._runner.submit(self._read(self._selected, tuple(self._varied)), self._read_done)
         self._refresh_script_run()
 
@@ -607,7 +610,7 @@ class QueuePage:
         def done(result, failure) -> None:
             self._reading_run = False
             self._run_detail = result if failure is None else None
-            self._publish_run_state()
+            self._sync_run()
 
         self._runner.submit(work(), done)
 
@@ -628,6 +631,7 @@ class QueuePage:
         previous_views, previous_detail = self._views, self._detail
         previous_selected = self._selected
         views, self._detail = result
+        self._foreign_known = self._read_idle and self._dispatching is None and not self._activity.generating
         for view in views:
             if view.get("varied") is not None:
                 self._varied[view["queue_id"]] = view["varied"]
@@ -862,206 +866,28 @@ class QueuePage:
                 return shown
         return self._view()
 
-    @profile_slow_gui_callback("queue.publish_run_state")
-    def _publish_run_state(self) -> None:
-        if self._generate_presents:  # a non-queue Generate run presents its own progress
-            self._timing_timer.stop()
-            self._countdown.reset()
-            return
-        view = self._run_view()
-        if view is None:
-            self._timing_timer.stop()
-            self._countdown.reset()
-            self._activity.present_run(RunState())
-            return
-
-        available = self._controls_for(view)
-        queue_id = view["queue_id"]
-        dispatching_here = self._owns(queue_id)
-        status = view["status"]
-        phase = "idle"
-
-        if dispatching_here:
-            phase = "paused" if status == "paused" and self._dispatch_started else "running"
-        elif status == "running" and not needs_recovery(view):
-            phase = "running"  # another process owns this queue: activity only, never a control here
-        elif available.start:
-            phase = "ready"
-
-        summary = summarize(view)
-        completed = total = None
-        running = view["summary"]["running"]
-        shown = self._detail_for(view)
-        if shown is None and self._run_detail is not None and self._run_detail["queue_id"] == queue_id:
-            shown = self._run_detail
-        items = (shown or {}).get("items", ())
-        running_items = [item for item in items if item["state"] == "running"]
-        detail = f"Queue {queue_id[:8]} · {summary.headline}"
-        waiting = len(up_next_ids(self._views.values())) if dispatching_here else 0
-        stage = wide = count = ""
-        fraction = None
-
-        if phase == "running":
-            # Settled items are the real count, meaningful however many items run at once.
-            completed, total = summary.settled, summary.total
-            # Observed clips of this queue, even when it is not the one shown on screen (then no item list is read);
-            # when the list is read, only items it still shows as running count.
-            running_ids = {item["item_id"] for item in running_items} if shown is not None else None
-            video_fractions = sorted(
-                video.estimate()
-                for video in self._progress.items(queue_id)
-                if video.video and (running_ids is None or video.item_id in running_ids)
-            )
-            if running_ids is None:
-                # Without a read item list, settled clips may still be remembered: never count more than are running.
-                video_fractions = video_fractions[: max(0, running)]
-            if video_fractions:
-                # Running clips add their estimated share to the settled items; the counts stay settled/total.
-                # Whole percents only: the run state is compared for equality, and a value that moved with every call
-                # would make each presentation trigger another one.
-                fraction = min(1.0, round((summary.settled + sum(video_fractions)) / max(1, summary.total), 2))
-                count = f"{summary.settled}/{summary.total}"
-            detail += f" Progress: {summary.settled}/{summary.total}."
-            # Only the currently running item may supply the single-item stage/progress.
-            # Historical callbacks for other items must not take over the status.
-            active_item_id = running_items[0]["item_id"] if len(running_items) == 1 else None
-            progress = (
-                [
-                    item.counter
-                    for item in (self._progress.get(queue_id, active_item_id),)
-                    if item is not None and item.counter is not None
-                ]
-                if active_item_id is not None
-                else []
-            )
-            wide = f"Queue {queue_id[:8]} · {summary.headline.rstrip('.')}" + (
-                f" · {running} items running" if running > 1 else " · 1 item running" if running else ""
-            )
-            stage = f"{running} running" if running else summary.headline.rstrip(".")
-            if running:
-                stage = (
-                    self._stage_label(queue_id, active_item_id) or "Starting; waiting for response"
-                    if active_item_id is not None
-                    else f"{running} items running"
-                )
-                # Keep the measurable settled/total queue progress even when an
-                # individual backend has not reported sampling steps yet.
-                wide = f"Queue {queue_id[:8]} · {stage} · {summary.settled}/{summary.total}"
-            if active_item_id is not None:
-                key = (queue_id, active_item_id)
-                live = self._progress.get(*key)
-                stage_started = live.label_since if live is not None else None
-                if stage_started is not None:
-                    stage += f" · {int(max(0, monotonic() - stage_started))}s"
-                if progress and not (live is not None and live.video):
-                    step, steps = progress[0]
-                    stage += f" · step {step}/{steps}"
-            if running:
-                wide = f"Queue {queue_id[:8]} · {stage} · {summary.settled}/{summary.total}"
-                if len(running_items) > 1:
-                    phases = [
-                        f"#{item['position']} {self._stage_label(queue_id, item['item_id']) or 'Starting'}"
-                        for item in running_items
-                        if self._is_video(queue_id, item["item_id"])
-                    ]
-                    if phases:
-                        counts = {}
-                        for item in running_items:
-                            video = self._progress.get(queue_id, item["item_id"])
-                            if video is not None and video.video:
-                                label = PHASE_WORDS.get(video.phase, "preparing")
-                                counts[label] = counts.get(label, 0) + 1
-                        wide += " · " + " · ".join(f"{count} {label}" for label, count in counts.items())
-                        detail += " " + "; ".join(phases)
-            if view.get("kind") == "script":
-                # A script is one item whose step count is known only as it runs: show steps, never "0/1 items".
-                script = next((item.get("script") for item in items if item.get("script")), None)
-                children = (script or {}).get("children") or []
-                committed = sum(1 for child in children if child["state"] == "succeeded")
-                expected = (script or {}).get("expected_steps")  # a static count, known only for plain scripts
-                of = f"{expected}" if expected else "?"
-                settled_states = (
-                    "succeeded",
-                    "failed",
-                    "cancelled",
-                    "save_failed",
-                    "unknown",
-                    "interrupted_before_submission",
-                )
-                in_flight = any(child["state"] not in settled_states for child in children)
-                stage = (
-                    f"step {len(children)}/{of} running · {committed} committed"
-                    if in_flight
-                    else f"{committed}/{of} steps committed"
-                    if children
-                    else "Script running"
-                )
-                wide = f"Script {queue_id[:8]} · {stage}"
-                detail = f"Script {queue_id[:8]} · {stage}."
-                completed, total = (committed, expected) if expected else (None, None)
-            elif workflow_of(shown) is not None and workflow_bar(shown):
-                # A workflow run is one item that makes many images: show images, never "0/1 items".
-                stage = workflow_stage(workflow_of(shown))
-                if progress and active_item_id is not None:
-                    stage += f" · step {progress[0][0]}/{progress[0][1]}"
-                wide = f"Workflow {queue_id[:8]} · {stage}"
-                detail = f"Workflow {queue_id[:8]} · {stage}."
-                completed, total = workflow_bar(shown)
-            elif running == 1 and len(progress) == 1:
-                step, steps = progress[0]
-                # The item number is known only for the selected queue, whose items are read.
-                position = f"Item #{running_items[0]['position']}" if len(running_items) == 1 else "Item"
-                detail += f" {position} step {step}/{steps}."
-            elif running:
-                detail += f" {running} items running."
-            if waiting:
-                detail += f" {waiting} up next."
-        elif status in ("finished", "cancelled"):
-            # Settled/problem states stay on the Queues page; the global bar returns to idle instead of becoming a
-            # persistent completion/error badge for whichever queue is selected.
-            detail = "No runnable queue selected."
-
-        remaining = None
-        elapsed = eta = ""
-        if phase in ("running", "paused"):
-            remaining = self._countdown.remaining(view, monotonic())
-            elapsed, eta = elapsed_text(view), eta_text(view, remaining=remaining)
-            only = self._progress.get(queue_id, running_items[0]["item_id"]) if len(running_items) == 1 else None
-            stage_timed = only is not None and only.label_since is not None
-            video_live = self._progress.has_video(queue_id)
-            if elapsed or eta or stage_timed or video_live:
-                if not self._timing_timer.isActive() and not self._runner.closed:
-                    self._timing_timer.start()
-            else:
-                self._timing_timer.stop()
+    @profile_slow_gui_callback("queue.sync_run")
+    def _sync_run(self) -> None:
+        """Run the one-second timing tick while a dispatched or other-process queue runs, and ask the global bar to read
+        the shared progress again. The bar's content comes from ``aggregate_progress``; nothing is stored here."""
+        view = None if self._generate_presents else self._run_view()
+        active = view is not None and (
+            self._owns(view["queue_id"]) or (view["status"] == "running" and not needs_recovery(view))
+        )
+        if active and not self._runner.closed:
+            if not self._timing_timer.isActive():
+                self._timing_timer.start()
         else:
             self._timing_timer.stop()
             self._countdown.reset()
-
-        self._activity.present_run(
-            RunState(
-                owner="queue" if phase != "idle" else "none",
-                phase=phase,
-                completed=completed,
-                total=total,
-                queue_id=queue_id if phase != "idle" else None,
-                detail=detail,
-                elapsed=elapsed,
-                eta=eta,
-                stage=stage,
-                wide=wide,
-                queued=waiting,
-                fraction=fraction,
-                count=count,
-            )
-        )
+        self._activity.refresh()
 
     def _timing_tick(self) -> None:
-        """Update timing presentation once a second without waiting for or initiating a database read."""
+        """Refresh the elapsed/ETA text once a second without waiting for or initiating a database read."""
         if self._runner.closed:
             self._timing_timer.stop()
             return
-        self._publish_run_state()
+        self._sync_run()
 
     def sync_edit_fields(self) -> None:
         """Strengths apply to Inpaint edits only: shown while Generate is in Inpaint mode and a plan is composed."""
@@ -1146,7 +972,7 @@ class QueuePage:
         page.clearPausedQueuesButton.setText(
             f"Clear paused queues ({len(paused)})" if paused else "Clear paused queues"
         )
-        self._publish_run_state()
+        self._sync_run()
 
     def _paused_ids(self) -> tuple[str, ...]:
         """Paused queues from the latest read that this window could remove (not its own dispatch, nothing running)."""
@@ -1292,12 +1118,20 @@ class QueuePage:
 
         self._runner.submit(work(), done)
 
-    def aggregate_progress(self) -> tuple[ProgressSnapshot, str | None, str] | None:
+    @property
+    def primary_id(self) -> str | None:
+        """The dispatch Stop reaches: its identity changes when auto-play hands the run to the next queue."""
+        view = None if self._generate_presents else self._run_view()
+        return view["queue_id"] if view is not None else None
+
+    def aggregate_progress(self) -> tuple[ProgressSnapshot, str, str, str] | None:
         """Every queue this window runs, plus running queues of another process (durable counts only), for the global bar.
 
-        Returns the snapshot, a bar-level ETA override (None: the primary queue's own ETA stands) and the name of what
-        Stop reaches when several queues run. Up-next queues are not counted; a paused current dispatch stays in.
-        A script or workflow counts as one parent item. A non-queue Generate run keeps its own single row."""
+        Returns (snapshot, elapsed, ETA, Stop target): the elapsed time and ETA of the primary queue, or a bar-level ETA
+        when several queues run (the maximum credible one for independent queues, else none); a rough one from the
+        bar's own fraction when no timing estimate exists. The Stop target names what Stop reaches when several queues
+        run. Up-next queues are not counted; a paused current dispatch stays in. A script or workflow counts as one
+        parent item. A non-queue Generate run presents itself (``GenerationPage.solo_progress``)."""
         if self._generate_presents:
             return None
         owned = [queue_id for queue_id in (self._dispatching, *sorted(self._overlapping)) if queue_id]
@@ -1306,27 +1140,34 @@ class QueuePage:
             view = self._views.get(queue_id)
             if view is not None and view["status"] in ("running", "paused"):
                 entries.append((view, False))
-        for view in self._views.values():
-            if view["queue_id"] not in owned and view["status"] == "running" and view.get("owner_active") is True:
-                entries.append((view, True))
+        if self._foreign_known:
+            for view in self._views.values():
+                if view["queue_id"] not in owned and view["status"] == "running" and view.get("owner_active") is True:
+                    entries.append((view, True))
         if not entries:
             return None
         snapshot = self._progress.snapshot(
             [totals_from_view(view, foreign=foreign, parent=view.get("kind") in RUN_KINDS) for view, foreign in entries]
         )
-        eta = None
+        primary = self._run_view()
+        elapsed = eta = ""
+        if primary is not None:
+            remaining = self._countdown.remaining(primary, monotonic())
+            elapsed = elapsed_text(primary).removeprefix("Elapsed ")
+            eta = eta_text(primary, remaining=remaining).split(" (")[0]
         if len(entries) > 1:
             names = [view["backend"]["name"] for view, _ in entries if view["status"] == "running"]
             seconds = [estimate_remaining(view) for view, _ in entries if view["status"] == "running"]
             if names and len(set(names)) == len(names) and all(value is not None for value in seconds):
                 eta = f"~{clock(math.ceil(max(seconds)))} left"
             else:
-                eta = ""  # no usable estimate: show elapsed time only, never a placeholder
-        primary = self._run_view()
+                eta = ""  # shared capacity or too little evidence: no grounded bar-level ETA
+        if not eta and not any(queue.totals.paused for queue in snapshot.queues):
+            eta = fallback_eta(snapshot.fill, elapsed)
         target = ""
         if len(entries) > 1 and primary is not None:
             target = f"stops queue {primary['queue_id'][:8]} only"
-        return snapshot, eta, target
+        return snapshot, elapsed, eta, target
 
     def _is_video(self, queue_id: str, item_id: str) -> bool:
         item = self._progress.get(queue_id, item_id)
@@ -3482,7 +3323,7 @@ class QueuePage:
         label = item.event_label if item is not None else ""
         if item is not None and self._detail is not None and self._detail["queue_id"] == wrapped.queue_id:
             self.model.set_live_stage(wrapped.item_id, label or "")
-        self._publish_run_state()
+        self._sync_run()
 
     def primary(self) -> None:
         """The header's one action, whichever of Start, Start next, Pause or Resume applies now."""
@@ -3513,6 +3354,7 @@ class QueuePage:
     def _dispatch(self, queue_id: str, *, resume_fallback: str | None, waiting: tuple[str, ...] = ()) -> None:
         """Make this window the dispatch owner of ``queue_id`` (an explicit Start or Start now)."""
         self._resume_fallback = resume_fallback
+        self._foreign_known = False
         self._dispatching = queue_id
         self._dispatch_started = False
         self._activity.set(dispatching=True)
@@ -3566,6 +3408,7 @@ class QueuePage:
 
     def _dispatched(self, final, failure) -> None:
         self._dispatching, self._future = None, None
+        self._foreign_known = False  # the views still describe the run that just ended
         self._overlapping.clear()
         self._dispatch_started = False
         waiting = bool(self._after_generation)

@@ -343,10 +343,10 @@ def test_queue_timing_reaches_bar_and_tooltip_without_changing_real_progress(win
     queue._read_done(([current], current), None)
     row = strip.rows["run"]
     assert row.property("inBar") and strip.bar.isVisible()
-    assert strip.bar.strip.model.elapsed == queue._activity.run_state.elapsed.removeprefix("Elapsed ")
+    assert strip.bar.strip.model.elapsed == queue.aggregate_progress()[1]
     assert strip.bar.strip.model.eta == "~1:00 left"
     assert "Elapsed" not in row.activityDetail.text() and "estimate" not in row.activityDetail.text()
-    assert (row.activityProgress.value(), row.activityProgress.maximum()) == (1, 3)
+    assert row.activityCount.text() == "1 / 3" or row.activityCount.text() == "1/3"
     assert queue._timing_timer.isActive() and queue._timing_timer.interval() == 1000
     # The global Stop belongs to the displayed dispatch, never the independently selected queue.
     waiting = dict(current, queue_id="waiting-queue", status="queued")
@@ -363,7 +363,7 @@ def test_queue_timing_reaches_bar_and_tooltip_without_changing_real_progress(win
     assert strip.bar.strip.model.eta == "~0:59 left"
     queue._read_done(([current], current), None)
     assert strip.bar.strip.model.eta == "~0:59 left"  # an unchanged database poll preserves the countdown
-    assert (row.activityProgress.value(), row.activityProgress.maximum()) == (1, 3)
+    assert row.activityCount.text() == "1 / 3" or row.activityCount.text() == "1/3"
     paused = dict(current, status="paused")
     queue._read_done(([paused], paused), None)
     assert not strip.bar.strip.model.eta and strip.bar.strip.model.elapsed
@@ -371,7 +371,7 @@ def test_queue_timing_reaches_bar_and_tooltip_without_changing_real_progress(win
     following = dict(current, queue_id="following-queue")
     queue._views[following["queue_id"]] = following
     queue._dispatching = following["queue_id"]
-    queue._publish_run_state()
+    queue._sync_run()
     assert strip.bar.button.isEnabled() and not strip.bar.strip.model.stopping
     strip.bar.button.click()
     assert posted[-1] == ("cancel", following["queue_id"])

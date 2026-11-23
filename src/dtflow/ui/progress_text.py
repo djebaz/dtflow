@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from dtflow.ui.progress_model import ProgressSnapshot
+from dtflow.ui.progress_model import SOLO_QUEUE, ProgressSnapshot
 
 SEP = " · "
 _LONG = {"W": "waiting", "C": "in DT+ Cloud", "E": "encoding", "V": "saving"}
@@ -66,7 +66,7 @@ def _groups(snapshot: ProgressSnapshot, short: bool) -> tuple[list[str], list[st
 def _line(snapshot, *, short, percent, times, wait, queues) -> str:
     core, optional, xy = _groups(snapshot, short)
     parts = []
-    if queues and not short and snapshot.queues:
+    if queues and not short and snapshot.queues and snapshot.queues[0].totals.queue_id != SOLO_QUEUE:
         parts.append(f"{len(snapshot.queues)} {'queue' if len(snapshot.queues) == 1 else 'queues'}")
     parts += core
     if percent and not short:

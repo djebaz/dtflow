@@ -29,7 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from dtflow.ui.video_progress import clock
+from dtflow.ui.progress_text import aggregate_text
 from dtflow.ui import file_dialogs
 from dtflow.ui.file_dialogs import QFileDialog
 from dtflow import startup
@@ -756,6 +756,7 @@ class MainWindow:
         form.imagesNavigationButton.clicked.connect(lambda: form.workspaceStack.setCurrentWidget(self.images_page))
         form.workspaceStack.currentChanged.connect(self._workspace_changed)
         self.activity.listen(self._sync_activity_progress)
+        self.activity.listen_progress(self._sync_activity_progress)
         self.progress_strip.form.destroyed.connect(self._retire_activity_presentation)
         form.installEventFilter(_LayoutGuard(self._responsive_workspace, form))
         self.form.installEventFilter(_CloseGuard(self._confirm_close, self.form))
@@ -1443,91 +1444,63 @@ class MainWindow:
     def _sync_activity_progress(self):
         if self.progress_strip.retired:
             return
-        state = self.activity.run_state
+        # One source for the bar: the Queues page's aggregate over every active queue, or Generate's own run.
+        queue_run = self.queue.aggregate_progress()
         # Each settled image or finished run pushes a refresh hint to Images (it checks the database cheaply).
-        aggregate = self.queue.aggregate_progress()
         marker = (
             self.activity.generating,
             self.activity.dispatching,
-            aggregate[0].settled if aggregate is not None else None,
+            queue_run[0].settled if queue_run is not None else None,
         )
         if marker != self._last_run_marker:
             self._last_run_marker = marker
             self.gallery.notify_changed()
-        # A Generate click's queue shows as queue progress once the queue run publishes; until then (and for runs that
-        # are not one-item queues) the row is Generation's.
-        generating = self.activity.generating and not (self.generation.queued_run and state.owner != "generation")
-        local = generating or self.activity.dispatching
-        # Queues running only in another process still get the bar (durable counts, no Stop, no live telemetry).
-        foreign_only = aggregate is not None and not local and not self.queue.generate_settling
-        if not foreign_only and (not local or (not generating and self.queue.generate_settling)):
+        generating = self.activity.generating
+        solo = generating and not self.generation.queued_run
+        # A Generate click's queue shows as queue progress once the queue run publishes; until then, and for runs that
+        # are not queues, the run is Generation's own.
+        shown = self.generation.solo_progress() if solo else queue_run
+        if shown is None and generating:
+            shown = self.generation.solo_progress()
+        presents_generation = solo or (generating and queue_run is None)
+        if shown is None or (not generating and self.queue.generate_settling):
             self.progress_strip.finish("run")
             return
-        if aggregate is not None and generating:
-            aggregate = None  # a Generate run that is not a queue keeps its own row
-        run_identity = "generation" if generating else "foreign" if foreign_only else f"queue:{state.queue_id}"
+        # Queues running only in another process still get the bar (durable counts, no Stop, no live telemetry).
+        foreign_only = not (generating or self.activity.dispatching)
+        run_identity = (
+            "generation" if presents_generation else "foreign" if foreign_only else f"queue:{self.queue.primary_id}"
+        )
         row = self.progress_strip.rows.get("run")
         if row is not None and row.property("runIdentity") != run_identity:
             self.progress_strip.finish("run")
         if "run" not in self.progress_strip.rows:
-            label = "Generation" if generating else "Queue progress"
+            label = "Generation" if presents_generation else "Queue progress"
             self.progress_strip.finish("generation-result")
             self.progress_strip.finish("queue-result")
             self.progress_strip.start(
                 "run",
                 label,
-                self.generation.cancel if generating else None if foreign_only else self.queue.cancel_run,
+                self.generation.cancel if presents_generation else None if foreign_only else self.queue.cancel_run,
                 stop_text=(
                     ("Stop waiting locally" if not self.generation.queued_run else "Stop")
-                    if generating
+                    if presents_generation
                     else "Stop after current image"
                 ),
             )
             self.progress_strip.rows["run"].setProperty("runIdentity", run_identity)
+        snapshot, elapsed, eta, target = shown
+        text = aggregate_text(snapshot, elapsed=elapsed, eta=eta)
         self.progress_strip.update(
             "run",
-            round(state.fraction * 1000) if state.fraction is not None else state.completed or 0,
-            1000 if state.fraction is not None else state.total or 0,
-            detail=state.detail,
-            elapsed=state.elapsed,
-            eta=state.eta,
-            stage=state.stage,
-            wide=state.wide,
-            queued=state.queued,
-            count=state.count or None,
-            fill_only=state.fraction is not None and not state.count,
+            round(snapshot.fill * 1000),
+            1000,
+            detail=text.full,
+            elapsed=f"Elapsed {elapsed}" if elapsed else "",
+            eta=eta,
+            count=f"{snapshot.settled}/{snapshot.total}",
         )
-        if aggregate is None:
-            self.progress_strip.set_aggregate(None)
-        else:
-            snapshot, eta, target = aggregate
-            eta = eta if eta is not None else state.eta.split(" (")[0]
-            if "?" in eta:
-                eta = ""
-            if not eta and not any(queue.totals.paused for queue in snapshot.queues):
-                eta = self._progress_eta(snapshot.fill, state.elapsed)
-            self.progress_strip.set_aggregate(
-                Aggregate(
-                    snapshot,
-                    elapsed=state.elapsed.removeprefix("Elapsed "),
-                    eta=eta,
-                    stop_target=target,
-                )
-            )
-
-    @staticmethod
-    def _progress_eta(fill: float, elapsed_text: str) -> str:
-        """Fallback ETA when no timing-based one exists: elapsed time scaled by the bar's own fraction (a rough "~")."""
-        try:
-            parts = [int(part) for part in elapsed_text.removeprefix("Elapsed ").split(":")]
-        except ValueError:
-            return ""
-        if not 2 <= len(parts) <= 3 or fill < 0.05:
-            return ""
-        elapsed = 0
-        for part in parts:
-            elapsed = elapsed * 60 + part
-        return f"~{clock(elapsed * (1 - fill) / fill)} left" if elapsed else ""
+        self.progress_strip.set_aggregate(Aggregate(snapshot, elapsed=elapsed, eta=eta, stop_target=target))
 
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)
