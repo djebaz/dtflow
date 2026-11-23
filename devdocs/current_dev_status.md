@@ -1,5 +1,9 @@
 # Current development status
 
+## Release candidate: 6.5.0 (2026-11-23)
+
+Merged scope through PR #583 is consolidated in the [6.5.0 notes](releases/v6.5.0.md): pose guidance/templates, video generation and playback, shared provider admission, Generate result grids, aggregate progress and responsiveness fixes. The owner requested the manual GitHub Actions build/draft path. [6.4.1](https://github.com/djebaz/dtflow/releases/tag/v6.4.1) remains the published baseline; the final 6.5.0 executable still needs Windows smoke acceptance and FFmpeg corresponding-source review before publication. See the [release audit](plans/2026-11-23-release-6.5.0.md). Earlier in-review headings below are historical feature evidence, not current PR status.
+
 ## In review: retained-LoRA table and catalogue responsiveness (#565, PR #581; 2026-11-23)
 
 LoRA refreshes reuse cells/controls, batch column sizing and retain selection and eligible actions during bounded updates. Catalogue preparation remains asynchronous with one-turn selector publication. Family/format observations now reuse unchanged per-file fingerprints, and initial inspection waits for SDK preload. Owner Windows evidence at the earlier head supports unchanged-table navigation and switching during generation (largest gap 384 ms); final startup ordering/cache timings and full behavior acceptance remain pending. Generation/provider behavior stays unchanged. See the [implementation and evidence boundary](plans/2026-11-23-lora-table-responsiveness.md).
@@ -80,7 +84,7 @@ PR #533 supports five explicit Windows FFmpeg packaging choices: Gyan 8.1.2 Esse
 
 - Feature PRs record scoped owner Windows/DT+ smoke and Linux offline checks; the release audit identifies their scope. No final-release full-suite result is inferred from those earlier runs.
 - The 6.4.0 owner suite (700 passed, 3 skipped) and Fast previews (31/31) are historical evidence for that release, not 6.4.1 results.
-- 6.4.1 uses the owner-run local Windows build path because Actions credits remain exhausted. No workflow is dispatched; clean artifact identity/checksum/manifest and owner acceptance remain required before tagging/publication.
+- 6.4.1 used the owner-run local Windows build path. The owner has now requested Actions for the 6.5.0 build/draft; clean artifact identity/checksum/manifest and owner acceptance remain required before publication.
 
 ## Remaining hardening and compatibility
 
