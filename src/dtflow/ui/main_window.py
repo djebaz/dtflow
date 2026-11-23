@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import time
+from copy import deepcopy
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSignalBlocker, QSize, Qt, QTimer, Slot
@@ -689,6 +690,11 @@ class MainWindow:
         self._lora_cloud = form.backendCombo.currentText() == "cloud"
         self._lora_formats = {}
         self._lora_quantized = frozenset()
+        self._lora_table_state = None
+        self._lora_action_rows = []
+        self._lora_actions_timer = QTimer(table)
+        self._lora_actions_timer.setSingleShot(True)
+        self._lora_actions_timer.timeout.connect(self._mount_lora_actions)
         form._managed_lora_render = self._render_lora_table
         form._managed_lora_refresh = lambda: self.refresh_custom_loras(background=True)
         form._managed_lora_prepare = self._prepare_managed_lora
@@ -2352,20 +2358,20 @@ class MainWindow:
             self.form.editLoraMetadataButton.setEnabled(False)
             return
         count, entries, (stored_count, stored_bytes) = result
-        if not rescan:
-            # Removing one LoRA leaves the inspection results for the remaining retained files unchanged.
-            previous = {(item.get("sha256"), item.get("size")): item for item in self._lora_entries}
-            for entry in entries:
-                old = previous.get((entry.get("sha256"), entry.get("size")), {})
-                for key in ("detected_family", "observed_format", "has_q8p"):
-                    if key in old:
-                        entry[key] = old[key]
-            self._lora_formats = {
-                (entry.get("sha256"), entry.get("size")): entry.get("observed_format") for entry in entries
-            }
-            self._lora_quantized = frozenset(
-                (entry.get("sha256"), entry.get("size")) for entry in entries if entry.get("has_q8p")
-            )
+        # Keep the last inspection while the fresh worker scan runs. Navigation must not first erase
+        # every family's/format's presentation and then rebuild it again when that scan finishes.
+        previous = {(item.get("sha256"), item.get("size")): item for item in self._lora_entries}
+        for entry in entries:
+            old = previous.get((entry.get("sha256"), entry.get("size")), {})
+            for key in ("detected_family", "observed_format", "has_q8p"):
+                if key in old:
+                    entry[key] = old[key]
+        self._lora_formats = {
+            (entry.get("sha256"), entry.get("size")): entry.get("observed_format") for entry in entries
+        }
+        self._lora_quantized = frozenset(
+            (entry.get("sha256"), entry.get("size")) for entry in entries if entry.get("has_q8p")
+        )
         self.form.customLorasStatusLabel.setText(
             f"{count} custom LoRA definition" + ("" if count == 1 else "s") + " imported."
             if count
@@ -2506,15 +2512,36 @@ class MainWindow:
             self._render_lora_table()
 
     def _render_lora_table(self) -> None:
-        """Batch cell replacement without repainting or firing selection callbacks for each row."""
+        """Reconcile changed presentation only; create new Designer action forms between GUI turns."""
+        if self.runner.closed:
+            return
+        state = (
+            self._lora_entries,
+            self._lora_records,
+            self._lora_unretained,
+            self._lora_formats,
+            self._lora_quantized,
+            self._lora_prepared,
+            self._lora_prepare_owner,
+            self.form.backendCombo.currentText(),
+            self._lora_actions_busy(),
+        )
+        if state == self._lora_table_state:
+            self._retained_lora_selection_changed()
+            return
+        self._lora_actions_timer.stop()
+        self._lora_action_rows.clear()
         table = self.form.retainedLorasTable
         table.setUpdatesEnabled(False)
         try:
             with QSignalBlocker(table):
                 self._fill_lora_table()
+                self._lora_table_state = deepcopy(state)
         finally:
             table.setUpdatesEnabled(True)
         self._retained_lora_selection_changed()
+        if self._lora_action_rows:
+            self._lora_actions_timer.start(1)
 
     def _fill_lora_table(self) -> None:
         records, entries = self._lora_records, self._lora_entries
@@ -2570,7 +2597,10 @@ class MainWindow:
                     item.setToolTip(status)
                     item.setData(Qt.ItemDataRole.AccessibleTextRole, status)
                 table.setItem(row, column, item)
-            self._lora_row_actions(row, (sha256, size), version, record)
+            if table.cellWidget(row, 4) is None:
+                self._lora_action_rows.append((row, (sha256, size), version, record))
+            else:
+                self._lora_row_actions(row, (sha256, size), version, record)
             if (sha256, size) == identity:
                 table.selectRow(row)
         self._render_no_copy_rows(len(rows), set(entries_by_identity), identity)
@@ -2629,16 +2659,49 @@ class MainWindow:
             if (sha256, size) == identity:
                 table.selectRow(row)
 
-    def _lora_row_actions(self, row, identity, family, metadata) -> None:
+    def _mount_lora_actions(self) -> None:
+        """At most one new form per turn, never one uninterrupted load/polish loop over the library."""
+        if self.runner.closed:
+            self._lora_action_rows.clear()
+            return
+        if not self._lora_action_rows:
+            return
+        row, identity, family, metadata = self._lora_action_rows.pop(0)
+        table = self.form.retainedLorasTable
+        item = table.item(row, 0)
+        if item is not None and item.data(Qt.ItemDataRole.UserRole) == identity and identity not in self._lora_no_copy:
+            self._lora_row_actions(row, identity, family, metadata)
+        if self._lora_action_rows:
+            self._lora_actions_timer.start(1)
+
+    def _lora_actions_busy(self) -> bool:
         panel = self.generation.lora
-        busy = (
+        return (
             panel.preparing
             or panel._q8p_running
             or panel._is_busy()
             or self.runner.closed
             or self._removing_retained_lora
         )
-        host = load_ui(FORMS_DIR / "managed_lora_actions.ui", self.form.retainedLorasTable)
+
+    def _lora_row_actions(self, row, identity, family, metadata) -> None:
+        table = self.form.retainedLorasTable
+        host = table.cellWidget(row, 4)
+        created = host is None
+        if created:
+            host = load_ui(FORMS_DIR / "managed_lora_actions.ui", table)
+            # A reused row can represent different content after an insertion/removal. Resolve the
+            # current identity/metadata at click time instead of retaining a stale signal closure.
+            host.quantizeButton.clicked.connect(
+                lambda _checked=False: self.generation.lora.quantize_managed(
+                    host._lora_identity, dict(host._lora_metadata)
+                )
+            )
+            host.prepareButton.clicked.connect(lambda _checked=False: self._prepare_managed_lora(host._lora_identity))
+            table.setCellWidget(row, 4, host)
+        host._lora_identity = identity
+        host._lora_metadata = metadata
+        busy = self._lora_actions_busy()
         quantize = host.quantizeButton
         eligible = self._lora_formats.get(identity) == "F16" and family in ("krea_2", "z_image", "sdxl_base_v0.9")
         converted = identity in self._lora_quantized
@@ -2650,9 +2713,10 @@ class MainWindow:
             if eligible
             else "Requires a supported raw F16 Krea 2, Z Image or SDXL LoRA."
         )
-        quantize.clicked.connect(lambda _checked=False: panel.quantize_managed(identity, dict(metadata)))
         prepare = host.prepareButton
-        prepare.setText("Prepared" if identity in self._lora_prepared else "Prepare")
+        text = "Prepared" if identity in self._lora_prepared else "Prepare"
+        resized = created or prepare.text() != text
+        prepare.setText(text)
         prepare.setEnabled(
             not busy
             and identity not in self._lora_prepared
@@ -2662,8 +2726,8 @@ class MainWindow:
         prepare.setToolTip(
             "Selected-key local confirmation, not a live cloud check. Prepare opens the approval editor."
         )
-        prepare.clicked.connect(lambda _checked=False: self._prepare_managed_lora(identity))
-        self.form.retainedLorasTable.setCellWidget(row, 4, host)
+        if not resized:
+            return
         host.ensurePolished()
         quantize.ensurePolished()
         prepare.ensurePolished()

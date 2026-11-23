@@ -41,6 +41,8 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 
 ## Fixed
 
+- Retained-LoRA table refreshes skip unchanged presentation, reuse existing row controls and create new action forms between GUI turns rather than synchronously reloading one form per retained file on every rebuild (#565). Family/format observations remain visible while refreshed inspection runs. Source-reviewed only; Windows responsiveness with approximately 96 files and behavior acceptance remain pending. See the [implementation/evidence notes](../plans/2026-11-23-lora-table-responsiveness.md).
+
 - **Deferred saved editor inputs (PR #556, refs #555):** A remembered ControlNet photo/pose map no longer starts ONNX detection or map fitting while DTFlow opens on Connection; the saved pose automatically restores when Generate → ControlNet becomes visible (owner Windows confirmation). The separate remembered Inpaint source no longer triggers “Load source image” at startup: it loads on first visible Generate → Inpaint entry, retaining its path if the app closes sooner. The Inpaint extension is source-reviewed only, pending a quick no-credit Windows navigation check.
 
 - Video queue admission no longer reserves a fixed 1.5 GiB per clip on a shared drive: derived output/temporary charges are 300/600 MiB, and items wait when other active clips hold disk budget. This addresses owner smoke in which 12 GiB free admitted only seven of ten clips; ten-clip validation of the refined policy remains pending (PR #547, refs #546).

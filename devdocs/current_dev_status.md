@@ -1,5 +1,9 @@
 # Current development status
 
+## In implementation: retained-LoRA table responsiveness (#565; 2026-11-23)
+
+The table skips unchanged presentation snapshots, preserves family/format observations while refreshing, reuses row action controls and mounts missing Designer action forms one per GUI turn. This targets repeated synchronous form loads in the issue's reported 96-file stall stacks, not the separate slow family scan. Source/static evidence only; the 500 ms Windows responsiveness gate and preserved-behavior owner smoke remain unverified. See the [implementation and evidence boundary](plans/2026-11-23-lora-table-responsiveness.md).
+
 ## In review: video receiving to disk and local encoder controls (#550)
 
 DT+ video frames are received into a per-clip disk spool (original tensors, in order) without starting FFmpeg; after the stream ends the clip waits for a slot of the shared local-encoder limit, then FFmpeg encodes from the spool and muxes audio under that slot. Connection gets **Local video encoding**: max concurrent encoders (0 = Unlimited, default) and codec threads per encoder (0 = Auto, from the CPU count), saved in `settings.json`. The 1800 s deadline covers remote receiving only; the 10-clip admission lease is kept through encoding and saving; the spool reservation is 500 MiB per clip (an estimate, not a cap); item files are deleted on any normal failure. Successful `-encoders`/`-version` readiness checks are cached per process and tool pair. Static, CI and a short owner Windows smoke only; see the PR evidence.
