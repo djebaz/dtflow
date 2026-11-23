@@ -91,7 +91,10 @@ def parser() -> argparse.ArgumentParser:
     )
     add_gallery_limit_arguments(gui)
     gui.add_argument(
-        "-vd", "--video-decoder", choices=("upstream", "lut"), default="upstream",
+        "-vd",
+        "--video-decoder",
+        choices=("upstream", "lut"),
+        default="upstream",
         help="Video tensor decoder: upstream (default) or experimental lut for CPU comparison.",
     )
     gui.add_argument(
@@ -1022,7 +1025,10 @@ def start_logging(args: argparse.Namespace):
     """File logging is best effort: a destination failure is reported and never blocks or alters the command."""
     try:
         return configure_logging(
-            directory=args.logs, dev=args.dev, build=identity(), backend=getattr(args, "backend", None) or "-",
+            directory=args.logs,
+            dev=args.dev,
+            build=identity(),
+            backend=getattr(args, "backend", None) or "-",
             video_decoder=getattr(args, "video_decoder", "upstream"),
         )
     except LoggingSetupError as exc:
