@@ -3559,6 +3559,12 @@ class GalleryPage(QObject):
         autoplay = (
             video and self.video_player.autoplay and self._active and self.mode == "Detail" and selected_video_entry
         )
+        # A clip that is about to autoplay replaces its poster directly: no cover image flashes before it.
+        skip_poster = autoplay and (
+            not self.slideshow.active or self.slideshow._milliseconds() >= SLIDESHOW_VIDEO_MIN_INTERVAL_MS
+        )
+        self.surface_painter.hide_image = bool(skip_poster)
+        self.surface.update()
 
         def load() -> None:
             if image_generation is not None:
@@ -4698,6 +4704,7 @@ class GalleryPage(QObject):
 
     def _clear_detail(self) -> None:
         self._cancel_pending_load()
+        self.surface_painter.hide_image = False
         self.video_player.show_for_video(False)
         self.surface_painter.finish_transition()
         self._image_pending = False

@@ -19,11 +19,17 @@ _QT_MULTIMEDIA_HANDLER = None
 def _silence_native_output() -> None:
     """Keep FFmpeg and Qt multimedia chatter off the console without any Python callback.
 
-    Qt's multimedia categories are switched off through logging rules (evaluated natively), and the bundled
+    Qt's multimedia categories and uncategorized warnings are switched off through logging rules (evaluated
+    natively; set DTFLOW_QT_WARNINGS=1 to keep the uncategorized warnings), and the bundled
     FFmpeg's global log level is set to quiet through its own C function, which needs no GIL. Both are best
     effort and respect an explicit QT_LOGGING_RULES.
     """
-    os.environ.setdefault("QT_LOGGING_RULES", "qt.multimedia.*=false")
+    rules = "qt.multimedia.*=false"
+    if not os.environ.get("DTFLOW_QT_WARNINGS"):
+        # Qt's "D3D11 smoke test: Failed to create vertex shader" is an uncategorized warning, so it can only
+        # be hidden together with the other uncategorized ones; DTFLOW_QT_WARNINGS=1 keeps them visible.
+        rules += ";default.warning=false"
+    os.environ.setdefault("QT_LOGGING_RULES", rules)
     try:
         import ctypes
         from pathlib import Path

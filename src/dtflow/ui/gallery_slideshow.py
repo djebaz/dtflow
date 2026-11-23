@@ -197,6 +197,7 @@ class GallerySlideshow(QObject):
         self.controls.hide()
         gallery = self.gallery
         gallery.video_player.release(show_play=True)  # the F6 strips around a clip end with the slideshow
+        gallery.surface_painter.hide_image = False
         for widget, previous in self._mouse_tracking:
             widget.setMouseTracking(previous)
         gallery.surface_painter.finish_transition()
