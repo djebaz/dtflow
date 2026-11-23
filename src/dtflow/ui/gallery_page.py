@@ -136,6 +136,7 @@ MAX_QUERY_ITEMS = gallery_limits.MAX_READ  # GalleryQuery retains its existing p
 THUMBNAIL_SIDE = 600
 THUMBNAIL_CONCURRENCY = 6
 AUTO_REFRESH_MS = 1000  # file-metadata poll only; unchanged polls never rebuild the page
+SLIDESHOW_VIDEO_SETTLE_MS = 600  # F6 starts a clip only after it has stayed this long, however short the interval
 SELECTION_SETTLE_MS = 200  # Next/Previous bursts load only the item they settle on
 PUSH_DEBOUNCE_MS = 250  # coalesce in-process change hints before the metadata check
 LIVE_RECOVERY_INTERVAL_S = 5  # full live reads during snapshot/failure episodes keep their original spacing
@@ -646,6 +647,11 @@ class GalleryPage(QObject):
         self._settle_timer.timeout.connect(self._run_pending_load)
         self._pending_load = None
         self._defer_load = False
+        self._autoplay_timer = QTimer(self)
+        self._autoplay_timer.setSingleShot(True)
+        self._autoplay_timer.setInterval(SLIDESHOW_VIDEO_SETTLE_MS)
+        self._autoplay_timer.timeout.connect(self._run_slideshow_autoplay)
+        self._autoplay_pending = None
         self.save_timer = QTimer(self)
         self.save_timer.setSingleShot(True)
         self.save_timer.setInterval(250)
@@ -3589,6 +3595,20 @@ class GalleryPage(QObject):
     def _cancel_pending_load(self) -> None:
         self._settle_timer.stop()
         self._pending_load = None
+        self._autoplay_timer.stop()
+        self._autoplay_pending = None
+
+    def _run_slideshow_autoplay(self) -> None:
+        pending, self._autoplay_pending = self._autoplay_pending, None
+        if pending is None or self.runner.closed:
+            return
+        generation, identity, path = pending
+        if generation != self._detail_generation or identity != self.selected_id or self.video_player.playing:
+            return
+        if self._active and self.mode == "Detail" and self.video_player.autoplay and not self._recycle_busy:
+            self._start_video(path)
+        else:
+            self.video_player.show_for_video(True)
 
     def _run_pending_load(self) -> None:
         load, self._pending_load = self._pending_load, None
@@ -3630,7 +3650,13 @@ class GalleryPage(QObject):
                 and self.video_player.autoplay
                 and not self._recycle_busy
             ):
-                self._start_video(path)
+                if self.slideshow.active:
+                    # A short F6 interval must not create a native player per advance; only a clip that stays
+                    # on screen starts, the rest keep their poster.
+                    self._autoplay_pending = (generation, identity, path)
+                    self._autoplay_timer.start()
+                else:
+                    self._start_video(path)
             else:
                 self.video_player.show_for_video(True)
 
