@@ -216,18 +216,21 @@ class GenerationService:
                     if held is not None:
                         held.provider_done(
                             "local_wait"
-                        )  # waiting for local video resources must not hold a provider slot
-                    if sink is not None:
-                        sink(
-                            BackendEvent(
-                                request.request_id,
-                                0,
-                                "preparing",
-                                datetime.now(UTC).isoformat(),
-                                stage="waiting_video_resources",
+                        )  # waiting for local video admission must not hold a provider slot
+
+                    def waiting(reason):
+                        if sink is not None:
+                            sink(
+                                BackendEvent(
+                                    request.request_id,
+                                    0,
+                                    "preparing",
+                                    datetime.now(UTC).isoformat(),
+                                    stage=f"waiting_video_{reason}",
+                                )
                             )
-                        )
-                    async with video_admission(request, self.output) as lease:
+
+                    async with video_admission(request, self.output, waiting) as lease:
                         try:
                             await settle(asyncio.to_thread(check_source, request))
                         except (OSError, ValueError) as exc:
