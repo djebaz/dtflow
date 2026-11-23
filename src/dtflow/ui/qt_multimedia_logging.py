@@ -16,13 +16,52 @@ from dtflow.logging_setup import dev_enabled, sanitize
 _QT_MULTIMEDIA_HANDLER = None
 
 
-def install_qt_multimedia_logging() -> None:
-    """Hide routine playback output and log useful warnings only in development mode.
+def _silence_native_output() -> None:
+    """Keep FFmpeg and Qt multimedia chatter off the console without any Python callback.
 
-    Qt's FFmpeg plugin normally writes directly to stderr. QT_FFMPEG_DEBUG
-    routes its messages through Qt but also enables verbose decoder output.
-    Discard those extra messages; leave unrelated Qt and fatal messages alone.
+    Qt's multimedia categories and uncategorized warnings are switched off through logging rules (evaluated
+    natively; set DTFLOW_QT_WARNINGS=1 to keep the uncategorized warnings), and the bundled
+    FFmpeg's global log level is set to quiet through its own C function, which needs no GIL. Both are best
+    effort and respect an explicit QT_LOGGING_RULES.
     """
+    rules = "qt.multimedia.*=false"
+    if not os.environ.get("DTFLOW_QT_WARNINGS"):
+        # Qt's "D3D11 smoke test: Failed to create vertex shader" is an uncategorized warning, so it can only
+        # be hidden together with the other uncategorized ones; DTFLOW_QT_WARNINGS=1 keeps them visible.
+        rules += ";default.warning=false"
+    os.environ.setdefault("QT_LOGGING_RULES", rules)
+    try:
+        import ctypes
+        from pathlib import Path
+
+        import PySide6
+
+        library = next(iter(sorted(Path(PySide6.__file__).parent.glob("avutil*.dll"))), None)
+        if library is None:
+            library = next(iter(sorted(Path(PySide6.__file__).parent.glob("Qt/lib/libavutil*"))), None)
+        if library is not None:
+            set_level = ctypes.CDLL(str(library)).av_log_set_level
+            set_level.argtypes = [ctypes.c_int]
+            set_level(-8)  # AV_LOG_QUIET
+    except (ImportError, OSError, AttributeError):
+        pass
+
+
+def install_qt_multimedia_logging() -> None:
+    """Opt-in only: set DTFLOW_QT_MULTIMEDIA_LOG=1 to route Qt multimedia/FFmpeg messages into diagnostics.
+
+    The handler is Python code, so every Qt/FFmpeg log line written by a decoder thread needs the GIL.
+    Stopping or replacing a clip makes the GUI thread wait for those threads while holding the GIL, and the
+    two block each other forever (py-spy dump of a frozen Gallery, #580: GUI thread in `QMediaPlayer.stop`
+    waiting on the playback engine; decoder threads in `av_log` -> Qt message output -> `PyGILState_Ensure`).
+    By default no handler is installed, so Qt's FFmpeg plugin writes to stderr natively without the GIL.
+
+    When enabled, Qt's FFmpeg plugin routes its messages through Qt (QT_FFMPEG_DEBUG) and they are logged
+    in development mode only; unrelated Qt and fatal messages are left alone.
+    """
+    if not os.environ.get("DTFLOW_QT_MULTIMEDIA_LOG"):
+        _silence_native_output()
+        return
     global _QT_MULTIMEDIA_HANDLER
     if _QT_MULTIMEDIA_HANDLER is not None:
         return

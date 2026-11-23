@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow import gallery_limits
+from dtflow.core.video import clip_summary
 from dtflow.services.gallery import locate_output, query_outputs
 from dtflow.ui.gallery_detail_preview import toggle_image_focus
 
@@ -26,6 +27,8 @@ DIRECTIONS = ("forward", "backward", "new")
 DIRECTION_TEXT = {"forward": "Forward →", "backward": "Backward ←", "new": "New ✦"}
 DIRECTION_NAMES = {"forward": "Forward", "backward": "Backward", "new": "New"}
 SUCCESSOR_COUNT = 8  # following identities kept with the resume anchor in case the anchor itself disappears
+
+VIDEO_MIN_DWELL_MS = 2000  # a clip stays at least this long in F6, whatever shorter interval photos use
 
 
 class GallerySlideshow(QObject):
@@ -93,6 +96,10 @@ class GallerySlideshow(QObject):
         self.idle_timer.setSingleShot(True)
         self.idle_timer.setInterval(2500)
         self.idle_timer.timeout.connect(self._hide_controls)
+        self.flash_timer = QTimer(self)  # a shortcut lights its overlay like a hover, then lets it fade again
+        self.flash_timer.setSingleShot(True)
+        self.flash_timer.setInterval(700)
+        self.flash_timer.timeout.connect(self._sync_opacity)
         self.wheel_timer = QTimer(self)
         self.wheel_timer.setSingleShot(True)
         self.wheel_timer.setInterval(180)
@@ -125,6 +132,7 @@ class GallerySlideshow(QObject):
 
     def start(self) -> None:
         gallery = self.gallery
+        gallery.video_player.release(show_play=True)  # a clip started outside F6 is laid out for Detail
         self._previous_view = gallery.mode
         self._previous_live = gallery._live_mode
         self._previous_focus = bool(gallery.page.property("imageFocus"))
@@ -176,12 +184,13 @@ class GallerySlideshow(QObject):
         self._reveal_controls()
         self._position_controls()
         self.sync_position()
-        self.timer.start(self._milliseconds())
+        self.timer.start(self.dwell_ms())
 
     @Slot()
     def stop(self) -> None:
         self.timer.stop()
         self.idle_timer.stop()
+        self.flash_timer.stop()
         if not self.active:
             return
         self.active = False
@@ -195,6 +204,8 @@ class GallerySlideshow(QObject):
         QApplication.instance().removeEventFilter(self)
         self.controls.hide()
         gallery = self.gallery
+        gallery.video_player.release(show_play=True)  # the F6 strips around a clip end with the slideshow
+        gallery.surface_painter.hide_image = False
         for widget, previous in self._mouse_tracking:
             widget.setMouseTracking(previous)
         gallery.surface_painter.finish_transition()
@@ -228,6 +239,14 @@ class GallerySlideshow(QObject):
     def _milliseconds(self) -> int:
         return round(self.interval.value() * 1000)
 
+    def dwell_ms(self) -> int:
+        """The interval for photos; clips are never advanced sooner than ``VIDEO_MIN_DWELL_MS``."""
+        interval = self._milliseconds()
+        item = self.gallery._presented_item
+        if item is not None and clip_summary(self.gallery._request(item)) is not None:
+            return max(interval, VIDEO_MIN_DWELL_MS)
+        return interval
+
     def transition_timing(self) -> tuple[int, int]:
         """Spend one third of the configured interval fading at a fixed 60 Hz target."""
         duration = max(1, round(self._milliseconds() / 3))
@@ -239,7 +258,7 @@ class GallerySlideshow(QObject):
         self.gallery._schedule_save()
         if self.active:
             self._reveal_controls()
-            self.timer.start(self._milliseconds())
+            self.timer.start(self.dwell_ms())
 
     def _position_controls(self) -> None:
         self.pager.setGeometry(0, 0, self.gallery.surface.width(), self.pager.height())
@@ -276,7 +295,7 @@ class GallerySlideshow(QObject):
             self.gallery._apply_live(1 if self.new_available() else 0)
             self._read_head()
             self._reveal_controls()
-            self.timer.start(self._milliseconds())
+            self.timer.start(self.dwell_ms())
 
     def _cycle_direction(self) -> None:
         self._set_mode(DIRECTIONS[(DIRECTIONS.index(self.mode) + 1) % len(DIRECTIONS)])
@@ -478,7 +497,7 @@ class GallerySlideshow(QObject):
             self._seek_target = number
             self.gallery.slideshow_seek(number)
             self.sync_position()
-            self.timer.start(self._milliseconds())
+            self.timer.start(self.dwell_ms())
 
     def wants_position(self, number: int) -> bool:
         return self._seek_target is None or number == min(self._seek_target, self.gallery.total)
@@ -545,6 +564,8 @@ class GallerySlideshow(QObject):
         if QApplication.activePopupWidget() is not None or self.scrubbing:
             self.idle_timer.start()
             return
+        if self.gallery.video_player.panel_shown:
+            return  # a clip keeps its top strip for the pager and controls, so they stay visible over it
         self.pager.hide()
         self.controls.hide()
 
@@ -567,6 +588,7 @@ class GallerySlideshow(QObject):
         ):
             if event.type() == QEvent.Type.KeyPress:
                 self.interval.stepBy(-1 if event.key() == Qt.Key.Key_Plus else 1)
+                self._flash_controls()
             event.accept()
             return True
         if (
@@ -579,6 +601,7 @@ class GallerySlideshow(QObject):
         ):
             if event.type() == QEvent.Type.KeyPress:
                 self._held_keys.add(event.key())
+                self._flash_controls()
                 self._preview_step(-1 if event.key() == Qt.Key.Key_Left else 1, wrap=True)
             elif event.type() == QEvent.Type.KeyRelease and not event.isAutoRepeat():
                 self._held_keys.discard(event.key())
@@ -619,6 +642,11 @@ class GallerySlideshow(QObject):
             QTimer.singleShot(0, self, self._sync_opacity)
         return False
 
+    def _flash_controls(self) -> None:
+        """Brighten the controls as if hovered when a shortcut acts on them; they dim again shortly after."""
+        self.opacity.setOpacity(1.0)
+        self.flash_timer.start()
+
     def _sync_opacity(self) -> None:
         focus = QApplication.focusWidget()
         engaged = (
@@ -636,7 +664,7 @@ class GallerySlideshow(QObject):
     def image_ready(self) -> None:
         if self.active and not self.scrubbing:
             self.sync_position()
-            self.timer.start(self._milliseconds())
+            self.timer.start(self.dwell_ms())
 
     def _advance(self) -> None:
         gallery = self.gallery
@@ -681,4 +709,4 @@ class GallerySlideshow(QObject):
             self.drop_run()
         gallery.slideshow_step(delta)
         # image_ready restarts the full dwell after decoding; a slow read/paging is only polled.
-        self.timer.start(100 if gallery._loading or gallery._image_pending else self._milliseconds())
+        self.timer.start(100 if gallery._loading or gallery._image_pending else self.dwell_ms())

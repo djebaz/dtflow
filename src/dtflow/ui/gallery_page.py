@@ -23,6 +23,7 @@ from PySide6.QtCore import (
     QIODevice,
     QSignalBlocker,
     QObject,
+    QPoint,
     QSize,
     Qt,
     QTimer,
@@ -135,6 +136,7 @@ MAX_QUERY_ITEMS = gallery_limits.MAX_READ  # GalleryQuery retains its existing p
 THUMBNAIL_SIDE = 600
 THUMBNAIL_CONCURRENCY = 6
 AUTO_REFRESH_MS = 1000  # file-metadata poll only; unchanged polls never rebuild the page
+SELECTION_SETTLE_MS = 200  # Next/Previous bursts load only the item they settle on
 PUSH_DEBOUNCE_MS = 250  # coalesce in-process change hints before the metadata check
 LIVE_RECOVERY_INTERVAL_S = 5  # full live reads during snapshot/failure episodes keep their original spacing
 SNAPSHOT_RECOVERY_GRACE_S = 5  # presentation-only stability grace before a recovered live read hides the warning
@@ -588,6 +590,7 @@ class GalleryPage(QObject):
             on_navigate=self.step,
             navigation_allowed=lambda: self._active and self.mode == "Detail" and not self.slideshow.active,
             on_autoplay_changed=self._schedule_save,
+            on_playing=self._video_started_playing,
         )
         self.video_player.play_button.clicked.connect(self._play_video)
         self.hover_card = GalleryHoverCard(self.surface)
@@ -636,6 +639,14 @@ class GalleryPage(QObject):
         self.density_anchor_timer = QTimer(self)
         self.density_anchor_timer.setSingleShot(True)
         self.density_anchor_timer.timeout.connect(self._restore_density_anchor)
+        # Next/Previous bursts load only the settled item: each step restarts this timer and replaces the
+        # pending image/detail/video work, so passed-over items start no decode, inspection or media player.
+        self._settle_timer = QTimer(self)
+        self._settle_timer.setSingleShot(True)
+        self._settle_timer.setInterval(SELECTION_SETTLE_MS)
+        self._settle_timer.timeout.connect(self._run_pending_load)
+        self._pending_load = None
+        self._defer_load = False
         self.save_timer = QTimer(self)
         self.save_timer.setSingleShot(True)
         self.save_timer.setInterval(250)
@@ -3426,9 +3437,19 @@ class GalleryPage(QObject):
         )
         self._presented_item = item
         request = self._request(item)
-        if image_changed:
-            self.video_player.show_for_video(False)  # A poster alone does not establish that its clip is available.
         clip = clip_summary(request)
+        if image_changed:
+            # A poster alone does not establish that its clip is available. A clip that will autoplay keeps the
+            # stopped video panel on screen, so the video widget does not blink between two clips.
+            will_autoplay = bool(
+                clip
+                and not item.issue
+                and self.video_player.autoplay
+                and self._active
+                and self.mode == "Detail"
+                and selected_video_entry
+            )
+            self.video_player.show_for_video(False, keep_panel=will_autoplay)
         self.detail_check.setText("Select video" if clip else "Select image")
         if clip:
             self.video_player.allow_keyboard_start()
@@ -3519,6 +3540,8 @@ class GalleryPage(QObject):
         self.external_button.setText("Open video in player" if clip else "Open in external viewer")
         available = not item.issue
         self.folder_button.setEnabled(available)
+        self._cancel_pending_load()
+        image_generation = None
         if image_changed:
             self.external_button.setEnabled(available)
             self.surface.setToolTip(item.issue or "")
@@ -3534,32 +3557,62 @@ class GalleryPage(QObject):
             self._image_generation += 1
             image_generation = self._image_generation
             self._image_pending = True
-
-            async def read_image():
-                return await asyncio.to_thread(_image, item.path, 0, self.state_dir, item=item)
-
-            self.runner.submit(
-                read_image(),
-                lambda result, error: self._image_done(image_generation, item.identity, result, error),
-            )
         self._detail_generation += 1
         detail_generation = self._detail_generation
-        self.runner.submit(
-            asyncio.to_thread(load_detail, item, state=self.state_dir)
-            if self._snapshot_at
-            else inspect_output(self.state_dir, item.identity),
-            lambda result, error: self._detail_done(detail_generation, item.identity, result, error),
-        )
-        if clip is not None and not item.issue:
+        video = clip is not None and not item.issue
+        if video:
             self.external_button.setEnabled(False)
             self.copy_button.setEnabled(False)
-            autoplay = self.video_player.autoplay and self._active and self.mode == "Detail" and selected_video_entry
+        autoplay = (
+            video and self.video_player.autoplay and self._active and self.mode == "Detail" and selected_video_entry
+        )
+        # A clip that is about to autoplay replaces its poster directly: no cover image flashes before it.
+        self.surface_painter.hide_image = bool(autoplay)
+        self.surface.update()
+
+        def load() -> None:
+            if image_generation is not None:
+
+                async def read_image():
+                    return await asyncio.to_thread(_image, item.path, 0, self.state_dir, item=item)
+
+                self.runner.submit(
+                    read_image(),
+                    lambda result, error: self._image_done(image_generation, item.identity, result, error),
+                )
             self.runner.submit(
-                asyncio.to_thread(self._video_companion_path, item),
-                lambda result, error: self._video_companion_done(
-                    detail_generation, item.identity, result, error, autoplay=autoplay
-                ),
+                asyncio.to_thread(load_detail, item, state=self.state_dir)
+                if self._snapshot_at
+                else inspect_output(self.state_dir, item.identity),
+                lambda result, error: self._detail_done(detail_generation, item.identity, result, error),
             )
+            if video:
+                self.runner.submit(
+                    asyncio.to_thread(self._video_companion_path, item),
+                    lambda result, error: self._video_companion_done(
+                        detail_generation, item.identity, result, error, autoplay=autoplay
+                    ),
+                )
+
+        if self._defer_load and not self.slideshow.active:
+            self._pending_load = load
+            self._settle_timer.start()
+        else:
+            load()
+
+    def _cancel_pending_load(self) -> None:
+        self._settle_timer.stop()
+        self._pending_load = None
+
+    def _video_started_playing(self) -> None:
+        """F6 counts a clip's dwell from when it actually plays, not from when its poster was decoded."""
+        if self.slideshow.active:
+            self.slideshow.timer.start(self.slideshow.dwell_ms())
+
+    def _run_pending_load(self) -> None:
+        load, self._pending_load = self._pending_load, None
+        if load is not None and not self.runner.closed:
+            load()
 
     def _video_companion_path(self, item: GalleryItem) -> str:
         """Resolve the poster's companion on a worker, never using its path as mutation authority."""
@@ -3844,7 +3897,11 @@ class GalleryPage(QObject):
             index = 0
         target = index + delta
         if 0 <= target < len(self.items):
-            self.select(self.items[target].identity, open_detail=False)
+            self._defer_load = True  # a burst of steps loads only the settled item
+            try:
+                self.select(self.items[target].identity, open_detail=False)
+            finally:
+                self._defer_load = False
             return
         if delta > 0 and self.offset + len(self.items) < self.total:
             self._pending_page_selection = "first"
@@ -4555,9 +4612,37 @@ class GalleryPage(QObject):
             self._edit_callback(result)
 
     def _video_playback_changed(self, active: bool) -> None:
-        """Keep existing image overlays from covering the video's bottom controls."""
-        for name in ("galleryPositionOverlay", "galleryDimensionsOverlay", "galleryImageToolbar"):
-            self._widget(name).setVisible(not active)
+        """Keep the overlays and the F6 controls clear of a playing video.
+
+        The video widget is a native child window that no sibling can be stacked over, so the panel is
+        shortened instead: a bottom strip for the position/dimensions overlays and, when playback starts during
+        F6, a top strip for the slideshow pager and controls. The poster is not painted behind the strips.
+        Only the image toolbar, which has nothing to do for a clip, stays hidden.
+        """
+        overlays = [self._widget(name) for name in ("galleryPositionOverlay", "galleryDimensionsOverlay")]
+        top = bottom = 0
+        if self.slideshow.active:
+            # The strip above a clip is reserved for them, so show them with it; they hide again when it ends.
+            self.slideshow._reveal_controls()
+        if active:
+            origin = self.surface.mapToGlobal(QPoint(0, 0)).y()
+            tops = [
+                label.mapToGlobal(QPoint(0, 0)).y() - origin
+                for label in overlays
+                if label.isVisibleTo(self.surface.window())
+            ]
+            if tops:
+                bottom = max(0, self.surface.height() - min(tops) + 2)
+            if self.slideshow.active:
+                show = self.slideshow
+                top = max(show.pager.geometry().bottom(), show.controls.geometry().bottom()) + 4
+        else:
+            for label in overlays:
+                label.setVisible(True)
+        self._widget("galleryImageToolbar").setVisible(not active)
+        self.surface_painter.hide_image = active
+        self.surface.update()
+        self.video_player.set_insets(top, bottom)
 
     def _play_video(self) -> None:
         """Resolve the MP4 on a worker, then play it in Images without blocking Qt."""
@@ -4622,6 +4707,8 @@ class GalleryPage(QObject):
         return next((item for item in self.items if item.identity == self.selected_id), None)
 
     def _clear_detail(self) -> None:
+        self._cancel_pending_load()
+        self.surface_painter.hide_image = False
         self.video_player.show_for_video(False)
         self.surface_painter.finish_transition()
         self._image_pending = False
