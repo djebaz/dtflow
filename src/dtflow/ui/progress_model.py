@@ -57,7 +57,7 @@ PHASE_WORDS = {
 # counter. Values are rough shares of a typical run, not measurements.
 VIDEO_WINDOWS = {
     "preparing": (0.00, 0.03, 6.0),
-    "waiting": (0.03, 0.03, 60.0),  # a local wait (resources, slot): no progress is implied
+    "waiting": (0.0, 0.0, 60.0),  # a local wait (resources, slot): no progress is implied
     "cloud": (0.03, 0.50, 60.0),
     "sampling": (0.50, 0.80, 120.0),
     "second_pass": (0.70, 0.80, 60.0),
@@ -69,7 +69,7 @@ VIDEO_WINDOWS = {
 }
 IMAGE_WINDOWS = {
     "preparing": (0.00, 0.05, 6.0),
-    "waiting": (0.05, 0.05, 60.0),
+    "waiting": (0.0, 0.0, 60.0),
     "cloud": (0.05, 0.10, 60.0),
     "sampling": (0.10, 0.90, 120.0),
     "second_pass": (0.10, 0.90, 60.0),

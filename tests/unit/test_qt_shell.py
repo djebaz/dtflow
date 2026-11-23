@@ -273,6 +273,7 @@ def test_activity_bar_progress_and_result_lifecycle(window, qtbot, monkeypatch):
     monkeypatch.setattr(strip, "_pointer_over", lambda widget: False)
     window.form.clearFocus()
     monkeypatch.setattr(QApplication, "focusWidget", lambda: None)
+    strip._notice_last = None  # the first tick after a pause counts one nominal interval
     strip._tick_notices()
     row = strip.rows["fixture"]
     fade = row._lifetime_fade
