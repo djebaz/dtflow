@@ -7,6 +7,7 @@ Images, and closing the player stop playback and release the file handle.
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, QSize, Qt, QUrl
 from PySide6.QtGui import QIcon, QKeySequence, QShortcut
@@ -63,6 +64,7 @@ class VideoPlayer(QObject):
         self._duration = 0
         self._muted = False
         self._video = None
+        self._parts: SimpleNamespace | None = None  # reusable native widgets, hidden while no clip plays
         # K and S both toggle Play/Pause without taking focus from other widgets.
         # Space and Enter retain Qt's native focused-control behavior.
         self._play_shortcut = QShortcut(QKeySequence("K"), surface)
@@ -101,11 +103,42 @@ class VideoPlayer(QObject):
         return self._panel is not None
 
     def start(self, path: str) -> None:
-        """Start a local MP4 already resolved on the gallery worker."""
+        """Start a local MP4 already resolved on the gallery worker.
+
+        The panel, QVideoWidget and QMediaPlayer are created once and reused for later clips: each native
+        video-widget start-up costs a visible GUI stall on Windows, so rapid navigation must not repeat it.
+        """
+        self.release()
+        parts = self._parts or self._build()
+        panel, player, audio, video = parts.panel, parts.player, parts.audio, parts.video
+        blocked = parts.autoplay.blockSignals(True)
+        parts.autoplay.setChecked(self.autoplay)
+        parts.autoplay.blockSignals(blocked)
+        parts.slider.setValue(0)
+        parts.slider.setEnabled(False)
+        parts.time.setText(parts.idle_time)
+        audio.setMuted(self._muted)
+        parts.mute.setIcon(QIcon(str(ICONS / ("video-muted.svg" if self._muted else "video-volume.svg"))))
+        description = "Unmute video (M)" if self._muted else "Mute video (M)"
+        parts.mute.setToolTip(description)
+        parts.mute.setAccessibleName(description)
+        self._panel, self._player, self._audio, self._duration = panel, player, audio, 0
+        self._video = video
+        self.play_button.hide()
+        self._set_shortcut_enabled(True)
+        parts.refresh()
+        self._place()
+        panel.show()
+        panel.raise_()
+        if self._on_playback_changed is not None:
+            self._on_playback_changed(True)
+        player.setSource(QUrl.fromLocalFile(path))
+        player.play()
+
+    def _build(self) -> SimpleNamespace:
         from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
         from PySide6.QtMultimediaWidgets import QVideoWidget
 
-        self.release()
         panel = QWidget(self.surface)
         panel.setObjectName("galleryVideoPanel")
         column = QVBoxLayout(panel)
@@ -135,7 +168,6 @@ class VideoPlayer(QObject):
         restart = bar.findChild(QPushButton, "videoPlaybackRestart")
         autoplay = bar.findChild(QPushButton, "videoPlaybackAutoplay")
         close = bar.findChild(QPushButton, "videoPlaybackClose")
-        autoplay.setChecked(self.autoplay)
         slider.setRange(0, SLIDER_SCALE)
         slider.setEnabled(False)
         slider.setToolTip("Seek video. W/X: 1 second, Numpad 4/6: 10 seconds.")
@@ -153,11 +185,6 @@ class VideoPlayer(QObject):
         player, audio = QMediaPlayer(panel), QAudioOutput(panel)
         player.setAudioOutput(audio)
         player.setVideoOutput(video)
-        audio.setMuted(self._muted)
-        self._panel, self._player, self._audio, self._duration = panel, player, audio, 0
-        self._video = video
-        self.play_button.hide()
-        self._set_shortcut_enabled(True)
 
         def update_time(position: int) -> None:
             if not slider.isSliderDown() and self._duration:
@@ -211,17 +238,19 @@ class VideoPlayer(QObject):
         player.playbackStateChanged.connect(state_changed)
         player.mediaStatusChanged.connect(media_status)
         player.errorOccurred.connect(failure)
-        state_changed()
-        if self._muted:
-            mute.setToolTip("Unmute video (M)")
-            mute.setAccessibleName("Unmute video")
-        self._place()
-        panel.show()
-        panel.raise_()
-        if self._on_playback_changed is not None:
-            self._on_playback_changed(True)
-        player.setSource(QUrl.fromLocalFile(path))
-        player.play()
+        self._parts = SimpleNamespace(
+            panel=panel,
+            player=player,
+            audio=audio,
+            video=video,
+            slider=slider,
+            time=time,
+            mute=mute,
+            autoplay=autoplay,
+            idle_time=time.text(),
+            refresh=state_changed,
+        )
+        return self._parts
 
     def play(self) -> None:
         """Start, resume or replay; never pause an already playing video."""
@@ -274,21 +303,18 @@ class VideoPlayer(QObject):
             mute.setAccessibleName(description)
 
     def release(self, *, show_play: bool = False) -> None:
-        """Stop, detach video/audio, clear the source and free the media handle."""
+        """Stop, clear the source and free the media handle; the native widgets stay for the next clip."""
         panel, player = self._panel, self._player
         self._panel = self._player = self._audio = self._video = None
         self._set_shortcut_enabled(False)
         if player is not None:
             try:
                 player.stop()
-                player.setVideoOutput(None)
-                player.setAudioOutput(None)
                 player.setSource(QUrl())
             except RuntimeError:
-                pass
+                self._parts = None  # the native objects are gone; build fresh ones for the next clip
         if panel is not None:
             panel.hide()
-            panel.deleteLater()
             if self._on_playback_changed is not None:
                 self._on_playback_changed(False)
         if show_play and panel is not None:

@@ -58,7 +58,7 @@ Changes through 6.4.1 are consolidated in [DTFlow 6.4.1](v6.4.1.md). The publish
 - **Edit as new queue…** no longer silently carries unwanted fixed LoRAs from older plans; reconstructed drafts and manually removed fixed LoRAs discard obsolete DT+ receipt bindings without changing the source queue (PR #510).
 - Startup always opens on Connection; selecting Generate later opens its remembered sub-mode, including Scripts, without a startup redirect (#511).
 - Removing a registry-only LoRA updates the affected row without rescanning all retained LoRAs or rebuilding the entire table (#511).
-- Images Detail Next/Previous (button and Left/Right keys) update the position immediately but load the image, saved details and automatic video start only for the item a burst settles on (200 ms), so passing through videos with Autoplay on no longer starts a media player for every skipped item (#580).
+- Images Detail Next/Previous (button and Left/Right keys) update the position immediately but load the image, saved details and automatic video start only for the item a burst settles on (200 ms), so passing through videos with Autoplay on no longer starts a media player for every skipped item. The inline video panel, video widget and media player are now created once and reused for later clips instead of being rebuilt for each one, avoiding a repeated start-up stall on Windows (#580).
 
 ## Upgrade and compatibility
 
