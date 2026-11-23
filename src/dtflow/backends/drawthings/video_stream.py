@@ -69,14 +69,16 @@ def _half_to_byte_lut():
         return np.clip(np.round((values + 1) * 127.5), 0, 255).astype(np.uint8)
 
 
-def _frame_rgb_lut(tensor: bytes, width: int, height: int, channels: int) -> bytes:
-    """Experimental video-only decoder: preserve FPZIP handling, replace per-pixel float arithmetic with lookup."""
+def _frame_rgb_candidate(tensor: bytes, width: int, height: int, channels: int, mode: str) -> bytes:
+    """Experimental video decoder: compare half-float lookup with direct float32 mapping."""
     import fpzip
     import numpy as np
 
     count = width * height * channels
     if struct.unpack_from("<I", tensor)[0] == 1012247:  # drawthings-py 0.4.0 FPZIP magic
-        values = np.asarray(fpzip.decompress(tensor[68:], order="C"), dtype=np.float16).reshape(-1)[:count]
+        # The fp32 candidate preserves FPZIP's float32 output instead of converting it to float16.
+        dtype = np.float16 if mode == "lut" else np.float32
+        values = np.asarray(fpzip.decompress(tensor[68:], order="C"), dtype=dtype).reshape(-1)[:count]
     else:
         expected = 68 + count * 2
         if len(tensor) < expected:
@@ -87,8 +89,13 @@ def _frame_rgb_lut(tensor: bytes, width: int, height: int, channels: int) -> byt
     if np.isnan(values).any():
         raise ValueError("Tensor payload contains NaN values")
 
-    pixels = _half_to_byte_lut()[values.view(np.uint16)].reshape(height, width, channels)
-    return np.ascontiguousarray(pixels[:, :, :3]).tobytes()
+    if mode == "lut":
+        pixels = _half_to_byte_lut()[values.view(np.uint16)]
+    else:
+        # The uncompressed wire format is float16; float32 is only zero-copy after FPZIP.
+        floats = values.astype(np.float32, copy=False)
+        pixels = np.clip(np.round((floats + 1) * 127.5), 0, 255).astype(np.uint8)
+    return np.ascontiguousarray(pixels.reshape(height, width, channels)[:, :, :3]).tobytes()
 
 
 def _frame_rgb(tensor: bytes) -> tuple[int, int, bytes]:
@@ -98,8 +105,8 @@ def _frame_rgb(tensor: bytes) -> tuple[int, int, bytes]:
     height, width, channels = struct.unpack_from("<3I", tensor, 24)
     if not width or not height or width * height > 2048 * 2048 or channels not in (3, 4):
         raise ValueError("Video frame exceeds the bounded pixel/channel policy.")
-    if video_encode.video_decoder == "lut":
-        return width, height, _frame_rgb_lut(tensor, width, height, channels)
+    if video_encode.video_decoder in ("lut", "fp32"):
+        return width, height, _frame_rgb_candidate(tensor, width, height, channels, video_encode.video_decoder)
 
     import numpy as np
     from drawthings_py.image.image_buffer import ImageBuffer
