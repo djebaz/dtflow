@@ -56,6 +56,8 @@ from dtflow.services.video_resources import (
 
 log = logging.getLogger(__name__)
 GENERATE_METHOD = "/ImageGenerationService/GenerateImage"
+
+
 @lru_cache(maxsize=1)
 def _half_to_byte_lut():
     """Map every float16 bit pattern using the exact drawthings-py 0.4.0 pixel formula."""
