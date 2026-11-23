@@ -328,6 +328,8 @@ class QueuePage:
         self._selected: str | None = None
         self._select_after: str | None = None
         self._dispatching: str | None = None
+        self._seen_order: dict[str, int] = {}  # first-seen rank of each queue in the global bar
+        self._seen_next = 0
         self._read_idle = False  # the latest read started while this window dispatched nothing
         self._foreign_known = False  # the views come from such a read, so `owner_active` means another process
         self._dispatch_started = False
@@ -1118,6 +1120,23 @@ class QueuePage:
 
         self._runner.submit(work(), done)
 
+    def output_count(self) -> int | None:
+        """What the running script or workflow has produced so far (steps committed, images made), or None.
+
+        A hint that Images may have changed: the parent item's single settled count says nothing about its outputs."""
+        view = None if self._generate_presents else self._run_view()
+        if view is None or view.get("kind") not in RUN_KINDS:
+            return None
+        shown = self._detail_for(view)
+        if shown is None and self._run_detail is not None and self._run_detail["queue_id"] == view["queue_id"]:
+            shown = self._run_detail
+        items = (shown or {}).get("items", ())
+        if view["kind"] == "script":
+            script = next((item.get("script") for item in items if item.get("script")), None)
+            return sum(1 for child in (script or {}).get("children") or [] if child["state"] == "succeeded")
+        bar = workflow_bar(shown) if shown is not None else None
+        return bar[0] if bar else None
+
     @property
     def primary_id(self) -> str | None:
         """The dispatch Stop reaches: its identity changes when auto-play hands the run to the next queue."""
@@ -1146,6 +1165,14 @@ class QueuePage:
                     entries.append((view, True))
         if not entries:
             return None
+        # Segments keep the order in which this window first saw each queue (a joining queue never shifts the others).
+        order = {key: rank for key, rank in self._seen_order.items() if any(key == v["queue_id"] for v, _ in entries)}
+        for view, _ in entries:
+            if view["queue_id"] not in order:
+                order[view["queue_id"]] = self._seen_next
+                self._seen_next += 1
+        self._seen_order = order
+        entries.sort(key=lambda entry: order[entry[0]["queue_id"]])
         snapshot = self._progress.snapshot(
             [totals_from_view(view, foreign=foreign, parent=view.get("kind") in RUN_KINDS) for view, foreign in entries]
         )
@@ -1153,8 +1180,12 @@ class QueuePage:
         elapsed = eta = ""
         if primary is not None:
             remaining = self._countdown.remaining(primary, monotonic())
-            elapsed = elapsed_text(primary).removeprefix("Elapsed ")
             eta = eta_text(primary, remaining=remaining).split(" (")[0]
+        # One clock for the whole workload the fill describes: since the earliest start of any queue in it.
+        started = [view for view, _ in entries if view.get("started_at_utc")]
+        clock_view = min(started, key=lambda view: view["started_at_utc"]) if started else primary
+        if clock_view is not None:
+            elapsed = elapsed_text(clock_view).removeprefix("Elapsed ")
         if len(entries) > 1:
             names = [view["backend"]["name"] for view, _ in entries if view["status"] == "running"]
             seconds = [estimate_remaining(view) for view, _ in entries if view["status"] == "running"]

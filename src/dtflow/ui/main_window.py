@@ -1451,6 +1451,7 @@ class MainWindow:
             self.activity.generating,
             self.activity.dispatching,
             queue_run[0].settled if queue_run is not None else None,
+            self.queue.output_count(),
         )
         if marker != self._last_run_marker:
             self._last_run_marker = marker

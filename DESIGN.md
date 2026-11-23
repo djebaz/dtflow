@@ -240,7 +240,7 @@ The prompt starts at a compact 52 px (approximately two lines) and expands to 18
 
 Prompt LoRA training hints do not appear on text-input hover. A compact, **icon-only information button** next to each relevant prompt input is checkable: first click opens a full-height, scrollable hint panel, the checked state keeps it visible, and a second click closes it. Generate and the independent Queues composer overlay only the right inspector's scroll viewport, **below and never covering the Images navigation button**. Workflows keeps prompt editing in the right node inspector and overlays the **center canvas**, never the node parameter fields, for prompts and negative prompts. Changing the workspace closes any open hint panel; the content comes from local LoRA metadata, never from a provider lookup or prompt mutation.
 
-For a new tab, establish its primary work object first, then give its details scrolling rails or collapsible sections. Reuse shell navigation and the shared QSS; do not copy Generate's image canvas into a page where the primary object is a queue table or connection state. Check an 800×680 narrow window and a normal desktop window with representative long data before fixing widths.
+For a new tab, establish its primary work object first, then give its details scrolling rails or collapsible sections. Reuse shell navigation and the shared QSS; do not copy Generate's image canvas into a page where the primary object is a queue table or connection state. Check a 1000×680 minimum-size window and a normal desktop window with representative long data before fixing widths.
 
 ## Elevation & Depth
 

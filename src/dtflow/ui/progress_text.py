@@ -39,6 +39,11 @@ def _groups(snapshot: ProgressSnapshot, short: bool) -> tuple[list[str], list[st
     for code in ("W", "C"):
         if counts.get(code):
             waiting.append(f"{code}{counts[code]}" if short else f"{counts[code]} {_LONG[code]}")
+    if not short:
+        outcomes = dict(snapshot.outcomes)
+        for name in ("cancelled", "unknown"):
+            if outcomes.get(name):
+                waiting.append(f"{outcomes[name]} {name}")
     paused = sum(1 for queue in snapshot.queues if queue.totals.paused)
     if paused:
         waiting.append(f"P{paused}" if short else f"{paused} paused")
@@ -57,7 +62,8 @@ def _groups(snapshot: ProgressSnapshot, short: bool) -> tuple[list[str], list[st
         done, total, reporters = sums
         head = f"{code}{count}" if short else f"{count} {word}"
         if reporters:
-            xy.append(f"{head} {done}/{total}" if short else f"{head} ({done}/{total} {unit})")
+            partial = "" if reporters >= count else f", {reporters} reporting"
+            xy.append(f"{head} {done}/{total}" if short else f"{head} ({done}/{total} {unit}{partial})")
         else:
             xy.append(head)
     return core, waiting + ending, xy

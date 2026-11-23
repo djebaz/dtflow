@@ -527,11 +527,6 @@
   </layout>
  </widget>
  <customwidgets>
-  <customwidget>
-   <class>RunControl</class>
-   <extends>QAbstractButton</extends>
-   <header>dtflow.ui.run_control</header>
-  </customwidget>
  <customwidget>
    <class>CurrentPageStack</class>
    <extends>QStackedWidget</extends>
