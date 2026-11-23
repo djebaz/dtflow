@@ -18,6 +18,8 @@ from pathlib import Path
 from dtflow.core.models import ValidationError
 from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry
+from dtflow.persistence.asset_leases import AssetWaitCancelled, capacity, resource_lease
+from dtflow.core.tasks import settle
 from dtflow.services.lora_convert import CONVERTER_VERSION, ConversionProgress, ConversionRequest, convert_lora
 from dtflow.services.lora_convert.errors import ConversionCancelled, ConversionError
 from dtflow.services.lora_convert.detect import inspect_source
@@ -294,14 +296,29 @@ async def convert_for_prepare(
     if metadata is not None:
         if metadata.identifier != managed_name:
             raise ConversionError("Prepare metadata disagrees with the requested conversion name.")
-    return await asyncio.to_thread(
-        _convert_sync,
-        state,
-        source,
-        family,
-        managed_name,
-        progress,
-        cancel,
-        allow_experimental,
-        metadata,
-    )
+    cancel = cancel if cancel is not None else threading.Event()
+    waiting = (lambda: progress(ConversionProgress("waiting", 0, 0))) if progress else None
+    try:
+        async with resource_lease(state, "conversion:" + str(Path(source).resolve()), waiting=waiting, cancel=cancel):
+            async with capacity("conversion", waiting=waiting, cancel=cancel):
+                worker = asyncio.create_task(
+                    asyncio.to_thread(
+                        _convert_sync,
+                        state,
+                        source,
+                        family,
+                        managed_name,
+                        progress,
+                        cancel,
+                        allow_experimental,
+                        metadata,
+                    )
+                )
+                try:
+                    return await asyncio.shield(worker)
+                except asyncio.CancelledError:
+                    cancel.set()
+                    await settle(worker)
+                    raise
+    except AssetWaitCancelled as exc:
+        raise ConversionCancelled("Conversion stopped while waiting; the source is kept.") from exc

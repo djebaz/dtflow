@@ -550,6 +550,13 @@ class DownloadsPage(QObject):
                     # A key/backend switch happened while Prepare ran. Do not show an old key's receipt.
                     item.auto_prepare_phase = ""
                     item.auto_prepare_status = ""
+                elif message in ("Queued", "Waiting", "Preparing"):
+                    item.auto_prepare_phase = "preparing"
+                    item.auto_prepare_status = (
+                        message + " for DT+ Prepare" if message != "Preparing" else "Preparing on DT+…"
+                    )
+                    self._render(force=True)
+                    return
                 else:
                     item.auto_prepare_phase = "prepared" if message == "Prepared" else ""
                     item.auto_prepare_status = "Prepared on DT+" if message == "Prepared" else message
@@ -560,7 +567,7 @@ class DownloadsPage(QObject):
                 item.auto_prepare_phase = ""
                 item.auto_prepare_status = f"Auto-prepare not started: {problem}"
             else:
-                item.auto_prepare_status = "Preparing on DT+…"
+                item.auto_prepare_status = "Queued for DT+ Prepare"
             self._render(force=True)
 
         self._runner.submit(work(), resolved)
@@ -742,7 +749,13 @@ class DownloadsPage(QObject):
                 name.setToolTip(item.name)
                 table.setItem(row, 0, name)
                 label = (
-                    "Preparing"
+                    (
+                        "Waiting"
+                        if item.auto_prepare_status.startswith("Waiting")
+                        else "Queued"
+                        if item.auto_prepare_status.startswith("Queued")
+                        else "Preparing"
+                    )
                     if item.auto_prepare_phase == "preparing"
                     else "Prepared"
                     if item.auto_prepare_phase == "prepared"

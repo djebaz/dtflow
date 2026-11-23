@@ -154,6 +154,10 @@ class PrepareProgress:
             file.name = event.name  # display only: the row identity stays the selected source path
         if event.output_size > 0:
             file.size = event.output_size
+        if stage == "waiting":
+            self._enter(file, "waiting")
+            file.convert_label = event.label or "Waiting for capacity"
+            return
         if stage == UPLOADING:
             if file.stage in ("pending", CHECKING, CONVERTING):
                 if file.stage == CONVERTING:
@@ -282,6 +286,8 @@ class PrepareProgress:
         return self._shown
 
     def _stalled(self, now: float) -> bool:
+        active = [i for i, file in enumerate(self._files) if file.stage not in ("pending", "settled")]
+        self._current = active[0] if active else self._current
         current = self._files[self._current] if self._current is not None else None
         if current is None or current.stage != UPLOADING:
             return False
@@ -340,6 +346,9 @@ class PrepareProgress:
                 else:
                     stage = f"Uploading {position} · {percent}%"
                     wide = f"Uploading {current.name} · {amount}{rate}"
+            elif current.stage == "waiting":
+                stage = current.convert_label or "Waiting for capacity"
+                wide = f"{stage} · {current.name}"
             elif current.stage == CONFIRMING:
                 stage = "Confirming on DT+"
                 wide = f"Confirming {current.name} on DT+"

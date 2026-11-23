@@ -17,6 +17,7 @@ from pathlib import Path
 
 from dtflow.core.models import ValidationError
 from dtflow.persistence.assets import AssetRegistry
+from dtflow.persistence.asset_leases import AssetsBusyError
 from dtflow.services import civitai
 from dtflow.services.lora_convert.errors import ConversionCancelled
 from dtflow.services.lora_convert.registry import FamilySpec
@@ -311,6 +312,7 @@ async def run_item(
 
     def on_convert(progress) -> None:
         item.done, item.total = progress.done, progress.total or None
+        item.detail = "Waiting for conversion capacity" if progress.stage == "waiting" else item.family
 
     try:
         try:
@@ -333,7 +335,7 @@ async def run_item(
         if item.source_sha:
             item.detail = "Stopped. The downloaded file is kept; Retry converts it."
         return
-    except ValidationError as exc:
+    except (ValidationError, AssetsBusyError) as exc:
         item.state, item.detail = FAILED, str(exc) or "The download failed."
         return
     except Exception as exc:  # a bug must show as a failed row, not vanish; details go to the log

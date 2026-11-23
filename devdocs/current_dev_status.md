@@ -1,5 +1,9 @@
 # Current development status
 
+## In review: independent LoRA conversion and Prepare (#548, PR #585; 2026-11-23)
+
+Two conversion slots and three Prepare workers replace workflow-wide serialization. Short registry transactions coexist with live upload ownership; same-content/name leases protect retained bytes and receipts. Temporary contention visibly waits and resumes without new upload consent. Local offline evidence and the two retained legacy lock-exclusion assertions are recorded in the [implementation/evidence plan](plans/2026-11-23-lora-concurrency.md); packaged Windows and live DT+ checks remain unverified.
+
 ## Release candidate: 6.5.0 (2026-11-23)
 
 Merged scope through PR #583 is consolidated in the [6.5.0 notes](releases/v6.5.0.md): pose guidance/templates, video generation and playback, shared provider admission, Generate result grids, aggregate progress and responsiveness fixes. The owner requested the manual GitHub Actions build/draft path. [6.4.1](https://github.com/djebaz/dtflow/releases/tag/v6.4.1) remains the published baseline; the final 6.5.0 executable still needs Windows smoke acceptance and FFmpeg corresponding-source review before publication. See the [release audit](plans/2026-11-23-release-6.5.0.md). Earlier in-review headings below are historical feature evidence, not current PR status.
@@ -93,3 +97,4 @@ PR #533 supports five explicit Windows FFmpeg packaging choices: Gyan 8.1.2 Esse
 - Execution schema remains 9; LoRA asset registry remains 6. Back up complete state and outputs; unsupported registries are refused rather than reset. Queue template database schema remains 1, with text-only recipe v1 and pose recipe v2. Restore a pre-upgrade backup for downgrade.
 - No simultaneous Windows/WSL SQLite writers, silent provider/account switch, implicit upload consent or uncertain-work replay. Manual Retry can submit a new billable request; existing bounded automatic retry semantics remain unchanged.
 - Older-CPU source observations do not establish compatibility of a new packaged executable. Follow [releasing](guides/releasing.md) and [building](guides/building.md) for artifact acceptance.
+

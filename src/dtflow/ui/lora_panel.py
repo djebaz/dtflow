@@ -28,6 +28,7 @@ from dtflow.core.models import (
 )
 from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.logging_setup import development_mode
+from dtflow.persistence.asset_leases import AssetsBusyError
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version, single_family_version
 from dtflow.core.models import KeyHoldings
 from dtflow.services.dt_storage import reported_free_space, storage_refusal, storage_size
@@ -146,6 +147,9 @@ class LoraAssetPanel:
         self._prepare_editor_context = None
         self._hash_paused: tuple | None = None
         self._prepare_index = 0
+        self._prepare_cursor = 0
+        self._prepare_active: set[int] = set()
+        self._prepare_relays: dict[int, LatestRelay] = {}
         self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
         self._inspecting = False
         self._prepare_final: dict[str, str] = {}  # last outcome per distinct file in this run
@@ -830,25 +834,25 @@ class LoraAssetPanel:
             return "Prepare needs DT+ Cloud."
         if self._runner.closed:
             return "DTFlow is closing."
-        if self._q8p_running:
-            return "Local q8p conversion is running; prepare this download when it ends."
-        if self._prepare_editor is not None and self._prepare_editor.active():
-            return "Manual Prepare is open; prepare this download manually."
-        if self.preparing and not self._auto_prepare_run:
-            return "Manual Prepare is busy; prepare this download manually."
         source = str(Path(path))
         if source in self._auto_prepare_callbacks:
             return "This file is already preparing."
-        if self._is_busy() and not self.preparing:
-            return "Prepare is busy with other work; use Prepare manually."
-        if not self.preparing:
-            self._prepare_editor_context = (self._backend(), self._ownership_revision, self._saved())
-        context = self._prepare_editor_context
+        if len(self._prepare_files) - self._prepare_index >= 100:
+            return "Prepare queue is full (100 files); use Prepare after it drains."
+        context = (
+            (self._prepare_backend, self._prepare_revision, self._prepare_saved)
+            if self.preparing
+            else (self._backend(), self._ownership_revision, self._saved())
+        )
         if not self._owns_prepare_context(context):
             return "DT+ account changed; prepare this download manually."
+        if self.preparing and self._prepare_stop:
+            return "Prepare is stopping; use Prepare manually."
         self._auto_prepare_callbacks[source] = on_result
-        self._authorize_prepare([(Path(source), metadata)])
-        if source in self._prepare_files:
+        on_result("Queued")
+        was_preparing = self.preparing
+        self._authorize_prepare([(Path(source), metadata)], context=context)
+        if source in self._prepare_files and not was_preparing:
             self._auto_prepare_run = True
         if source not in self._prepare_files:
             self._auto_prepare_callbacks.pop(source, None)
@@ -1127,19 +1131,18 @@ class LoraAssetPanel:
 
         self._runner.submit(storage_listing(self._state, probe_content(), saved=context[2]), listed)
 
-    def _authorize_prepare(self, chosen: list[tuple[Path, LoraPrepareMetadata]]) -> None:
+    def _authorize_prepare(self, chosen: list[tuple[Path, LoraPrepareMetadata]], *, context=None) -> None:
         """Admit only explicitly approved, metadata-complete rows under the existing owner."""
         if not chosen or self._runner.closed:
             return
         backend = self._backend()
-        editor_context = self._prepare_editor_context
+        editor_context = context or self._prepare_editor_context
         if (
             backend[0] != "cloud"
             or editor_context is None
             or backend != editor_context[0]
             or self._ownership_revision != editor_context[1]
             or self._saved() is not editor_context[2]
-            or (self._is_busy() and not self.preparing)
         ):
             return
         if self.preparing and (
@@ -1151,9 +1154,23 @@ class LoraAssetPanel:
         if self._prepare_editor is not None:
             chosen = self._prepare_editor.prioritize_held(chosen)
         # A file that already settled may be sent again by an explicit Re-Prepare; one still queued may not.
-        queued = set(self._prepare_files[self._prepare_index :]) if self.preparing else set()
+        queued = (
+            ({self._prepare_files[i] for i in self._prepare_active} | set(self._prepare_files[self._prepare_cursor :]))
+            if self.preparing
+            else set()
+        )
         selected = {name: metadata for path, metadata in chosen if (name := str(path)) not in queued}
         if not selected:
+            return
+        if len(queued) + len(selected) > 100:
+            self._show(
+                self.page.assetStatusLabel,
+                Presentation(
+                    "warning",
+                    "Prepare queue full",
+                    "Admit at most 100 waiting or active files; try the rest after it drains.",
+                ),
+            )
             return
         editor = self._prepare_editor
         if editor is not None:
@@ -1168,13 +1185,15 @@ class LoraAssetPanel:
             self._prepare_files = tuple(selected)
             self._prepare_metadata = dict(selected)
             self._prepare_index = 0
+            self._prepare_cursor = 0
+            self._prepare_active.clear()
             self._prepare_counts = {"confirmed": 0, "failed": 0, "unresolved": 0}
             self._prepare_final = {}
             self._prepare_issues = []
             self._prepare_backend, self._prepare_revision = backend, self._ownership_revision
             self._prepare_saved = self._saved()
             self._registry_generation += 1
-            self._set_busy(True)
+            self.set_enabled(not self._is_busy())
             self._prepare_stop = False
             self._prepare_convert_cancel.clear()
             self._inspecting = False
@@ -1186,14 +1205,14 @@ class LoraAssetPanel:
                 "asset",
                 "Preparing cloud assets",
                 stop=self._request_prepare_stop,
-                stop_text="Stop after current file",
+                stop_text="Stop waiting files",
                 detail="Only approved ready rows were admitted.",
             )
             self._prepare_timer.start()
-            self._prepare_next()
         if self._prepare_editor is not None:
             self._prepare_editor.admitted([Path(p) for p in selected])
             self._prepare_editor.form.prepareStorageButton.setEnabled(False)
+        self._prepare_next()
 
     def _track_prepare_files(self, selected) -> None:
         """Register admitted files with the progress model, in the same order as ``_prepare_files``."""
@@ -1203,17 +1222,28 @@ class LoraAssetPanel:
             except OSError:
                 size = 0
             self._prepare_progress.add_file(name, size, convert=Path(name).suffix.casefold() == ".safetensors")
+            if self._prepare_editor is not None:
+                self._prepare_editor.progress(Path(name), "Queued")
 
     def _request_prepare_stop(self) -> None:
-        """Stop after the current file: it settles normally (no half-finished upload); later files never start."""
+        """Stop waiting/converting work; active uploads settle and no further files start."""
         self._prepare_stop = True
+        self._prepare_convert_cancel.set()
+        self._prepare_next()
 
     def _on_prepare_event(self, index: int, event: PrepareEvent) -> None:
         progress = self._prepare_progress
         if progress is None:
             return
         progress.event(index, event)
+        if index < len(self._prepare_files):
+            callback = self._auto_prepare_callbacks.get(self._prepare_files[index])
+            if callback is not None:
+                callback("Waiting" if event.stage == "waiting" else "Preparing")
         editor = self._prepare_editor
+        if editor is not None and index < len(self._prepare_files):
+            label = event.label or event.stage.replace("_", " ").capitalize()
+            editor.progress(Path(self._prepare_files[index]), label)
         if editor is not None and event.name and index < len(self._prepare_files):
             editor.prepared_name(Path(self._prepare_files[index]), event.name)
         if (
@@ -1255,19 +1285,11 @@ class LoraAssetPanel:
             seconds = snap.eta if snap.eta < 60 else 5 * round(snap.eta / 5)
             eta = f"~{clock(seconds)} left"
         detail = f"Preparing {min(self._prepare_index + 1, total)} of {total}. {snap.wide}".strip()
-        editor = self._prepare_editor
-        if self._prepare_index < total and snap.stage:
-            # The existing bar, selected editor row and status label use one progress snapshot.
-            # Widget updates are throttled; the bottom bar itself updates on each event.
-            summary = f"Preparing {self._prepare_index + 1} of {total} · {snap.stage}" + (f" · {eta}" if eta else "")
-            now = time.monotonic()
-            if summary != self._prepare_editor_text and now - self._prepare_editor_at >= 1.0:
-                self._prepare_editor_text, self._prepare_editor_at = summary, now
-                if editor is not None and editor.active():
-                    editor.progress(Path(self._prepare_files[self._prepare_index]), snap.stage, summary)
-                self._show(self.page.assetStatusLabel, Presentation("warning", "Preparing", summary))
-        # Stop only acts between files: nothing to stop once the last admitted file is running.
-        strip.set_stop_visible("asset", not self._prepare_stop and self._prepare_index < total - 1)
+        summary = f"{self._prepare_index}/{total} finished · {len(self._prepare_active)} active · {snap.stage}"
+        if eta:
+            summary += f" · {eta}"
+        self._show(self.page.assetStatusLabel, Presentation("warning", "Preparing", summary))
+        strip.set_stop_visible("asset", not self._prepare_stop)
         strip.update(
             "asset",
             int(snap.fraction * 1000) if known else 0,
@@ -1282,6 +1304,10 @@ class LoraAssetPanel:
 
     def _end_prepare_progress(self) -> None:
         self._prepare_timer.stop()
+        for relay in self._prepare_relays.values():
+            relay.close()
+            relay.deleteLater()
+        self._prepare_relays.clear()
         self._inspecting = False
         self._prepare_progress = None
         if self._prepare_relay is not None:
@@ -1304,39 +1330,49 @@ class LoraAssetPanel:
         self._prepare_editor = self._prepare_editor_context = None
 
     def invalidate_prepare_ownership(self) -> None:
-        """Credential/backend changes stop admission after the currently admitted file settles."""
+        """Credential/backend changes stop waiting work before upload under the captured owner."""
         self._ownership_revision += 1
+        if self.preparing:
+            self._prepare_stop = True
+            self._prepare_convert_cancel.set()
 
     def _prepare_next(self) -> None:
         if self._runner.closed:
-            return  # runner/service shutdown owns settlement; never submit another file
-        if (
-            self._prepare_stop
-            or self._prepare_index >= len(self._prepare_files)
-            or self._backend() != self._prepare_backend
-            or self._ownership_revision != self._prepare_revision
-            or self._saved() is not self._prepare_saved
-        ):
-            self._finish_prepare()
             return
-        number, total = self._prepare_index + 1, len(self._prepare_files)
+        owns = (
+            self._backend() == self._prepare_backend
+            and self._ownership_revision == self._prepare_revision
+            and self._saved() is self._prepare_saved
+        )
+        if not owns:
+            self._prepare_stop = True
+            self._prepare_convert_cancel.set()
+        if not self._prepare_stop:
+            while len(self._prepare_active) < 3 and self._prepare_cursor < len(self._prepare_files):
+                index = self._prepare_cursor
+                self._prepare_cursor += 1
+                self._prepare_active.add(index)
+                self._start_prepare(index)
+        if not self._prepare_active:
+            self._finish_prepare()
+
+    def _start_prepare(self, index: int) -> None:
+        number, total = index + 1, len(self._prepare_files)
         detail = f"Preparing {number} of {total}. May upload this file; waiting for receipt."
         self._show(self.page.assetStatusLabel, Presentation("warning", "Preparing", detail))
-        index = self._prepare_index
         source = Path(self._prepare_files[index])
         metadata = self._prepare_metadata[str(source)]
         converting = source.suffix.casefold() == ".safetensors"
-        if self._prepare_relay is not None:
-            self._prepare_relay.close()
-            self._prepare_relay.deleteLater()
-        # One relay per file: a late report of a settled file is dropped instead of moving the next one.
-        relay = self._prepare_relay = LatestRelay(lambda event: self._on_prepare_event(index, event), self.page)
+        relay = LatestRelay(lambda event: self._on_prepare_event(index, event), self.page)
+        self._prepare_relays[index] = relay
         self._prepare_progress.start_file(index, convert=converting)
         self._render_prepare()
         converted_sha: list[str | None] = [None]
         converted_size: list[int | None] = [None]
 
         async def run_one():
+            if self._prepare_convert_cancel.is_set():
+                raise ConversionError("Prepare stopped before upload; use Retry.")
             path = source
             forward = relay
             if converting:
@@ -1356,6 +1392,7 @@ class LoraAssetPanel:
 
                 def conversion_progress(event: ConversionProgress) -> None:
                     labels = {
+                        "waiting": "Waiting for conversion capacity",
                         "reading": "Reading source",
                         "converting": "Converting",
                         "writing": "Writing checkpoint",
@@ -1375,7 +1412,12 @@ class LoraAssetPanel:
                         else 0.0
                     )
                     relay(
-                        PrepareEvent(CONVERTING, int(portion * 1000), 1000, label=labels.get(event.stage, "Converting"))
+                        PrepareEvent(
+                            "waiting" if event.stage == "waiting" else CONVERTING,
+                            int(portion * 1000),
+                            1000,
+                            label=labels.get(event.stage, "Converting"),
+                        )
                     )
 
                 try:
@@ -1437,18 +1479,19 @@ class LoraAssetPanel:
                 saved=self._prepare_saved,
                 metadata=prepared_metadata if converting else metadata,
                 progress=forward,
+                cancel=self._prepare_convert_cancel,
             )
 
         self._runner.submit(
             run_one(),
             lambda record, failure: self._prepared(
-                record, failure, converted_sha=converted_sha[0], converted_size=converted_size[0]
+                record, failure, index=index, converted_sha=converted_sha[0], converted_size=converted_size[0]
             ),
         )
 
-    def _prepare_log_reference(self, record: dict | None, *, converted_sha: str | None = None) -> dict:
+    def _prepare_log_reference(self, record: dict | None, *, index: int, converted_sha: str | None = None) -> dict:
         """Correlate per-file Prepare diagnostics without logging names or paths."""
-        path = Path(self._prepare_files[self._prepare_index])
+        path = Path(self._prepare_files[index])
         source_sha = self._prepare_source_sha.get(str(path))
         if source_sha is None and self._prepare_editor is not None:
             row = next((item for item in self._prepare_editor.rows if item.path == path), None)
@@ -1469,7 +1512,7 @@ class LoraAssetPanel:
         return reference
 
     def _prepared(
-        self, record, failure, *, converted_sha: str | None = None, converted_size: int | None = None
+        self, record, failure, *, index: int, converted_sha: str | None = None, converted_size: int | None = None
     ) -> None:
         if self._prepare_files:
             self._prepare_last = record, failure
@@ -1477,7 +1520,7 @@ class LoraAssetPanel:
             if failure is not None:
                 definite = (
                     isinstance(failure, BackendError) and failure.failure.remote_outcome != RemoteOutcome.UNKNOWN
-                ) or isinstance(failure, (ValidationError, ConversionError))
+                ) or isinstance(failure, (ValidationError, ConversionError, AssetsBusyError))
                 outcome = "failed" if definite else "unresolved"
             else:
                 outcome = "confirmed" if state == "confirmed" else "failed" if state == "failed" else "unresolved"
@@ -1485,26 +1528,26 @@ class LoraAssetPanel:
             settled = (
                 "existing" if outcome == "confirmed" and (record or {}).get("evidence") == "already_exists" else outcome
             )
-            self._prepare_final[self._prepare_files[self._prepare_index]] = settled
-            self._settle_prepare_progress(record, outcome, converted_sha=converted_sha)
+            self._prepare_final[self._prepare_files[index]] = settled
+            self._settle_prepare_progress(record, outcome, index=index, converted_sha=converted_sha)
             if self._prepare_editor is not None:
                 detail = present_asset_failure(failure).detail if failure is not None else None
                 if storage_refusal(failure):
                     self._prepare_storage_revision += 1  # discard any older advisory snapshot still in flight
                     free = reported_free_space(failure)
                     size = converted_size
-                    if size is None and Path(self._prepare_files[self._prepare_index]).suffix.casefold() == ".ckpt":
+                    if size is None and Path(self._prepare_files[index]).suffix.casefold() == ".ckpt":
                         try:
-                            size = Path(self._prepare_files[self._prepare_index]).stat().st_size
+                            size = Path(self._prepare_files[index]).stat().st_size
                         except OSError:
                             pass
                     needed = storage_size(size) if size is not None else "unknown size"
                     available = storage_size(free) if free is not None else "unknown free space"
                     detail = f"Needs {needed}; {available} on this DT+ key. Free storage, then explicitly Re-Prepare."
                     self._prepare_editor.set_storage(free, needed=size)
-                self._prepare_editor.progress(Path(self._prepare_files[self._prepare_index]), None)
+                self._prepare_editor.progress(Path(self._prepare_files[index]), None)
                 self._prepare_editor.completed(
-                    Path(self._prepare_files[self._prepare_index]),
+                    Path(self._prepare_files[index]),
                     "Prepared" if outcome == "confirmed" else "Failed" if outcome == "failed" else "Outcome unknown",
                     can_reprepare=isinstance(failure, NameAlreadyAcceptedError) or storage_refusal(failure),
                     storage_failure=storage_refusal(failure),
@@ -1522,9 +1565,9 @@ class LoraAssetPanel:
                     )
                 )
                 if len(self._prepare_issues) < 8:
-                    filename = Path(self._prepare_files[self._prepare_index]).name
+                    filename = Path(self._prepare_files[index]).name
                     self._prepare_issues.append(
-                        (f"{self._prepare_index + 1}/{len(self._prepare_files)}", filename, explanation.detail)
+                        (f"{index + 1}/{len(self._prepare_files)}", filename, explanation.detail)
                     )
                 if isinstance(failure, ConversionError):
                     reason = "conversion_failed"
@@ -1538,10 +1581,10 @@ class LoraAssetPanel:
                 else:
                     reason = "unexpected_error" if failure is not None else "receipt_not_confirmed"
                 data = {
-                    **self._prepare_log_reference(record, converted_sha=converted_sha),
+                    **self._prepare_log_reference(record, index=index, converted_sha=converted_sha),
                     "outcome": outcome,
                     "reason": reason,
-                    "item": self._prepare_index + 1,
+                    "item": index + 1,
                     "total": len(self._prepare_files),
                     "code": (
                         failure.failure.code
@@ -1577,7 +1620,7 @@ class LoraAssetPanel:
                 # Single-file completion adds/binds in the existing final registry callback.
                 if (
                     state == "confirmed"
-                    and not self._auto_prepare_run
+                    and self._prepare_files[index] not in self._auto_prepare_callbacks
                     and len(self._prepare_files) > 1
                     and self._backend() == self._prepare_backend
                     and self._ownership_revision == self._prepare_revision
@@ -1588,7 +1631,7 @@ class LoraAssetPanel:
                     self._receipts[identifier] = record["asset_id"]
                     self._render_loras()
             # Downloads auto-preparation uses the same retained, owner-scoped pipeline.
-            source = self._prepare_files[self._prepare_index]
+            source = self._prepare_files[index]
             callback = self._auto_prepare_callbacks.pop(source, None)
             if callback is not None:
                 if outcome == "confirmed":
@@ -1600,13 +1643,14 @@ class LoraAssetPanel:
                 else:
                     callback("Auto-prepare outcome unknown; check DT+ before retrying.")
             self._prepare_index += 1
+            self._prepare_active.discard(index)
             self._prepare_next()
             return
         self._present_prepared(record, failure)
 
-    def _settle_prepare_progress(self, record, outcome: str, *, converted_sha: str | None = None) -> None:
+    def _settle_prepare_progress(self, record, outcome: str, *, index: int, converted_sha: str | None = None) -> None:
         """Close the file in the progress model and log its phase timings (seconds per MiB) for weight tuning."""
-        progress, index = self._prepare_progress, self._prepare_index
+        progress = self._prepare_progress
         if progress is None:
             return
         if record is not None and record.get("evidence") == "already_exists":
@@ -1619,15 +1663,17 @@ class LoraAssetPanel:
             "ui.asset_prepare_timing",
             level=logging.INFO,
             data={
-                **self._prepare_log_reference(record, converted_sha=converted_sha),
+                **self._prepare_log_reference(record, index=index, converted_sha=converted_sha),
                 "item": index + 1,
                 "total": len(self._prepare_files),
                 "outcome": outcome,
                 **timings,
             },
         )
-        if self._prepare_relay is not None:
-            self._prepare_relay.close()  # late byte reports of this file are dropped
+        relay = self._prepare_relays.pop(index, None)
+        if relay is not None:
+            relay.close()
+            relay.deleteLater()
 
     def _drop_dead_editor(self) -> None:
         """Forget an editor the user dismissed, so it cannot receive progress or checks from a later run."""
@@ -1644,7 +1690,7 @@ class LoraAssetPanel:
     def _finish_prepare(self) -> None:
         total, done = len(self._prepare_files), self._prepare_index
         auto_run, self._auto_prepare_run = self._auto_prepare_run, False
-        stopped, unstarted = self._prepare_stop, self._prepare_files[self._prepare_index :]
+        stopped, unstarted = self._prepare_stop, self._prepare_files[self._prepare_cursor :]
         for source in unstarted:
             callback = self._auto_prepare_callbacks.pop(source, None)
             if callback is not None:
@@ -1657,7 +1703,7 @@ class LoraAssetPanel:
         self._prepare_metadata = {}
         self._prepare_source_sha = {}
         self._prepare_saved = None
-        self._set_busy(False)
+        self.set_enabled(not self._is_busy())
         self._resume_hashing()
         if self._prepare_editor is not None and self._prepare_editor.active():
             self._prepare_editor.form.prepareStorageButton.setEnabled(True)
@@ -1723,7 +1769,7 @@ class LoraAssetPanel:
         self.refresh_holdings()  # Prepare changed what the key holds
 
     def _present_prepared(self, record, failure, *, bind: bool = True) -> None:
-        self._set_busy(False)
+        self.set_enabled(not self._is_busy())
         strip = activity_strip(self.page)
         self._drop_dead_editor()
         presentation = (

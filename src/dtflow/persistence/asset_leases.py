@@ -11,8 +11,13 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from dtflow.persistence.store import PersistenceError
+from dtflow.core.models import ValidationError
 
 _CAPACITY = {"conversion": threading.BoundedSemaphore(2), "prepare": threading.BoundedSemaphore(3)}
+
+
+class AssetWaitCancelled(ValidationError):
+    """The owner stopped admitted work before provider submission."""
 
 
 @asynccontextmanager
@@ -22,7 +27,7 @@ async def capacity(kind: str, *, waiting=None, cancel=None, timeout: float = 300
     deadline = time.monotonic() + timeout
     while not slots.acquire(blocking=False):
         if cancel is not None and cancel.is_set():
-            raise asyncio.CancelledError
+            raise AssetWaitCancelled("Preparation stopped before upload. Use Retry to prepare it again.")
         if waiting is not None:
             waiting()
             waiting = None
@@ -31,7 +36,7 @@ async def capacity(kind: str, *, waiting=None, cancel=None, timeout: float = 300
         await asyncio.sleep(0.1)
     try:
         if cancel is not None and cancel.is_set():
-            raise asyncio.CancelledError
+            raise AssetWaitCancelled("Preparation stopped before upload. Use Retry to prepare it again.")
         yield
     finally:
         slots.release()
@@ -89,7 +94,7 @@ async def resource_lease(state: Path, resource: str, *, waiting=None, cancel=Non
     reported = False
     while True:
         if cancel is not None and cancel.is_set():
-            raise asyncio.CancelledError
+            raise AssetWaitCancelled("Preparation stopped before upload. Use Retry to prepare it again.")
         try:
             handle = lock_file(path)
             break
