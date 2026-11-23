@@ -39,7 +39,7 @@ NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
 STALL_SECONDS = 90  # a frame writer that makes no progress for this long fails the run
 
 # Temporary A/B decoder selection for issue #562. No persisted setting or UI control.
-video_decoder = "upstream"
+video_decoder = "lut"
 
 
 def set_video_decoder(mode: str) -> None:
