@@ -37,7 +37,10 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument("-q", "--logs", type=Path, help="Override the diagnostic log directory.")
     command.add_argument("-nc", "--no-cache", action="store_true", help="Bypass disposable cache reads and writes.")
     command.add_argument(
-        "-vd", "--video-decoder", choices=("upstream", "lut"), default="upstream",
+        "-vd",
+        "--video-decoder",
+        choices=("upstream", "lut"),
+        default="upstream",
         help="Video tensor decoder: upstream (default) or experimental lut for CPU comparison.",
     )
     return command
