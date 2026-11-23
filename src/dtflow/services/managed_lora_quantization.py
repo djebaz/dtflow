@@ -23,8 +23,11 @@ async def confirmed_contents(state: Path, owner: str) -> frozenset[tuple[str, in
         await registry.aclose()
 
 
-def library_formats(state: Path, entries: list[dict]) -> dict[tuple[str, int], str]:
-    """Bounded tensor-header observations only; no weight decoding or whole-file hashing."""
+def library_formats(state: Path, entries: list[dict]) -> dict[tuple[str, int], str | None]:
+    """Bounded tensor-header observations only; no weight decoding or whole-file hashing.
+
+    ``None`` means the file was opened but is not a recognised tensor layout; a file that could not be opened is absent.
+    """
     store = LoraStore(state)
     formats = {}
     identities = [
@@ -47,13 +50,17 @@ def library_formats(state: Path, entries: list[dict]) -> dict[tuple[str, int], s
                 db.execute("PRAGMA trusted_schema=OFF")
                 rows = db.execute("SELECT type, datatype FROM tensors LIMIT 20001").fetchall()
             if not rows or len(rows) > 20000:
-                continue
-            if all(kind == 1 and datatype == 0x20000 for kind, datatype in rows):
+                formats[identity] = None
+            elif all(kind == 1 and datatype == 0x20000 for kind, datatype in rows):
                 formats[identity] = "F16"
             elif all(isinstance(kind, int) and datatype == 0x20000 for kind, datatype in rows):
                 formats[identity] = "Q8P" if any(kind >> 32 == 0x8A1E8B for kind, _ in rows) else "Unknown"
-        except (OSError, sqlite3.Error, ValidationError, TypeError):
+            else:
+                formats[identity] = None
+        except OSError:
             continue
+        except (sqlite3.Error, ValidationError, TypeError):
+            formats[identity] = None
     return formats
 
 

@@ -2514,7 +2514,7 @@ class MainWindow:
             stamp = stamps[identity]
             if (
                 stamp is not None
-                and formats.get(identity) is not None
+                and identity in formats  # an unrecognised layout is cached too; a file that could not be opened is not
                 and identity in found
                 and stamp == self._lora_inspection_stamp(retained.get(identity))
             ):
