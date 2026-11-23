@@ -23,6 +23,7 @@ from PySide6.QtCore import (
     QIODevice,
     QSignalBlocker,
     QObject,
+    QPoint,
     QSize,
     Qt,
     QTimer,
@@ -4592,9 +4593,30 @@ class GalleryPage(QObject):
             self._edit_callback(result)
 
     def _video_playback_changed(self, active: bool) -> None:
-        """Keep existing image overlays from covering the video's bottom controls."""
-        for name in ("galleryPositionOverlay", "galleryDimensionsOverlay", "galleryImageToolbar"):
-            self._widget(name).setVisible(not active)
+        """Keep the position/dimensions overlays readable below the video's transport bar.
+
+        The video panel is lifted by the overlay row's height instead of covering it; only the image toolbar,
+        which has nothing to do for a clip, stays hidden. The slideshow pager and controls are raised back
+        above the panel, which was just raised over them.
+        """
+        overlays = [self._widget(name) for name in ("galleryPositionOverlay", "galleryDimensionsOverlay")]
+        inset = 0
+        if active:
+            origin = self.surface.mapToGlobal(QPoint(0, 0)).y()
+            tops = [
+                label.mapToGlobal(QPoint(0, 0)).y() - origin
+                for label in overlays
+                if label.isVisibleTo(self.surface.window())
+            ]
+            if tops:
+                inset = max(0, self.surface.height() - min(tops) + 2)
+            if self.slideshow.active:
+                self.slideshow._position_controls()
+        else:
+            for label in overlays:
+                label.setVisible(True)
+        self._widget("galleryImageToolbar").setVisible(not active)
+        self.video_player.set_bottom_inset(inset)
 
     def _play_video(self) -> None:
         """Resolve the MP4 on a worker, then play it in Images without blocking Qt."""
