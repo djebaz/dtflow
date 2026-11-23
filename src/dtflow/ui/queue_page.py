@@ -1329,7 +1329,9 @@ class QueuePage:
         shown = {view["queue_id"] for view, _ in entries}
         for queue_id, foreign in self._period.items():
             view = self._views.get(queue_id)
-            if queue_id not in shown and view is not None and view["status"] in ("finished", "cancelled"):
+            # A queue ends in two steps: the dispatch hands over (it is no longer owned), then the next database read
+            # says "finished". Between them its view still says running; it keeps its segment through both.
+            if queue_id not in shown and view is not None and view["status"] in ("running", "finished", "cancelled"):
                 entries.append((view, foreign))  # a finished queue keeps its settled segment until the period ends
         if not active:
             # Between two auto-play queues this window already owns the next one, whose view is not read yet: the period
