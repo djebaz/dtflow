@@ -48,8 +48,8 @@ from dtflow.services import video_encode
 from dtflow.services.video_resources import (
     AUDIO_LIMIT,
     MP4_LIMIT,
-    SPOOL_RESERVE,
     TENSOR_LIMIT,
+    spool_estimate,
     grow_video_spool,
     recheck_video_storage,
 )
@@ -240,7 +240,7 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
     work = Path(tempfile.mkdtemp(prefix="dtflow-video-"))
     sink = video_encode.FrameSink(ffmpeg, playback_fps(request.model_id), work / "video.mp4.partial")
     spool = video_encode.TensorSpool(
-        work / "frames.spool", SPOOL_RESERVE, lambda chunk: grow_video_spool(request.request_id, chunk)
+        work / "frames.spool", spool_estimate(request), lambda chunk: grow_video_spool(request.request_id, chunk)
     )
     slot = AsyncExitStack()  # holds the local encoder slot from the wait until the encode and audio mux end
     frames = 0
