@@ -95,7 +95,7 @@ def parser() -> argparse.ArgumentParser:
         "--video-decoder",
         choices=("upstream", "lut", "fp32"),
         default="lut",
-        help="Video tensor decoder: lut (default), upstream, or experimental fp32 for CPU comparison."
+        help="Video tensor decoder: lut (default), upstream, or experimental fp32 for CPU comparison.",
     )
     gui.add_argument(
         "-format",

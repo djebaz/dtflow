@@ -156,7 +156,7 @@ def configure_logging(
             backend=backend,
             video_decoder=video_decoder,
             session=session,
-            report_error=report_error
+            report_error=report_error,
         )
         return result
     finally:
