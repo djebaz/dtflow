@@ -87,7 +87,8 @@ from dtflow.ui.generation_presenter import (
 )
 from dtflow.ui.generation_grid import GenerationGrid
 from dtflow.ui.inline_feedback import InlineNotice, edit_text
-from dtflow.ui.video_progress import VideoProgress
+from dtflow.ui.progress_model import ItemProgress, ProgressModel
+from dtflow.ui.video_progress import present_video
 from dtflow.ui.video_panel import VideoPanel
 from dtflow.core import video as rules
 from dtflow.core.video import VIDEO_TOTAL_TIMEOUT
@@ -257,6 +258,9 @@ RAIL_LABELS = (
 )
 
 
+_SOLO = ("generate", "run")  # the model key of a Generate run that is not a queue
+
+
 class GenerationPage:
     def __init__(
         self,
@@ -337,7 +341,8 @@ class GenerationPage:
         self._run_edit = False
         self._run_pose = False
         self._run_video = False
-        self._video_progress = VideoProgress()
+        self._solo = ProgressModel()  # a run that is not a queue: one record under _SOLO
+        self._video_started = 0.0  # submission time of the video run, until its first event creates the record
         self._stage_tick = QTimer(page)  # a queued click's page text keeps counting while the provider is silent
         self._stage_tick.setInterval(1000)
         self._stage_tick.timeout.connect(self._tick_stage)
@@ -1301,21 +1306,38 @@ class GenerationPage:
         )
         return True
 
+    def _video_item(self) -> ItemProgress | None:
+        """The running video's record: the queue's shared one for a queued click, else this page's own."""
+        if self._queued_run:
+            return self._activity.progress.for_request(self._request.request_id) if self._request else None
+        return self._solo.get(*_SOLO)
+
+    def _video_observe(self, event: BackendEvent) -> bool:
+        """True when this event is one a video run presents. A queued click's record is fed by the Queues page."""
+        if self._queued_run:
+            item = self._video_item()
+            return item is not None and item.last_sequence == event.sequence and item.presented
+        item = self._solo.observe(*_SOLO, event, mode="video")
+        return item is not None and item.presented
+
     def _tick_video(self) -> None:
         """Keep the elapsed time moving while DT+ is silent."""
         if not self._runner.closed and self._generating and self._run_video:
             if self._queued_run:
                 self._show_video_stage()
-            else:
-                self._video_progress.present(self._activity)
+            elif (item := self._video_item()) is not None:
+                present_video(item, self._activity)
         else:
             self._video_tick.stop()
 
     def _show_video_stage(self) -> None:
         """A queued video's phase and elapsed time in this page's status line (the header bar shows the queue)."""
-        progress = self._video_progress
-        origin = progress.sent_at if progress.sent_at is not None else progress.started
-        detail = f"{progress.text} · {int(max(0.0, time.monotonic() - origin))} s"
+        progress = self._video_item()
+        if progress is None:  # the queue has not reported yet: count from the click
+            text, origin = "Preparing", self._video_started
+        else:
+            text, origin = progress.text, progress.sent_at if progress.sent_at is not None else progress.started
+        detail = f"{text} · {int(max(0.0, time.monotonic() - origin))} s"
         self._status(Presentation("warning", "Generating", detail))
 
     def retry(self) -> bool:
@@ -1374,7 +1396,8 @@ class GenerationPage:
         self._run_pose = isinstance(edit, PoseJob)
         self._run_video = request.num_frames is not None
         if self._run_video:
-            self._video_progress.reset()
+            self._video_started = time.monotonic()
+            self._solo.begin(*_SOLO, request.request_id, "video")
             self._video_tick.start()
         self._last_submission = (request, name, endpoint, tuple(asset_ids), prefix, simulation, edit)
         self._last_manual, self._queued_run = bool(manual), bool(manual)
@@ -1613,11 +1636,11 @@ class GenerationPage:
         label = event.stage if event.kind == "progress" else {"preview": "first preview"}.get(event.kind, event.kind)
         if label:
             self._stage_seen.setdefault(label, time.monotonic() - self._stage_started)
-        if self._run_video and self._video_progress.observe(event):
+        if self._run_video and self._video_observe(event):
             if self._queued_run:  # the queue run owns the bar; this page words the same observed phase
                 self._show_video_stage()
             else:
-                self._video_progress.present(self._activity)
+                present_video(self._video_item(), self._activity)
             return
         if event.kind == "progress":
             from dtflow.ui.progress_stages import event_stage
