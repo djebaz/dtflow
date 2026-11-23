@@ -3440,9 +3440,20 @@ class GalleryPage(QObject):
         )
         self._presented_item = item
         request = self._request(item)
-        if image_changed:
-            self.video_player.show_for_video(False)  # A poster alone does not establish that its clip is available.
         clip = clip_summary(request)
+        if image_changed:
+            # A poster alone does not establish that its clip is available. A clip that will autoplay keeps the
+            # stopped video panel on screen, so the video widget does not blink between two clips.
+            will_autoplay = bool(
+                clip
+                and not item.issue
+                and self.video_player.autoplay
+                and self._active
+                and self.mode == "Detail"
+                and selected_video_entry
+                and (not self.slideshow.active or self.slideshow._milliseconds() >= SLIDESHOW_VIDEO_MIN_INTERVAL_MS)
+            )
+            self.video_player.show_for_video(False, keep_panel=will_autoplay)
         self.detail_check.setText("Select video" if clip else "Select image")
         if clip:
             self.video_player.allow_keyboard_start()

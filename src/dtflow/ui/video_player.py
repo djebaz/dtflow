@@ -60,6 +60,7 @@ class VideoPlayer(QObject):
         self._on_autoplay_changed = on_autoplay_changed
         self._on_playing = on_playing
         self._playing_announced = False
+        self._held = False
         self.autoplay = False
         self._panel: QWidget | None = None
         self._player = None
@@ -90,9 +91,13 @@ class VideoPlayer(QObject):
         self.play_button.hide()
         surface.installEventFilter(self)
 
-    def show_for_video(self, is_video: bool) -> None:
-        """Show the poster Play affordance only when a companion MP4 is available."""
-        self.release()
+    def show_for_video(self, is_video: bool, *, keep_panel: bool = False) -> None:
+        """Show the poster Play affordance only when a companion MP4 is available.
+
+        ``keep_panel`` leaves the stopped panel on screen for a clip that is about to autoplay, so the video
+        widget is not hidden and shown again between two clips.
+        """
+        self.release(keep_panel=keep_panel)
         self.play_button.setVisible(is_video)
         self._set_shortcut_enabled(is_video)
         self._place()
@@ -112,6 +117,7 @@ class VideoPlayer(QObject):
         The panel, QVideoWidget and QMediaPlayer are created once and reused for later clips: each native
         video-widget start-up costs a visible GUI stall on Windows, so rapid navigation must not repeat it.
         """
+        self._held = False  # a panel kept on screen since the previous clip is reused as it is
         self.release()
         parts = self._parts or self._build()
         panel, player, audio, video = parts.panel, parts.player, parts.audio, parts.video
@@ -311,9 +317,16 @@ class VideoPlayer(QObject):
             mute.setToolTip(description)
             mute.setAccessibleName(description)
 
-    def release(self, *, show_play: bool = False) -> None:
-        """Stop, clear the source and free the media handle; the native widgets stay for the next clip."""
+    def release(self, *, show_play: bool = False, keep_panel: bool = False) -> None:
+        """Stop, clear the source and free the media handle; the native widgets stay for the next clip.
+
+        With ``keep_panel`` the panel stays visible (still counted as playback by the gallery) until the next
+        ``start`` reuses it or a later ``release`` without it hides it.
+        """
         panel, player = self._panel, self._player
+        if panel is None and self._held and self._parts is not None:
+            panel = self._parts.panel  # kept on screen by an earlier release(keep_panel=True)
+        self._held = keep_panel and panel is not None
         self._panel = self._player = self._audio = self._video = None
         self._set_shortcut_enabled(False)
         if player is not None:
@@ -322,7 +335,7 @@ class VideoPlayer(QObject):
                 player.setSource(QUrl())
             except RuntimeError:
                 self._parts = None  # the native objects are gone; build fresh ones for the next clip
-        if panel is not None:
+        if panel is not None and not self._held:
             panel.hide()
             if self._on_playback_changed is not None:
                 self._on_playback_changed(False)
