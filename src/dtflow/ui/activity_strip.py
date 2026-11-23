@@ -120,6 +120,7 @@ class ActivityStrip(QObject):
         self.status_bar.installEventFilter(self)
         self.status_bar.messageChanged.connect(lambda _text: QTimer.singleShot(0, self, self._position))
         self._expiry = {}
+        self._notice_last: float | None = None  # time of the previous notice tick, for real elapsed accounting
         self._positioning = False
         self._retired = False
         self.feedback = None
@@ -617,6 +618,10 @@ class ActivityStrip(QObject):
         if not self._live():
             return
         focused = QApplication.focusWidget()
+        # Real elapsed time since the previous tick: a late or merged timer event must not stretch a notice's life.
+        now = monotonic()
+        step = 0.1 if self._notice_last is None else max(0.0, now - self._notice_last)
+        self._notice_last = now
         for key, remaining in tuple(self._expiry.items()):
             row = self.rows.get(key)
             if row is None or not isValid(row):
@@ -625,7 +630,7 @@ class ActivityStrip(QObject):
                 continue
             if self._pointer_over(self.form) or self._pointer_over(self.bar) or self._focus_in_view(focused):
                 continue
-            remaining -= 0.1
+            remaining -= step
             if remaining <= 0:
                 self._expiry.pop(key, None)
                 row.activityLifetimeBar.setValue(0)
@@ -647,6 +652,7 @@ class ActivityStrip(QObject):
                 row.activityLifetimeBar.setValue(max(0, round(remaining * 1000)))
         if not self._expiry:
             self._notice_timer.stop()
+            self._notice_last = None
         self._sync_bar()  # redraw the result's lifetime line
 
     def _finish_if_row(self, key, row):
@@ -667,6 +673,7 @@ class ActivityStrip(QObject):
             row.deleteLater()
         if not self._expiry:
             self._notice_timer.stop()
+            self._notice_last = None
         if row is not None:
             self.operations_changed.emit()
         self._sync_outside()
