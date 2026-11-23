@@ -16,6 +16,8 @@ STRIP_HEIGHT = 18
 TIER_S = 520
 TIER_L = 760
 PAD = 6
+# Approved queue colours for the aggregate bar; the strip assigns one per active queue by stable queue id.
+QUEUE_PALETTE = ("#285D84", "#3A5F8A", "#4B5D90", "#5A5696", "#674B96", "#74488F")
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,6 +39,10 @@ class BarModel:
     stop_label: str = ""  # what Stop does, from the job ("Stop waiting locally", "Cancel export", ...)
     stop_visible: bool = True
     stop_action: str = "Stop"  # concise visible action, distinct from its explanatory tooltip
+    # Aggregate bar: adjacent queue segments as (end fraction of the track, colour) and the candidate texts richest
+    # first; the painter picks the first that fits the real text rectangle.
+    segments: tuple[tuple[float, str], ...] = ()
+    texts: tuple[str, ...] = ()
 
 
 def clock(seconds: float) -> str:
@@ -65,6 +71,7 @@ class _Strip(QWidget):
                 *(round(0.22 * t + 0.78 * b) for t, b in zip(tone.getRgb()[:3], self._track.getRgb()[:3], strict=True))
             )
         self.model: BarModel | None = None
+        self.shown_text = ""  # the aggregate candidate chosen by the last paint
         self.setFixedHeight(STRIP_HEIGHT)
 
     def stripes_active(self):
@@ -102,6 +109,15 @@ class _Strip(QWidget):
             painter.setPen(Qt.PenStyle.NoPen)
             # Paint disjoint bands so 50 % stopping opacity does not compound over another band.
             paint_stripes(painter, width, height, fill, base)
+        elif model.segments and model.kind == "running":
+            start = 0.0
+            for end, colour in model.segments:
+                end = max(start, min(1.0, end))
+                tone = QColor(colour)
+                if model.stopping:
+                    tone.setAlphaF(0.5)
+                painter.fillRect(QRectF(1 + (width - 2) * start, 1, (width - 2) * (end - start), height - 2), tone)
+                start = end
         else:
             painter.fillRect(QRectF(1, 1, (width - 2) * fraction, height - 2), fill)
         painter.restore()
@@ -123,6 +139,9 @@ class _Strip(QWidget):
         font.setPointSizeF(9)
         painter.setFont(font)
         metrics = QFontMetrics(font)
+        if model.texts:
+            self._paint_aggregate(painter, model, metrics, width, height)
+            return
         bold = QFont(font)
         bold.setBold(True)
         wide = self.parentWidget() is not None and self.parentWidget().width() >= TIER_L
@@ -186,6 +205,24 @@ class _Strip(QWidget):
                 int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
                 times,
             )
+
+    def aggregate_text(self, model: BarModel, width: int | None = None) -> str:
+        """The richest candidate whose measured advance fits the text rectangle; the last always shows."""
+        font = self.font()
+        font.setPointSizeF(9)
+        room = (self.width() if width is None else width) - 2 * PAD
+        metrics = QFontMetrics(font)
+        for text in model.texts:
+            if metrics.horizontalAdvance(text) <= room:
+                return text
+        return model.texts[-1]
+
+    def _paint_aggregate(self, painter, model, metrics, width: int, height: int) -> None:
+        text = self.aggregate_text(model, width)
+        painter.setPen(self._text)
+        # The numbers are never elided: when even the last candidate is too wide it is clipped by the strip edge.
+        painter.drawText(QRectF(PAD, 0, width - 2 * PAD, height), int(Qt.AlignmentFlag.AlignVCenter), text)
+        self.shown_text = text
 
 
 class ActivityBar(QWidget):

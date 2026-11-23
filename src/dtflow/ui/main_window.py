@@ -77,7 +77,7 @@ from dtflow.services.download_tokens import CIVITAI, DownloadTokens, token_statu
 from dtflow.services import lora_relink
 from dtflow.services.presets import export_presets, import_presets, load_presets
 from dtflow.ui.activity import Activity
-from dtflow.ui.activity_strip import ActivityStrip, activity_strip
+from dtflow.ui.activity_strip import ActivityStrip, Aggregate, activity_strip
 from dtflow.ui.brand import connection_icon, status_dot, tinted_icon
 from dtflow.ui.button_focus import KeyboardFocusGuard
 from dtflow.ui.current_page_stack import CurrentPageStack
@@ -1514,7 +1514,12 @@ class MainWindow:
             return
         state = self.activity.run_state
         # Each settled image or finished run pushes a refresh hint to Images (it checks the database cheaply).
-        marker = (self.activity.generating, self.activity.dispatching, state.completed)
+        aggregate = self.queue.aggregate_progress()
+        marker = (
+            self.activity.generating,
+            self.activity.dispatching,
+            aggregate[0].settled if aggregate is not None else None,
+        )
         if marker != self._last_run_marker:
             self._last_run_marker = marker
             self.gallery.notify_changed()
@@ -1524,6 +1529,8 @@ class MainWindow:
         if not (generating or self.activity.dispatching) or (not generating and self.queue.generate_settling):
             self.progress_strip.finish("run")
             return
+        if aggregate is not None and generating:
+            aggregate = None  # a Generate run that is not a queue keeps its own row
         run_identity = "generation" if generating else f"queue:{state.queue_id}"
         row = self.progress_strip.rows.get("run")
         if row is not None and row.property("runIdentity") != run_identity:
@@ -1554,7 +1561,20 @@ class MainWindow:
             wide=state.wide,
             queued=state.queued,
             count=state.count or None,
+            fill_only=state.fraction is not None and not state.count,
         )
+        if aggregate is None:
+            self.progress_strip.set_aggregate(None)
+        else:
+            snapshot, eta, target = aggregate
+            self.progress_strip.set_aggregate(
+                Aggregate(
+                    snapshot,
+                    elapsed=state.elapsed.removeprefix("Elapsed "),
+                    eta=eta if eta is not None else state.eta.split(" (")[0],
+                    stop_target=target,
+                )
+            )
 
     def show(self) -> None:
         apply_native_dark_titlebar(self.form)

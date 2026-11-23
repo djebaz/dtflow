@@ -12,6 +12,7 @@ claims remote cancellation.
 
 import asyncio
 import logging
+import math
 from collections.abc import Callable
 from dataclasses import asdict, dataclass, replace
 from typing import Any
@@ -66,7 +67,8 @@ from dtflow.services.session import bind_prepared, script_asset_choices, selecti
 from dtflow.ui.activity import Activity, RunState
 from dtflow.ui.controlnet_editor import PoseJob
 from dtflow.ui.performance import profile_slow_gui_callback
-from dtflow.ui.progress_model import PHASE_WORDS
+from dtflow.ui.activity_bar import clock
+from dtflow.ui.progress_model import PHASE_WORDS, ProgressSnapshot, totals_from_view
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.generation_presenter import FormError
 from dtflow.ui.inline_feedback import confirm_action, feedback
@@ -105,6 +107,7 @@ from dtflow.ui.queue_presenter import (
     QueueCountdown,
     controls,
     elapsed_text,
+    estimate_remaining,
     eta_text,
     event_lines,
     filter_counts,
@@ -1299,6 +1302,47 @@ class QueuePage:
                 grid.apply(self._grid_items(result))
 
         self._runner.submit(work(), done)
+
+    def aggregate_progress(self) -> tuple[ProgressSnapshot, str | None, str] | None:
+        """Every queue this window runs, plus running queues of another process (durable counts only), for the global bar.
+
+        Returns the snapshot, a bar-level ETA override (None: the primary queue's own ETA stands) and the name of what
+        Stop reaches when several queues run. Up-next queues are not counted; a paused current dispatch stays in.
+        A non-queue Generate run, a script and a workflow keep their own single row."""
+        if self._generate_presents:
+            return None
+        owned = [queue_id for queue_id in (self._dispatching, *sorted(self._overlapping)) if queue_id]
+        entries = []
+        for queue_id in owned:
+            view = self._views.get(queue_id)
+            if view is not None and view["status"] in ("running", "paused"):
+                if view.get("kind") in ("script", "workflow"):
+                    return None
+                entries.append((view, False))
+        if not entries:
+            return None
+        for view in self._views.values():
+            if (
+                view["queue_id"] not in owned
+                and view["status"] == "running"
+                and view.get("owner_active") is True
+                and view.get("kind") not in ("script", "workflow")
+            ):
+                entries.append((view, True))
+        snapshot = self._progress.snapshot([totals_from_view(view, foreign=foreign) for view, foreign in entries])
+        eta = None
+        if len(entries) > 1:
+            names = [view["backend"]["name"] for view, _ in entries if view["status"] == "running"]
+            seconds = [estimate_remaining(view) for view, _ in entries if view["status"] == "running"]
+            if names and len(set(names)) == len(names) and all(value is not None for value in seconds):
+                eta = f"~{clock(math.ceil(max(seconds)))} left"
+            else:
+                eta = "~?"
+        primary = self._run_view()
+        target = ""
+        if len([1 for _, foreign in entries if not foreign]) > 1 and primary is not None:
+            target = f"stops queue {primary['queue_id'][:8]} only"
+        return snapshot, eta, target
 
     def _is_video(self, queue_id: str, item_id: str) -> bool:
         item = self._progress.get(queue_id, item_id)
