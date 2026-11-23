@@ -39,9 +39,9 @@ def parser() -> argparse.ArgumentParser:
     command.add_argument(
         "-vd",
         "--video-decoder",
-        choices=("upstream", "lut"),
+        choices=("upstream", "lut", "fp32"),
         default="upstream",
-        help="Video tensor decoder: upstream (default) or experimental lut for CPU comparison.",
+        help="Video tensor decoder: upstream (default), lut, or experimental fp32 for CPU comparison.",
     )
     return command
 
