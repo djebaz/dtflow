@@ -7,6 +7,8 @@ the two never overlap in one window: each page disables its lock-taking actions 
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from dtflow.ui.progress_model import ProgressModel
+
 
 @dataclass(frozen=True, slots=True)
 class RunState:
@@ -37,6 +39,7 @@ class Activity:
         self._generating = False
         self._dispatching = False
         self._run_state = RunState()
+        self.progress = ProgressModel()  # live per-item evidence shared by both pages (events only, no outcomes)
         self._listeners: list[Callable[[], None]] = []
 
     @property

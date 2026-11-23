@@ -1576,22 +1576,20 @@ def render_active_queue_states(shell, out):
         snap("queues-11-running")
         # #170: real controller presentation with observed stages; no dispatch or provider calls.
         running_key = (queue_id, "item-0002")
+        live = queue._progress.begin(*running_key, "preview-request", "image")
         for stage_name, screenshot in (
             ("Starting; waiting for response", "queues-11a-admitted-waiting"),
             ("Validating generation request", "queues-11b-preparing-request"),
             ("Waiting for the provider's reply", "queues-11c-awaiting-backend"),
             ("Request accepted; waiting for first progress", "queues-11d-backend-processing"),
         ):
-            queue._run_stages[running_key] = stage_name
-            queue._run_progress.pop(running_key, None)
+            live.label, live.label_since, live.counter = stage_name, time.monotonic(), None
             queue._publish_run_state()
             snap(screenshot)
-        queue._run_stages[running_key] = "Generating"
-        queue._run_progress[running_key] = (3, 20)
+        live.label, live.label_since, live.counter = "Generating", time.monotonic(), (3, 20)
         queue._publish_run_state()
         snap("queues-11e-observed-sampling")
-        queue._run_progress.pop(running_key, None)
-        queue._run_stages.pop(running_key, None)
+        queue._progress.discard(*running_key)
         queue._publish_run_state()
         # Stop is presentation-only here; never post a real queue control from an offline capture.
         with patch.object(queue, "_post") as posted:
