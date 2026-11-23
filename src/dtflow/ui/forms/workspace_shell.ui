@@ -119,22 +119,7 @@
             </item>
            </layout>
           </item>
-          <item>
-           <widget class="QWidget" name="runControlOffset">
-            <property name="minimumSize">
-             <size>
-              <width>10</width>
-              <height>1</height>
-             </size>
-            </property>
-            <property name="maximumSize">
-             <size>
-              <width>10</width>
-              <height>1</height>
-             </size>
-            </property>
-           </widget>
-          </item>
+          
           <item>
            <widget class="QToolButton" name="quickQueueButton">
             <property name="toolTip">
@@ -160,44 +145,8 @@
             </property>
            </widget>
           </item>
-          <item>
-           <widget class="RunControl" name="runControl">
-            <property name="toolTip">
-             <string>No runnable queue selected.</string>
-            </property>
-            <property name="accessibleName">
-             <string>Execution control</string>
-            </property>
-            <property name="focusPolicy">
-             <enum>Qt::StrongFocus</enum>
-            </property>
-            <property name="minimumSize">
-             <size>
-              <width>40</width>
-              <height>40</height>
-             </size>
-            </property>
-            <property name="maximumSize">
-             <size>
-              <width>40</width>
-              <height>40</height>
-             </size>
-            </property>
-           </widget>
-          </item>
-          <item>
-           <spacer name="runControlRightSpacer">
-            <property name="orientation">
-             <enum>Qt::Horizontal</enum>
-            </property>
-            <property name="sizeHint" stdset="0">
-             <size>
-              <width>3</width>
-              <height>20</height>
-             </size>
-            </property>
-           </spacer>
-          </item>
+          
+          
          </layout>
         </widget>
        </item>

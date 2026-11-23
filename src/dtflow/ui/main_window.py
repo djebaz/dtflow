@@ -100,7 +100,6 @@ from dtflow.ui.queue_popover import QueuePopover
 from dtflow.ui.performance import GuiHeartbeat, profile_slow_gui_callback
 from dtflow.ui.queue_composer import ValueChips
 from dtflow.ui.queue_widgets import SegmentedBar
-from dtflow.ui.run_control import RunControl
 from dtflow.persistence.script_library import ScriptLibrary
 from dtflow.ui.scripts_page import ScriptsPage
 from dtflow.ui.scripts_library_card import ScriptRemoveButton
@@ -113,7 +112,6 @@ from dtflow.ui.wheel_guard import WheelGuard
 
 log = logging.getLogger(__name__)
 
-RUN_SETTLE_MS = 2000  # how long the header control shows its finishing state after work ends
 
 FORMS_DIR = Path(__file__).with_name("forms")
 ASSETS_CONTROLS = Path(__file__).parents[1] / "resources" / "images" / "controls"
@@ -141,7 +139,6 @@ def _form_loader() -> QUiLoader:
         for widget_type in (
             ImagePreview,
             SearchableComboBox,
-            RunControl,
             SegmentedBar,
             ValueChips,
             ScriptRemoveButton,
@@ -757,31 +754,9 @@ class MainWindow:
         form.imagesNavigationButton.setAccessibleName("Show saved Images")
         form.imagesNavigationButton.clicked.connect(lambda: form.workspaceStack.setCurrentWidget(self.images_page))
         form.workspaceStack.currentChanged.connect(self._workspace_changed)
-        self.shell.runControl.clicked.connect(self.queue.trigger_run_control)
-        self.shell.brandFrame.layout().setAlignment(self.shell.runControl, Qt.AlignmentFlag.AlignVCenter)
-        self._run_was_running = False
-        self._run_settle = QTimer(form)
-        self._run_settle.setSingleShot(True)
-        self._run_settle.setInterval(RUN_SETTLE_MS)
-        self._run_settle.timeout.connect(self._sync_run_control)
-        self.activity.listen(self._sync_run_control)
         self.activity.listen(self._sync_activity_progress)
         self.progress_strip.form.destroyed.connect(self._retire_activity_presentation)
-        self._sync_run_control()
         form.installEventFilter(_LayoutGuard(self._responsive_workspace, form))
-        for frame in (self.shell.brandFrame, self.shell.navigationFrame):
-            # Layout settles after the first show and after tab changes, not only on resize.
-            frame.installEventFilter(
-                _LayoutGuard(
-                    self._align_run_control,
-                    frame,
-                    (QEvent.Type.Resize, QEvent.Type.Show, QEvent.Type.LayoutRequest),
-                )
-            )
-        for widget in (self.shell.queueNavigationButton, self.shell.runControl):
-            widget.installEventFilter(
-                _LayoutGuard(self._align_run_control, form, (QEvent.Type.Resize, QEvent.Type.Move))
-            )
         self.form.installEventFilter(_CloseGuard(self._confirm_close, self.form))
         self._fullscreen_shortcut = QShortcut(QKeySequence("F11"), self.form)
         self._fullscreen_shortcut.activated.connect(self._toggle_window_fullscreen)
@@ -1271,51 +1246,8 @@ class MainWindow:
 
     def _retire_activity_presentation(self) -> None:
         """Unsubscribe before Qt destroys the activity overlay's child widgets."""
-        self.activity.unlisten(self._sync_run_control)
         self.activity.unlisten(self._sync_activity_progress)
         # The window owns the settling timer and stops it during destruction.
-
-    @profile_slow_gui_callback("main.sync_run_control")
-    def _sync_run_control(self) -> None:
-        if self.progress_strip.retired:
-            return
-        state = self.activity.run_state
-        running = state.phase == "running"
-        if running:
-            self._run_settle.stop()
-        elif self._run_was_running and state.phase in ("idle", "ready") and not self._run_settle.isActive():
-            # Work just ended: show the finishing state briefly before the control settles back.
-            self._run_was_running = False
-            self.shell.runControl.set_presentation("complete", detail="Finishing.")
-            self._run_settle.start()
-            return
-        elif self._run_settle.isActive():
-            return  # keep the finishing state until its timer elapses
-        self._run_was_running = running
-        self.shell.runControl.set_presentation(
-            state.phase,
-            action=state.action,
-            completed=state.completed,
-            total=state.total,
-            detail=" ".join(
-                part for part in (state.detail, " · ".join(p for p in (state.elapsed, state.eta) if p)) if part
-            ),
-        )
-
-    def _align_run_control(self) -> None:
-        """Align the header control with Queues in the primary navigation row."""
-        shell = self.shell
-        anchor = shell.queueNavigationButton.geometry()
-        if not (shell.brandFrame.isVisible() and shell.navigationFrame.isVisible()) or anchor.width() <= 0:
-            return
-        control, offset = shell.runControl, shell.runControlOffset
-        # The Queue button sits between the offset and the control. Its fixed width plus one more layout spacing are
-        # constants, not read from positions that lag a pending relayout, so the target cannot oscillate (hovering
-        # the logo requests layouts and used to make the icons drift).
-        gap = shell.quickQueueButton.width() + max(0, shell.brandLayout.spacing())
-        width = max(0, anchor.center().x() - control.width() // 2 - offset.x() - gap)
-        if offset.width() != width:
-            offset.setFixedWidth(width)
 
     def _fit_context_pages(self, *_args) -> None:
         stack = self.shell.leftStack
@@ -1425,14 +1357,12 @@ class MainWindow:
         if self._logs_form is not None:
             self._logs_form.logsBrandSlot.setVisible(logs)
             self._logs_form.logsNavigationSlot.setVisible(logs)
-        shell.runControl.setVisible(True)
         if self._scripts_active and self.form.workspaceStack.currentWidget() is self.generation_page:
             self.scripts.sync_responsive()
         elif hasattr(self, "scripts"):
             self.scripts.drawer.hide()
         if hasattr(self, "workflows"):
             self.workflows.sync_responsive(narrow)
-        self._align_run_control()
         if hasattr(self, "_gui_heartbeat"):
             self._gui_heartbeat.sync()
 
@@ -1581,7 +1511,6 @@ class MainWindow:
         startup.mark("show: titlebar prepared")
         self.form.show()
         startup.mark("show: main form shown")
-        QTimer.singleShot(0, self._align_run_control)
         apply_native_dark_titlebar(self.form)
         startup.mark("show: titlebar reapplied")
 

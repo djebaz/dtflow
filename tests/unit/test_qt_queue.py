@@ -346,7 +346,6 @@ def test_queue_timing_reaches_bar_and_tooltip_without_changing_real_progress(win
     assert strip.bar.strip.model.elapsed == queue._activity.run_state.elapsed.removeprefix("Elapsed ")
     assert strip.bar.strip.model.eta == "~1:00 left"
     assert "Elapsed" not in row.activityDetail.text() and "estimate" not in row.activityDetail.text()
-    assert "estimate" in window.shell.runControl.toolTip()
     assert (row.activityProgress.value(), row.activityProgress.maximum()) == (1, 3)
     assert queue._timing_timer.isActive() and queue._timing_timer.interval() == 1000
     # The global Stop belongs to the displayed dispatch, never the independently selected queue.

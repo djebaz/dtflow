@@ -879,23 +879,14 @@ class QueuePage:
         queue_id = view["queue_id"]
         dispatching_here = self._owns(queue_id)
         status = view["status"]
-        phase, action = "idle", None
+        phase = "idle"
 
         if dispatching_here:
-            if status == "paused" and self._dispatch_started:
-                phase, action = "paused", "resume" if available.resume else None
-            else:
-                phase = "running"
-                if status == "running" and available.pause:
-                    action = "pause"
+            phase = "paused" if status == "paused" and self._dispatch_started else "running"
         elif status == "running" and not needs_recovery(view):
-            # Another process owns this queue. Show activity, but keep the compact
-            # control status-only so a header click never controls foreign work.
-            phase = "running"
+            phase = "running"  # another process owns this queue: activity only, never a control here
         elif available.start:
-            # With no local dispatcher, Start is the only useful immediate action.
-            # Posting Resume here would remain pending until a dispatcher starts.
-            phase, action = "ready", "start"
+            phase = "ready"
 
         summary = summarize(view)
         completed = total = None
@@ -911,7 +902,7 @@ class QueuePage:
         fraction = None
 
         if phase == "running":
-            # The ring counts settled items, which is meaningful however many items run at once.
+            # Settled items are the real count, meaningful however many items run at once.
             completed, total = summary.settled, summary.total
             # Observed clips of this queue, even when it is not the one shown on screen (then no item list is read);
             # when the list is read, only items it still shows as running count.
@@ -1026,8 +1017,7 @@ class QueuePage:
             if waiting:
                 detail += f" {waiting} up next."
         elif status in ("finished", "cancelled"):
-            # Settled/problem states stay on the Queues page. The global control
-            # returns to its quiet idle presentation instead of becoming a
+            # Settled/problem states stay on the Queues page; the global bar returns to idle instead of becoming a
             # persistent completion/error badge for whichever queue is selected.
             detail = "No runnable queue selected."
 
@@ -1052,7 +1042,6 @@ class QueuePage:
             RunState(
                 owner="queue" if phase != "idle" else "none",
                 phase=phase,
-                action=action,
                 completed=completed,
                 total=total,
                 queue_id=queue_id if phase != "idle" else None,
@@ -3499,23 +3488,6 @@ class QueuePage:
         if item is not None and self._detail is not None and self._detail["queue_id"] == wrapped.queue_id:
             self.model.set_live_stage(wrapped.item_id, label or "")
         self._publish_run_state()
-
-    def trigger_run_control(self) -> None:
-        """Route the compact header control through the same Start/Pause/Resume paths as the Queues page."""
-        if self._generate_presents:
-            return
-        view = self._run_view()
-        available = self._controls_for(view)
-        if view is None:
-            return
-        if needs_recovery(view) and available.start and view is self._view():
-            self.start()
-        elif available.pause:
-            self._post("pause", view["queue_id"])
-        elif available.resume:
-            self._post("resume", view["queue_id"])
-        elif available.start and view is self._view():
-            self.start()
 
     def primary(self) -> None:
         """The header's one action, whichever of Start, Start next, Pause or Resume applies now."""
