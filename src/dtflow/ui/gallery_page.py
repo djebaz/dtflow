@@ -135,6 +135,7 @@ MAX_QUERY_ITEMS = gallery_limits.MAX_READ  # GalleryQuery retains its existing p
 THUMBNAIL_SIDE = 600
 THUMBNAIL_CONCURRENCY = 6
 AUTO_REFRESH_MS = 1000  # file-metadata poll only; unchanged polls never rebuild the page
+SELECTION_SETTLE_MS = 200  # Next/Previous bursts load only the item they settle on
 PUSH_DEBOUNCE_MS = 250  # coalesce in-process change hints before the metadata check
 LIVE_RECOVERY_INTERVAL_S = 5  # full live reads during snapshot/failure episodes keep their original spacing
 SNAPSHOT_RECOVERY_GRACE_S = 5  # presentation-only stability grace before a recovered live read hides the warning
@@ -636,6 +637,14 @@ class GalleryPage(QObject):
         self.density_anchor_timer = QTimer(self)
         self.density_anchor_timer.setSingleShot(True)
         self.density_anchor_timer.timeout.connect(self._restore_density_anchor)
+        # Next/Previous bursts load only the settled item: each step restarts this timer and replaces the
+        # pending image/detail/video work, so passed-over items start no decode, inspection or media player.
+        self._settle_timer = QTimer(self)
+        self._settle_timer.setSingleShot(True)
+        self._settle_timer.setInterval(SELECTION_SETTLE_MS)
+        self._settle_timer.timeout.connect(self._run_pending_load)
+        self._pending_load = None
+        self._defer_load = False
         self.save_timer = QTimer(self)
         self.save_timer.setSingleShot(True)
         self.save_timer.setInterval(250)
@@ -3519,6 +3528,8 @@ class GalleryPage(QObject):
         self.external_button.setText("Open video in player" if clip else "Open in external viewer")
         available = not item.issue
         self.folder_button.setEnabled(available)
+        self._cancel_pending_load()
+        image_generation = None
         if image_changed:
             self.external_button.setEnabled(available)
             self.surface.setToolTip(item.issue or "")
@@ -3534,32 +3545,54 @@ class GalleryPage(QObject):
             self._image_generation += 1
             image_generation = self._image_generation
             self._image_pending = True
-
-            async def read_image():
-                return await asyncio.to_thread(_image, item.path, 0, self.state_dir, item=item)
-
-            self.runner.submit(
-                read_image(),
-                lambda result, error: self._image_done(image_generation, item.identity, result, error),
-            )
         self._detail_generation += 1
         detail_generation = self._detail_generation
-        self.runner.submit(
-            asyncio.to_thread(load_detail, item, state=self.state_dir)
-            if self._snapshot_at
-            else inspect_output(self.state_dir, item.identity),
-            lambda result, error: self._detail_done(detail_generation, item.identity, result, error),
-        )
-        if clip is not None and not item.issue:
+        video = clip is not None and not item.issue
+        if video:
             self.external_button.setEnabled(False)
             self.copy_button.setEnabled(False)
-            autoplay = self.video_player.autoplay and self._active and self.mode == "Detail" and selected_video_entry
+        autoplay = (
+            video and self.video_player.autoplay and self._active and self.mode == "Detail" and selected_video_entry
+        )
+
+        def load() -> None:
+            if image_generation is not None:
+
+                async def read_image():
+                    return await asyncio.to_thread(_image, item.path, 0, self.state_dir, item=item)
+
+                self.runner.submit(
+                    read_image(),
+                    lambda result, error: self._image_done(image_generation, item.identity, result, error),
+                )
             self.runner.submit(
-                asyncio.to_thread(self._video_companion_path, item),
-                lambda result, error: self._video_companion_done(
-                    detail_generation, item.identity, result, error, autoplay=autoplay
-                ),
+                asyncio.to_thread(load_detail, item, state=self.state_dir)
+                if self._snapshot_at
+                else inspect_output(self.state_dir, item.identity),
+                lambda result, error: self._detail_done(detail_generation, item.identity, result, error),
             )
+            if video:
+                self.runner.submit(
+                    asyncio.to_thread(self._video_companion_path, item),
+                    lambda result, error: self._video_companion_done(
+                        detail_generation, item.identity, result, error, autoplay=autoplay
+                    ),
+                )
+
+        if self._defer_load and not self.slideshow.active:
+            self._pending_load = load
+            self._settle_timer.start()
+        else:
+            load()
+
+    def _cancel_pending_load(self) -> None:
+        self._settle_timer.stop()
+        self._pending_load = None
+
+    def _run_pending_load(self) -> None:
+        load, self._pending_load = self._pending_load, None
+        if load is not None and not self.runner.closed:
+            load()
 
     def _video_companion_path(self, item: GalleryItem) -> str:
         """Resolve the poster's companion on a worker, never using its path as mutation authority."""
@@ -3844,7 +3877,11 @@ class GalleryPage(QObject):
             index = 0
         target = index + delta
         if 0 <= target < len(self.items):
-            self.select(self.items[target].identity, open_detail=False)
+            self._defer_load = True  # a burst of steps loads only the settled item
+            try:
+                self.select(self.items[target].identity, open_detail=False)
+            finally:
+                self._defer_load = False
             return
         if delta > 0 and self.offset + len(self.items) < self.total:
             self._pending_page_selection = "first"
@@ -4622,6 +4659,7 @@ class GalleryPage(QObject):
         return next((item for item in self.items if item.identity == self.selected_id), None)
 
     def _clear_detail(self) -> None:
+        self._cancel_pending_load()
         self.video_player.show_for_video(False)
         self.surface_painter.finish_transition()
         self._image_pending = False
