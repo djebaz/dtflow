@@ -1355,12 +1355,12 @@ def render_generate_configuration_states(shell, out):
             "origin": "offline-fixture",
         }
         page.detailsToggle.setChecked(True)
-        lora._prepared(record, None)
+        lora._present_prepared(record, None)
         lora._listed([record], None)
         shell.shell.rightScroll.ensureWidgetVisible(page.assetStatusLabel)
         snap("generate-36-asset-partial")
         clear()
-        lora._prepared(None, OSError("Offline fixture"))
+        lora._present_prepared(None, OSError("Offline fixture"))
         snap("generate-37-asset-failed")
         clear()
         refused = BackendError(
@@ -1371,7 +1371,7 @@ def render_generate_configuration_states(shell, out):
                 diagnostics=(("transport", "http"), ("http_status", "403"), ("server_message", "not authorized")),
             )
         )
-        lora._prepared(None, refused)
+        lora._present_prepared(None, refused)
         snap("generate-37a-api-asset-refused")
         clear()
         uninterpretable = BackendError(
@@ -1387,7 +1387,7 @@ def render_generate_configuration_states(shell, out):
                 ),
             )
         )
-        lora._prepared(None, uninterpretable)
+        lora._present_prepared(None, uninterpretable)
         snap("generate-37b-byom-server-value-unusable")
         clear()
         lora._listed(None, OSError("Offline fixture"))
@@ -1406,17 +1406,17 @@ def render_generate_configuration_states(shell, out):
         with patch.object(lora, "choose_asset_file", return_value=files):
             page.prepareAssetButton.click()
         snap("generate-43-prepare-multiple-start")
-        lora._prepared(dict(confirmed, asset_id="offline-first", identifier="offline-first.ckpt"), None)
+        lora._prepared(dict(confirmed, asset_id="offline-first", identifier="offline-first.ckpt"), None, index=0)
         snap("generate-44-prepare-multiple-progress")
-        lora._prepared(record, None)
-        lora._prepared(None, OSError("Offline synthetic unresolved result"))
+        lora._prepared(record, None, index=1)
+        lora._prepared(None, OSError("Offline synthetic unresolved result"), index=2)
         snap("generate-45-prepare-multiple-partial")
         clear()
         with patch.object(lora, "choose_asset_file", return_value=files[:1]):
             page.prepareAssetButton.click()
         shell.dialog_folder_problem("write_failed")  # the one-time warning of a remembered-folder failure
         snap("generate-46-prepare-folder-unavailable")
-        lora._prepared(record, None)
+        lora._present_prepared(record, None)
         clear()
         # Compute Units meter (Cloud and Local): calculated fixture value never reads a provider.
         units_path = "dtflow.ui.generation_page.estimate_compute_units"
