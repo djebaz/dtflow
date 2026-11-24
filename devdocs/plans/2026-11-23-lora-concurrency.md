@@ -29,6 +29,8 @@ distinguished from Windows and deployed DT+ owner acceptance.
   upload. An upload already started settles with its captured backend/key.
   Unconfirmed transfers remain unknown; manual reconciliation/Prepare remains
   the recovery path. One consumer stopping a shared restore does not stop another.
+- Each manual Prepare click authorizes only the ready files that fit in the
+  current queue. Remaining rows stay editable for a later click.
 - Auto-prepare requires the existing opted-in preference. Mixing automatic files
   into a manual batch does not select those files in Generate.
 - More independent work can increase disk/network load. Bounds are process-local;

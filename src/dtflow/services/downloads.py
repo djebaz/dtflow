@@ -312,7 +312,10 @@ async def run_item(
 
     def on_convert(progress) -> None:
         item.done, item.total = progress.done, progress.total or None
-        item.detail = "Waiting for conversion capacity" if progress.stage == "waiting" else item.family
+        if progress.stage == "waiting":
+            item.detail = progress.message or "Waiting for conversion capacity"
+        else:
+            item.detail = item.family
 
     try:
         try:

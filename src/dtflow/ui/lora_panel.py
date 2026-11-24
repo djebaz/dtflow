@@ -837,8 +837,6 @@ class LoraAssetPanel:
         source = str(Path(path))
         if source in self._auto_prepare_callbacks:
             return "This file is already preparing."
-        if len(self._prepare_files) - self._prepare_index >= 100:
-            return "Prepare queue is full (100 files); use Prepare after it drains."
         context = (
             (self._prepare_backend, self._prepare_revision, self._prepare_saved)
             if self.preparing
@@ -848,6 +846,8 @@ class LoraAssetPanel:
             return "DT+ account changed; prepare this download manually."
         if self.preparing and self._prepare_stop:
             return "Prepare is stopping; use Prepare manually."
+        if self._available_prepare_slots() == 0:
+            return "Prepare queue is full (100 files); use Prepare after it drains."
         self._auto_prepare_callbacks[source] = on_result
         on_result("Queued")
         was_preparing = self.preparing
@@ -908,6 +908,7 @@ class LoraAssetPanel:
             self.page,
             paths,
             on_prepare=self._authorize_prepare,
+            available_slots=self._available_prepare_slots,
             on_inspect_progress=lambda *report: self._inspect_progress(holder[0] if holder else None, *report),
             on_storage=self._open_prepare_storage,
         )
@@ -1131,6 +1132,11 @@ class LoraAssetPanel:
 
         self._runner.submit(storage_listing(self._state, probe_content(), saved=context[2]), listed)
 
+    def _available_prepare_slots(self) -> int:
+        if self._prepare_stop:
+            return 0
+        return 100 - (len(self._prepare_files) - self._prepare_index) if self.preparing else 100
+
     def _authorize_prepare(self, chosen: list[tuple[Path, LoraPrepareMetadata]], *, context=None) -> None:
         """Admit only explicitly approved, metadata-complete rows under the existing owner."""
         if not chosen or self._runner.closed:
@@ -1160,17 +1166,8 @@ class LoraAssetPanel:
             else set()
         )
         selected = {name: metadata for path, metadata in chosen if (name := str(path)) not in queued}
+        selected = dict(list(selected.items())[: self._available_prepare_slots()])
         if not selected:
-            return
-        if len(queued) + len(selected) > 100:
-            self._show(
-                self.page.assetStatusLabel,
-                Presentation(
-                    "warning",
-                    "Prepare queue full",
-                    "Admit at most 100 waiting or active files; try the rest after it drains.",
-                ),
-            )
             return
         editor = self._prepare_editor
         if editor is not None:
@@ -1392,7 +1389,7 @@ class LoraAssetPanel:
 
                 def conversion_progress(event: ConversionProgress) -> None:
                     labels = {
-                        "waiting": "Waiting for conversion capacity",
+                        "waiting": event.message or "Waiting for conversion capacity",
                         "reading": "Reading source",
                         "converting": "Converting",
                         "writing": "Writing checkpoint",
@@ -1431,7 +1428,7 @@ class LoraAssetPanel:
                         allow_experimental=spec.experimental,
                         metadata=metadata,
                     )
-                except (ConversionError, ValidationError):
+                except (AssetsBusyError, ConversionError, ValidationError):
                     raise
                 except Exception as exc:
                     # The provider has not been contacted; even an unexpected local error is definite.
@@ -1525,6 +1522,7 @@ class LoraAssetPanel:
             else:
                 outcome = "confirmed" if state == "confirmed" else "failed" if state == "failed" else "unresolved"
             self._prepare_counts[outcome] += 1
+            self._prepare_index += 1
             settled = (
                 "existing" if outcome == "confirmed" and (record or {}).get("evidence") == "already_exists" else outcome
             )
@@ -1642,7 +1640,6 @@ class LoraAssetPanel:
                     callback("Auto-prepare failed: DT+ rejected the file.")
                 else:
                     callback("Auto-prepare outcome unknown; check DT+ before retrying.")
-            self._prepare_index += 1
             self._prepare_active.discard(index)
             self._prepare_next()
             return
