@@ -12,6 +12,8 @@ Changes through 6.5.0 are consolidated in [DTFlow 6.5.0](v6.5.0.md). The publish
 
 ## Fixed
 
+- Restart recovery preserves the recorded outcome of finished workflows if DTFlow exits before settling their queue item.
+
 ## Upgrade and compatibility
 
 ## Validations checklist
