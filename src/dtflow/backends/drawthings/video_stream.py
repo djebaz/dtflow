@@ -569,7 +569,6 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
             if rate and not facts.has_audio and not warnings:
                 warnings.append("DT+ did not provide usable audio; the clip has no audio.")
             emit("terminal", stage="OK")
-        keep = True
         artifact = ImageArtifact(
             "final-1",
             Designation.FINAL,
@@ -590,7 +589,7 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
             ),
         )
         server = backend._inventory.server_identity if backend._inventory is not None else "unknown"
-        return GenerationResult(
+        result = GenerationResult(
             request.request_id,
             backend.backend_id,
             server,
@@ -599,6 +598,8 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
             CompletionEvidence("OK", True),
             tuple(warnings),
         )
+        keep = True
+        return result
     except asyncio.CancelledError:
         trace(
             "local_stop",
@@ -688,7 +689,8 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
         raise BackendError(replace(problem, partial_artifacts=())) from None
     finally:
         backend._active -= 1
-        try:
+
+        async def cleanup() -> None:
             # Each step is best effort and none may skip the next: the spool handle must be closed before rmtree.
             for step in (
                 lambda: asyncio.to_thread(sink.finish, abort=True),  # FFmpeg is gone before its slot is released
@@ -696,9 +698,15 @@ async def generate_video(backend, request: ResolvedGenerationRequest, on_event) 
                 lambda: video_encode.run_worker(spool.delete),
             ):
                 try:
-                    await settle(step())
+                    await step()
                 except Exception:
                     pass
+
+        try:
+            await settle(cleanup())
+        except asyncio.CancelledError:
+            keep = False  # the caller will not receive the temporary MP4
+            raise
         finally:
             if not keep:
                 import shutil
