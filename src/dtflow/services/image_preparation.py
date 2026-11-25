@@ -6,7 +6,6 @@ bounded CPU operations on a worker, never on the Qt/orchestration event-loop thr
 
 import hashlib
 import io
-import math
 import os
 import warnings
 from dataclasses import dataclass
@@ -21,6 +20,7 @@ from dtflow.core.image_inputs import (
     ImageFit,
     PreparedImageInputs,
     max_mask_grow,
+    validate_mask_feather,
     validate_source_dimensions,
 )
 from dtflow.core.models import ValidationError
@@ -111,8 +111,7 @@ def preview_mask_pixels(
     mask_coverage(pixels, width, height)
     if type(grow) is not int or abs(grow) > max_mask_grow(source_width, source_height):
         raise ValidationError("Mask grow exceeds the source-size work budget.")
-    if type(feather) not in (int, float) or not math.isfinite(feather) or not 0 <= feather <= 64:
-        raise ValidationError("Mask feather must be finite in 0..64 source pixels.")
+    validate_mask_feather(feather)
     scale = min(width / source_width, height / source_height)
     mask = _adjust_binary(Image.frombytes("L", (width, height), pixels), round(grow * scale))
     blend = ImageChops.multiply(mask, mask.filter(ImageFilter.GaussianBlur(feather * scale))) if feather else mask
@@ -289,8 +288,7 @@ def _blend_bytes(pixels, width, height, source_width, source_height, grow, feath
         raise ValidationError("Mask preview must be a downsampled grid of at most 512x512.")
     if type(grow) is not int or abs(grow) > max_mask_grow(source_width, source_height):
         raise ValidationError("Mask grow exceeds the source-size work budget.")
-    if type(feather) not in (int, float) or not math.isfinite(feather) or not 0 <= feather <= 64:
-        raise ValidationError("Mask feather must be finite in 0..64 source pixels.")
+    validate_mask_feather(feather)
     scale = min(width / source_width, height / source_height)
     mask = _adjust_binary(Image.frombytes("L", (width, height), pixels), round(grow * scale))
     if feather:
@@ -407,8 +405,7 @@ def prepare_image_bytes(
     """
     if type(grow) is not int or not -64 <= grow <= 64:
         raise ValidationError("Mask grow must be an integer in -64..64 source pixels.")
-    if type(feather) not in (int, float) or not math.isfinite(feather) or not 0 <= feather <= 64:
-        raise ValidationError("Mask feather must be finite in 0..64 source pixels.")
+    validate_mask_feather(feather)
     if mask_bytes is None and (grow or feather):
         raise ValidationError("Mask adjustments require a mask.")
     source = _source_rgb(source_bytes)

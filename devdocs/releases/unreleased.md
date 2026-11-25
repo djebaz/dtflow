@@ -8,6 +8,8 @@ Changes through 6.5.1 are consolidated in [DTFlow 6.5.1](v6.5.1.md). The publish
 
 ## Changed
 
+- Requests with oversized numbers, including inpainting mask feather settings, report validation errors. Presets with unrepresentable guidance or LoRA weights preserve those values for re-export.
+
 ## Fixed
 
 - Preset imports preserve the existing library if the selected file disappears. Import and save keep the library within the 4 MiB read limit.

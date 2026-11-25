@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from dtflow.core.models import LoRASelection, ValidationError
+from dtflow.core.models import LoRASelection, ValidationError, is_finite_number
 
 PRESETS_DIR = "presets"
 PRESETS_FILE = "custom_configs.json"
@@ -178,7 +178,7 @@ def apply_preset(preset: dict) -> PresetApplication:
     take("height", "height", int)
     take("steps", "steps", int)
     guidance = configuration.get("guidanceScale")
-    if type(guidance) in (int, float):
+    if is_finite_number(guidance):
         values["guidance"] = float(guidance)
         applied.append("guidanceScale")
     seed = configuration.get("seed")
@@ -198,7 +198,8 @@ def apply_preset(preset: dict) -> PresetApplication:
             if (
                 not isinstance(item, dict)
                 or not isinstance(item.get("file"), str)
-                or type(item.get("weight")) not in (int, float)
+                or not item["file"].strip()
+                or not is_finite_number(item.get("weight"))
                 or item.get("mode", "all") != "all"
             ):
                 all_supported = False
