@@ -18,6 +18,7 @@ Changes through 6.5.1 are consolidated in [DTFlow 6.5.1](v6.5.1.md). The publish
 ## Fixed
 
 - LoRAs stored on DT+ that this computer never prepared now appear in Generate, Queues, Workflows and Scripts. DTFlow checks each stored file with DT+ (nothing is uploaded) after reading the selected key's storage, and once per run for your other saved keys. A LoRA held only on another key shows as needing a re-attach on the selected key.
+- The LoRA Check result lists in full only the LoRAs that need attention; the ones that match are summed up in one line.
 
 - Restore previously acknowledged LoRA names that only have historical missing-key receipts to the shared selection pool. Dispatch still checks the selected key and never treats history as proof of current holdings.
 

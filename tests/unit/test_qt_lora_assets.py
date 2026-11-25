@@ -105,7 +105,7 @@ def test_lora_diagnostics_are_rendered_not_computed_and_block_generation(window,
     label = page.compatibilityStatusLabel
     qtbot.waitUntil(lambda: label.text().startswith("Blocked before dispatch"), timeout=5000)
     text = label.text()
-    assert "bad: architecture mismatch" in text and "ok: architecture match" in text
+    assert "bad: architecture mismatch" in text and "1 OK: ok." in text  # matching LoRAs are summed up (#614)
     assert "unk: architecture unknown" in text and "application unconfirmed" in text
     assert label.property("state") == "error"
 
