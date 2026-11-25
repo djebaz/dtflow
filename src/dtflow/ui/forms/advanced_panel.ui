@@ -31,7 +31,7 @@
       </item>
       <item>
        <widget class="QLabel" name="advancedPanelHeading">
-        <property name="text"><string>Advanced</string></property>
+        <property name="text"><string>Advanced generation</string></property>
         <property name="textRole" stdset="0"><string>panelHeading</string></property>
        </widget>
       </item>
