@@ -53,6 +53,7 @@ def syntax_main(connection) -> None:
     try:
         from dtflow.scripting.syntax import parse_in_reserved_thread
 
+        connection.send({"ready": True})
         connection.send({"error": parse_in_reserved_thread(connection.recv())})
     except (EOFError, BrokenPipeError, OSError):
         return

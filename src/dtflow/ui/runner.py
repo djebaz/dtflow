@@ -19,7 +19,8 @@ class AsyncRunner(QObject):
         super().__init__(parent)
         self._loop = asyncio.new_event_loop()
         self._pending: set = set()
-        self._coroutines: list = []
+        self._unstarted: dict[object, Coroutine] = {}
+        self._unstarted_lock = threading.Lock()
         self._stop = asyncio.Event()
         self._closed = False
         self._thread = threading.Thread(target=self._serve, name="dtflow-qt-async", daemon=True)
@@ -51,18 +52,18 @@ class AsyncRunner(QObject):
     def submit(self, coroutine: Coroutine, callback: Callable[[object, Exception | None], None]):
         """Run ``coroutine`` in the background; ``callback(result, exception)`` runs on the GUI thread."""
 
-        if self._closed:
-            coroutine.close()
-            raise RuntimeError("AsyncRunner is shut down.")
-        self._coroutines.append(coroutine)
+        ticket = object()
 
-        started = False
+        def take_unstarted() -> Coroutine | None:
+            with self._unstarted_lock:
+                return self._unstarted.pop(ticket, None)
 
         async def wrapper():
-            nonlocal started
-            started = True
+            work = take_unstarted()
+            if work is None:
+                return  # cancellation took ownership before the wrapper started
             try:
-                result, failure = await coroutine, None
+                result, failure = await work, None
             except Exception as exc:
                 result, failure = None, exc
             except asyncio.CancelledError as exc:
@@ -72,29 +73,43 @@ class AsyncRunner(QObject):
                 raise
             self._done.emit(callback, result, failure)
 
-        future = asyncio.run_coroutine_threadsafe(wrapper(), self._loop)
+        with self._unstarted_lock:
+            if self._closed:
+                coroutine.close()
+                raise RuntimeError("AsyncRunner is shut down.")
+            self._unstarted[ticket] = coroutine
+            future = asyncio.run_coroutine_threadsafe(wrapper(), self._loop)
         self._pending.add(future)
         future.add_done_callback(self._pending.discard)
 
         def cancelled_before_start(done) -> None:
-            if done.cancelled() and not started and not self._closed:
-                coroutine.close()
-                self._done.emit(callback, None, asyncio.CancelledError())
+            if not done.cancelled():
+                return
+            work = take_unstarted()
+            if work is not None:
+                work.close()
+                if not self._closed:
+                    self._done.emit(callback, None, asyncio.CancelledError())
 
         future.add_done_callback(cancelled_before_start)
         return future
 
     def shutdown(self, timeout: float = 5.0) -> None:
         """Cancel outstanding work, stop the loop and join its thread; safe at any time and idempotent."""
-        if not self._closed:
+        with self._unstarted_lock:
+            first = not self._closed
             self._closed = True
+        if first:
             self.shutdown_started.emit()
         if self._loop.is_closed():
             return
         self._loop.call_soon_threadsafe(self._stop.set)
         self._thread.join(timeout)
         if not self._thread.is_alive():
-            for coroutine in self._coroutines:
+            with self._unstarted_lock:
+                unstarted = tuple(self._unstarted.values())
+                self._unstarted.clear()
+            for coroutine in unstarted:
                 coroutine.close()  # a coroutine cancelled before it ever started is closed, not leaked
             self._loop.close()
 

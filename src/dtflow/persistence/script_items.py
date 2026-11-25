@@ -17,9 +17,9 @@ from pathlib import Path
 from typing import Any
 
 from dtflow.core.models import ValidationError
+from dtflow.scripting.source import MAX_SOURCE_BYTES, read_source_bytes
 
 KIND_SCRIPT = "script"
-MAX_SOURCE_BYTES = 1_048_576
 # Child attempt states that can no longer change; anything else (or "unknown") means the outcome is unresolved.
 TERMINAL_ATTEMPTS = ("succeeded", "failed", "cancelled", "save_failed", "interrupted_before_submission")
 
@@ -133,6 +133,8 @@ def source_path(state: Path, sha256: str) -> Path:
 
 def store_source(state: Path, source: str) -> str:
     """Keep the script text under its SHA-256 (until the managed library exists); returns the SHA."""
+    from dtflow.services.artifacts import atomic_write
+
     data = source.encode("utf-8")
     if len(data) > MAX_SOURCE_BYTES:
         raise ValidationError("Script source is too large.")
@@ -140,17 +142,17 @@ def store_source(state: Path, source: str) -> str:
     path = source_path(state, sha)
     if not path.is_file():
         path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(".tmp")
-        temporary.write_bytes(data)
-        temporary.replace(path)
+        atomic_write(path, data)
     return sha
 
 
 def load_source(state: Path, sha256: str) -> str:
     try:
-        data = source_path(state, sha256).read_bytes()
+        data = read_source_bytes(source_path(state, sha256))
     except OSError as exc:
         raise ValidationError("The script source for this item is no longer available.") from exc
+    except ValueError as exc:
+        raise ValidationError(str(exc)) from exc
     if hashlib.sha256(data).hexdigest() != sha256:
         raise ValidationError("The stored script source does not match its recorded hash.")
     return data.decode("utf-8")
