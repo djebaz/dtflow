@@ -1559,47 +1559,66 @@ class AssetService:
                 continue
             if len(digests) != 1:
                 counts["ambiguous_digest"] += 1
-                continue
-            digest = next(iter(digests))
-            try:
-                content = AssetContent("lora", item.name, digest, item.size, provenance="cloud discovery")
-            except ValidationError:
-                counts["invalid_name"] += 1
-                continue
-            counts["hex" if digest in hex_digests else "base64"] += 1
-            candidates[folded] = (item, content)
+            # Keep each distinct hypothesis. The lookup result is keyed by filename,
+            # so each batch must contain at most one hypothesis for each name.
+            contents = []
+            for digest in sorted(digests):
+                try:
+                    content = AssetContent("lora", item.name, digest, item.size, provenance="cloud discovery")
+                except ValidationError:
+                    counts["invalid_name"] += 1
+                    continue
+                counts["hex" if digest in hex_digests else "base64"] += 1
+                contents.append(content)
+            if contents:
+                candidates[folded] = (item, contents)
         for name in duplicates:
             candidates.pop(name, None)
-        candidates = {item.name: (item, content) for item, content in candidates.values()}
+        candidates = {item.name: (item, contents) for item, contents in candidates.values()}
         counts["duplicate_names"] = len(duplicates)
         counts["lookup_failed"] = 0
         counts["not_reusable"] = 0
         counts["reference_mismatch"] = 0
-        verified = []
-        names = list(candidates)
-        for offset in range(0, len(names), 64):
-            batch = names[offset : offset + 64]
-            try:
-                answers = await lookup(tuple(FileIdentity(name, True, candidates[name][1].sha256) for name in batch))
-            except (BackendError, ValidationError, OSError) as exc:
-                counts["lookup_failed"] += len(batch)
-                diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": type(exc).__name__})
-                continue
-            for name in batch:
-                item, content = candidates[name]
-                answer = answers.get(name)
-                if (
-                    answer is not None
-                    and answer.availability == "byom_reusable"
-                    and answer.sha256 == content.sha256
-                    and answer.reference
-                ):
-                    if _receipt_matches(answer.reference, item.key):
-                        verified.append((content, answer.reference, shortcode_family(name)))
+        counts["unresolved_ambiguity"] = 0
+        counts["hypotheses"] = sum(len(contents) for _, contents in candidates.values())
+        matches = {}
+        incomplete = set()
+        rounds = max((len(contents) for _, contents in candidates.values()), default=0)
+        for index in range(rounds):
+            names = [name for name, (_, contents) in candidates.items() if index < len(contents)]
+            for offset in range(0, len(names), 64):
+                batch = names[offset : offset + 64]
+                try:
+                    answers = await lookup(
+                        tuple(FileIdentity(name, True, candidates[name][1][index].sha256) for name in batch)
+                    )
+                except (BackendError, ValidationError, OSError) as exc:
+                    counts["lookup_failed"] += len(batch)
+                    incomplete.update(batch)
+                    diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": type(exc).__name__})
+                    continue
+                for name in batch:
+                    item, contents = candidates[name]
+                    content = contents[index]
+                    answer = answers.get(name)
+                    if (
+                        answer is not None
+                        and answer.availability == "byom_reusable"
+                        and answer.sha256 == content.sha256
+                        and answer.reference
+                    ):
+                        if _receipt_matches(answer.reference, item.key):
+                            matches.setdefault(name, []).append((content, answer.reference, shortcode_family(name)))
+                        else:
+                            counts["reference_mismatch"] += 1
                     else:
-                        counts["reference_mismatch"] += 1
-                else:
-                    counts["not_reusable"] += 1
+                        counts["not_reusable"] += 1
+        verified = []
+        for name, evidence in matches.items():
+            if len(evidence) == 1 and name not in incomplete:
+                verified.append(evidence[0])
+            else:
+                counts["unresolved_ambiguity"] += 1
         if not verified:
             diagnostic_event(
                 log, "assets.cloud_discovery", data={**counts, "candidates": len(candidates), "verified": 0}

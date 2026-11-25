@@ -15,7 +15,7 @@ Changes through 6.5.1 are consolidated in [DTFlow 6.5.1](v6.5.1.md). The publish
 
 ## Fixed
 
-- Discover cloud-stored custom LoRAs during the existing DT+ storage read. Candidate hexadecimal or Base64/Base64URL hashes from storage keys are checked through authenticated BYOM lookup before recording a reusable receipt; no weight upload or local copy is needed. Managed filename family tags supply the initial architecture hint.
+- Discover cloud-stored custom LoRAs during the existing DT+ storage read. Candidate hexadecimal or Base64/Base64URL hashes from storage keys are checked through authenticated BYOM lookup before recording a reusable receipt (multiple candidate digests are checked separately, never guessed); no weight upload or local copy is needed. Managed filename family tags supply the initial architecture hint.
 
 - Restore previously acknowledged LoRA names that only have historical missing-key receipts to the shared selection pool. Dispatch still checks the selected key and never treats history as proof of current holdings.
 
