@@ -8,6 +8,7 @@ import asyncio
 import dataclasses
 import json
 import os
+import threading
 
 import httpx
 import pytest
@@ -16,16 +17,17 @@ pytest.importorskip("pytestqt")
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QCheckBox, QLineEdit, QPushButton, QSlider, QWidget  # noqa: E402
-from support.cloud_assets import API_KEY, DtPlus, lora_file  # noqa: E402
+from support.cloud_assets import API_KEY, DtPlus, lora_file, sha256  # noqa: E402
 from support.fake_vault import Vault  # noqa: E402
 
 from dtflow.backends.fake import FakeBackend  # noqa: E402
 from dtflow.core.models import InventoryEntry, InventorySnapshot  # noqa: E402
 from dtflow.core.models import AssetContent  # noqa: E402
 from dtflow.persistence.assets import AssetRegistry  # noqa: E402
-from dtflow.services import session  # noqa: E402
+from dtflow.services import civitai, downloads, lora_convert_prepare, session  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
 from dtflow.services.dt_storage import storage_size  # noqa: E402
+from dtflow.services.lora_store import LoraStore  # noqa: E402
 from dtflow.ui.lora_panel import UPLOAD_NOTICE  # noqa: E402
 from dtflow.ui.main_window import MainWindow  # noqa: E402
 
@@ -214,6 +216,100 @@ def test_prepare_completes_while_an_unrelated_registry_writer_is_open(window, cl
     finally:
         loop.run_until_complete(other.aclose())
         loop.close()
+
+
+def test_overlapping_downloads_convert_and_auto_prepare(window, cloud, qtbot, tmp_path, monkeypatch):
+    # Keep the real download manager, conversion admission, retained store, registry and Prepare runner.
+    # Replace only the network transfer and tensor conversion with gated, offline fixture work.
+    downloads_started = threading.Barrier(3)
+    first_conversions = threading.Event()
+    last_conversion = threading.Event()
+    upload_started = threading.Event()
+    finish_upload = threading.Event()
+    conversion_order = []
+    order_lock = threading.Lock()
+
+    def download(version, state, token, *, on_progress, cancel):
+        data = f"synthetic source {version.version_id}".encode()
+        digest = sha256(data)
+        folder = civitai.sources_dir(state)
+        folder.mkdir(parents=True, exist_ok=True)
+        path = folder / f"{digest}.safetensors"
+        path.write_bytes(data)
+        on_progress(civitai.DownloadProgress(len(data), len(data)))
+        downloads_started.wait(timeout=15)
+        return civitai.DownloadedFile(path, digest, len(data), version.file.name, False, True)
+
+    def convert(staging, state, source, family, name, progress, cancel, allow_experimental, metadata=None):
+        with order_lock:
+            conversion_order.append(source)
+            position = len(conversion_order)
+        gate = first_conversions if position <= 2 else last_conversion
+        if not gate.wait(timeout=20):
+            raise TimeoutError("Test conversion gate was not released")
+        checkpoint = lora_file(tmp_path, name, data=source.read_bytes() * 256)
+        data = checkpoint.read_bytes()
+        retained = LoraStore(state).retain(checkpoint, sha256(data), len(data), managed_name=name)
+        return lora_convert_prepare.PreparedConversion(retained, False, metadata)
+
+    async def hold_upload():
+        upload_started.set()
+        if not await asyncio.to_thread(finish_upload.wait, 8):
+            raise TimeoutError("Test upload gate was not released")
+
+    monkeypatch.setattr(civitai, "download", download)
+    monkeypatch.setattr(lora_convert_prepare, "_convert_sync", convert)
+    cloud.on_chunk = hold_upload
+    page = window.downloads
+    page.form.linksAutoPrepareCheck.setChecked(True)
+    entries = [
+        downloads.entry_for(
+            civitai.CivitaiVersion(
+                provider="civitai",
+                model_id=number,
+                version_id=number,
+                model_name=f"Fixture {name}",
+                version_name="v1",
+                creator=None,
+                base_model="ZImageTurbo",
+                model_type="LORA",
+                permissions={},
+                tags=(),
+                trained_words=(),
+                trained_words_state="missing",
+                availability=None,
+                file=civitai.CivitaiFile(
+                    number, f"{name}.safetensors", None, None, True, "https://civitai.com/fixture"
+                ),
+            )
+        )
+        for number, name in enumerate(("Aster", "Birch", "Cedar"), start=1)
+    ]
+
+    try:
+        assert page._enqueue(entries) == 3
+        items = [item for item in page.items if item.version is not None]
+        assert len(items) == 3
+        qtbot.waitUntil(
+            lambda: (
+                len(conversion_order) == 2 and any(item.detail == "Waiting for conversion capacity" for item in items)
+            ),
+            timeout=12000,
+        )
+        first_conversions.set()
+        qtbot.waitUntil(lambda: upload_started.is_set() and len(conversion_order) == 3, timeout=6000)
+        assert not cloud.puts
+        last_conversion.set()
+        qtbot.waitUntil(lambda: all(item.state == downloads.CONVERTED for item in items), timeout=6000)
+        assert not cloud.puts
+        finish_upload.set()
+        qtbot.waitUntil(lambda: all(item.auto_prepare_status == "Prepared on DT+" for item in items), timeout=12000)
+        assert len(cloud.puts) == 3
+        assert len({item.converted_sha for item in items}) == 3
+    finally:
+        first_conversions.set()
+        last_conversion.set()
+        finish_upload.set()
 
 
 def test_prepare_adds_and_binds_the_lora_and_removing_it_drops_the_binding(window, cloud, qtbot, tmp_path):

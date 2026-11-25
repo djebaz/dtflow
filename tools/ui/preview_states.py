@@ -3447,12 +3447,10 @@ def render_mapped_gallery_states(app, state, out):
     decode_original = gallery_ui._image
 
     def fixture_image(path, max_side, state=None, *, item=None, **options):
-        # This is a synthetic mapping presentation, not a cross-runtime provenance/lease check.
-        # Decode the known local fixture through the real image reader instead of asking the
-        # managed-original path to authorize this invented Windows record.
+        # Decode the fixture directly through the real reader. It lives outside managed original storage.
         if path != stored:
             raise ValueError("Unexpected source in the mapped-image fixture")
-        return decode_original(str(root / "saved.png"), max_side, state, **options)
+        return decode_original(str(root / "saved.png"), max_side)
 
     with (
         patch.object(artifact_paths, "foreign_windows_path", foreign),
@@ -3481,11 +3479,12 @@ def render_mapped_gallery_states(app, state, out):
                 if not write_capture(target, lambda: shell.form.grab()):
                     raise RuntimeError(f"Could not save {target.name}")
                 report(target)
+            # Start a fresh Detail read after the Grid/List requests and wait for that decode.
+            shell.gallery._clear_detail()
             shell.gallery.show_view("Detail", persist=False)
-            shell.gallery.select(item.identity)
-            wait_for(lambda: not shell.gallery.surface_painter.pixmap.isNull())
+            wait_for(lambda: not shell.gallery._image_pending)
             if shell.gallery.surface_painter.pixmap.isNull():
-                raise RuntimeError("Synthetic mapped-image fixture did not decode")
+                raise RuntimeError(f"Synthetic mapped-image fixture did not decode: {shell.gallery.surface.toolTip()}")
             QTest.qWait(150)
             save(shell.form, out, "images-102-buffered-detail-decoded")
             # Display only: mapped Edit eligibility never reads the fixture or calls a provider.
