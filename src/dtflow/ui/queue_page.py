@@ -83,6 +83,8 @@ from dtflow.ui.planning_presenter import (
     PlanForm,
     build_plan,
     lora_set_value,
+    LORA_WEIGHTS_MODE,
+    sweep_lora_lines,
     count_text,
     images_requests,
     readout_text,
@@ -160,6 +162,7 @@ PLAN_INPUTS = (
 PLAN_TABLE_MAX_ROWS = 1000  # the composer preview table shows its rows in full up to this many; the composer scrolls
 PREVIEW_MS = 250  # the live preview follows edits after this pause, so typing a prompt list stays smooth
 REPEAT = "Repeat"
+LORA_DRAWS = ("loras", "lora_weight")  # the draw rows of the LoRA sets and LoRA weights, unused by Cross LoRA weights
 FILTER_BUTTONS = {key: f"{key}FilterButton" for key, *_ in FILTERS}
 WIRED_CONTROLS = (
     "queueList",
@@ -2040,6 +2043,11 @@ class QueuePage:
             label.setVisible(planned)
             getattr(page, name).setVisible(planned)
         page.planIncrementCheck.setVisible(planned)
+        if page.planModeCombo.currentText() == LORA_WEIGHTS_MODE:  # the mode sets the weights; no LoRA row applies
+            for name in ("planLorasLabel", "planLorasEdit", "planLoraSetsLabel", "planLoraSetsEdit"):
+                getattr(page, name).setVisible(False)
+            for name in ("planDrawLoraSetsLabel", "planDrawLoraSetsSpin", "planDrawLorasLabel", "planDrawLorasSpin"):
+                getattr(page, name).setVisible(False)
         self.plan_model.clear()  # a mode change invalidates the previous mode's preview.
         self._sync_preview_table_visibility()
         for name in ("planDrawLabel", "planDrawBox", "planVariationLabel", "planVariationBox"):
@@ -2110,6 +2118,8 @@ class QueuePage:
             edit.blockSignals(False)
 
     def _count(self) -> tuple[str, str]:
+        if self.page.planModeCombo.currentText() == LORA_WEIGHTS_MODE and not self._fixed_loras():
+            return "unknown", "Add LoRAs to the new queue to cross their weights."
         return count_text(self._plan_form(), self._prompt_source(), self._wildcards_dir)
 
     def _base_html(self, request) -> str:
@@ -3062,8 +3072,10 @@ class QueuePage:
     # -- planning --------------------------------------------------------------------------------------------------
     def _plan_form(self) -> PlanForm:
         page = self.page
+        sweep = page.planModeCombo.currentText() == LORA_WEIGHTS_MODE
+        draws = tuple((name, count) for name, count in self._draws() if not (sweep and name in LORA_DRAWS))
         return PlanForm(
-            page.planModeCombo.currentText(),
+            "Cross" if sweep else page.planModeCombo.currentText(),
             page.planPromptsEdit.toPlainText(),
             page.planModelsEdit.text(),
             page.planSeedsEdit.text(),
@@ -3071,11 +3083,11 @@ class QueuePage:
             page.planGuidanceEdit.text(),
             page.planSamplersEdit.text(),
             page.planSizesEdit.text(),
-            self._lora_weight_lines(),
+            sweep_lora_lines(item.identifier for item in self._fixed_loras()) if sweep else self._lora_weight_lines(),
             page.planIncrementCheck.isChecked(),
             "" if page.planStrengthsEdit.isHidden() else page.planStrengthsEdit.text(),
-            page.planLoraSetsEdit.text(),
-            self._draws(),
+            "" if sweep else page.planLoraSetsEdit.text(),
+            draws,
             page.planVariationCombo.currentText(),
             page.planVariationCountSpin.value(),
             page.planWildcardsEdit.toPlainText(),

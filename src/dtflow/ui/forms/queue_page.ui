@@ -1035,8 +1035,13 @@
                          <string>Pair</string>
                         </property>
                        </item>
+                       <item>
+                        <property name="text">
+                         <string>Cross LoRA weights</string>
+                        </property>
+                       </item>
                        <property name="toolTip">
-                        <string>Repeat: the Generate settings N times with incrementing seeds. Cross: every combination of the values. Pair: the n-th values together.</string>
+                        <string>Repeat: the Generate settings N times with incrementing seeds. Cross: every combination of the values. Pair: the n-th values together. Cross LoRA weights: every combination of the weights 0, 0.5 and 1 across the Fixed LoRAs.</string>
                        </property>
                       </widget>
                      </item>
