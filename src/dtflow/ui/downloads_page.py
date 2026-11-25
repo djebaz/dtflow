@@ -96,6 +96,7 @@ class DownloadsPage(QObject):
         self._active_credential = active_credential
         self._auto_prepare = auto_prepare
         self._receipt_revision = 0
+        self._prepare_owner_revision = 0
         self._confirmed_contents: frozenset[tuple[str, int]] = frozenset()
         try:
             self._auto_prepare_enabled = load_downloads_auto_prepare(self._state)
@@ -527,7 +528,7 @@ class DownloadsPage(QObject):
         # can open while this same file's automatic preparation is pending or running.
         item.auto_prepare_phase = "preparing"
         item.auto_prepare_status = "Preparing on DT+…"
-        receipt_revision = self._receipt_revision
+        owner_revision = self._prepare_owner_revision
         self._render(force=True)
 
         async def work():
@@ -539,6 +540,11 @@ class DownloadsPage(QObject):
                 item.auto_prepare_status = "Auto-prepare stopped before upload; use Prepare manually."
                 self._render(force=True)
                 return  # disabling the preference before admission must not upload
+            if owner_revision != self._prepare_owner_revision:
+                item.auto_prepare_phase = ""
+                item.auto_prepare_status = "DT+ account or backend changed; use Prepare manually."
+                self._render(force=True)
+                return
             if failure is not None or path is None:
                 item.auto_prepare_phase = ""
                 item.auto_prepare_status = "Auto-prepare could not locate the converted file; use Prepare manually."
@@ -546,7 +552,7 @@ class DownloadsPage(QObject):
                 return
 
             def settled(message: str) -> None:
-                if receipt_revision != self._receipt_revision:
+                if owner_revision != self._prepare_owner_revision:
                     # A key/backend switch happened while Prepare ran. Do not show an old key's receipt.
                     item.auto_prepare_phase = ""
                     item.auto_prepare_status = ""
@@ -670,6 +676,7 @@ class DownloadsPage(QObject):
 
     def refresh_actions(self) -> None:
         """A backend or DT+ key changed: re-read confirmed receipts for its exact identity."""
+        self._prepare_owner_revision += 1
         self._refresh_prepared_receipts()
 
     def _tick(self) -> None:

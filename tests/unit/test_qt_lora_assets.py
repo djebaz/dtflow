@@ -25,6 +25,7 @@ from dtflow.core.models import InventoryEntry, InventorySnapshot  # noqa: E402
 from dtflow.core.models import AssetContent  # noqa: E402
 from dtflow.persistence.assets import AssetRegistry  # noqa: E402
 from dtflow.services import civitai, downloads, lora_convert_prepare, session  # noqa: E402
+from dtflow.services.cloud_usage import key_identity  # noqa: E402
 from dtflow.services.credentials import SavedCredentials  # noqa: E402
 from dtflow.services.dt_storage import storage_size  # noqa: E402
 from dtflow.services.lora_store import LoraStore  # noqa: E402
@@ -261,6 +262,11 @@ def test_overlapping_downloads_convert_and_auto_prepare(window, cloud, qtbot, tm
     monkeypatch.setattr(lora_convert_prepare, "_convert_sync", convert)
     cloud.on_chunk = hold_upload
     page = window.downloads
+
+    async def active_credential():
+        return key_identity(API_KEY)
+
+    monkeypatch.setattr(page, "_active_credential", active_credential)
     page.form.linksAutoPrepareCheck.setChecked(True)
     entries = [
         downloads.entry_for(
@@ -303,7 +309,13 @@ def test_overlapping_downloads_convert_and_auto_prepare(window, cloud, qtbot, tm
         qtbot.waitUntil(lambda: all(item.state == downloads.CONVERTED for item in items), timeout=6000)
         assert not cloud.puts
         finish_upload.set()
-        qtbot.waitUntil(lambda: all(item.auto_prepare_status == "Prepared on DT+" for item in items), timeout=12000)
+
+        def all_prepared():
+            assert all(item.auto_prepare_phase == "prepared" for item in items), [
+                item.auto_prepare_status for item in items
+            ]
+
+        qtbot.waitUntil(all_prepared, timeout=12000)
         assert len(cloud.puts) == 3
         assert len({item.converted_sha for item in items}) == 3
     finally:
