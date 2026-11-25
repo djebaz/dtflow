@@ -63,7 +63,7 @@ from dtflow.services.image_inputs import restore_image_inputs
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.prepare_progress import PrepareEvent
 from dtflow.services.lora_auto_naming import normalize_previous_retained
-from dtflow.services.lora_naming import LoraPrepareMetadata, ManagedName, occupied_from_snapshot, shortcode_family
+from dtflow.services.lora_naming import LoraPrepareMetadata, ManagedName, name_family, occupied_from_snapshot
 from dtflow.services.image_preparation import prepare_image_files, validate_prepared_inputs
 from dtflow.services.preflight import apply_trigger_prefixes
 from dtflow.services.storage_probe import probe_content
@@ -1039,8 +1039,8 @@ def asset_view(record: dict) -> dict:
     )  # fmt: skip
     view = {key: record.get(key) for key in keys}
     if not view["family"] and view["kind"] == "lora" and isinstance(view["identifier"], str):
-        # Same naming fallback as dispatch receipts: the managed shortcode, labelled as such.
-        if family := shortcode_family(view["identifier"]):
+        # Same naming fallback as dispatch receipts: the shortcode or one architecture word in the name, labelled as such.
+        if family := name_family(view["identifier"]):
             view["family"], view["family_source"] = family, "shortcode"
     if "operations" in record:
         view["operations"] = record["operations"]
@@ -1207,7 +1207,7 @@ async def observe_key(
 
 async def discover_keys(
     state: Path,
-    listing: StorageListing,
+    listing: StorageListing | None,
     owner: str,
     *,
     saved: CredentialProvider | None,
@@ -1216,20 +1216,22 @@ async def discover_keys(
 ) -> tuple[tuple[str, ...], dict[str, int]]:
     """Record LoRAs DT+ confirms its keys hold, after (never inside) the Connection storage read.
 
-    First the selected key, from the ``listing`` that read already returned for ``owner``; then each other saved key in
+    First the selected key, from the ``listing`` that read already returned for ``owner`` (``None`` skips it); then each
+    other saved key in
     ``store`` not in ``skip``, through a backend pinned to that key (one storage list each; never the environment key,
     never generation). Each discovery makes a bounded number of metadata-only requests and uploads nothing. Receipts
     stay scoped to the key that holds the file. Returns the names recorded on the selected key and
     ``{key identity: receipts recorded}`` for every other key attempted, read or not, so a failing key is not retried
     on every refresh."""
     selected: tuple[str, ...] = ()
-    try:
-        async with open_assets(state, saved=saved, read_only=True) as service:
-            credential, rows = await service.receipt_snapshot()
-            if credential == owner:  # the selected key changed meanwhile: its own next read discovers it
-                selected = await service.discover_stored_loras(listing, owner, rows)
-    except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
-        diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": type(exc).__name__})
+    if listing is not None:
+        try:
+            async with open_assets(state, saved=saved, read_only=True) as service:
+                credential, rows = await service.receipt_snapshot()
+                if credential == owner:  # the selected key changed meanwhile: its own next read discovers it
+                    selected = await service.discover_stored_loras(listing, owner, rows)
+        except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
+            diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": type(exc).__name__})
     others: dict[str, int] = {}
     if store is None:
         return selected, others

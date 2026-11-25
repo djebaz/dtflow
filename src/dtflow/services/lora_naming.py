@@ -412,6 +412,69 @@ def shortcode_family(identifier: str) -> str | None:
     return _TAG_ARCHITECTURES.get(match["tag"].casefold()) if match else None
 
 
+# Name words that each point to one exact architecture (#614). Words shared by several (flux, qwen, wan, ltx, cosmos,
+# sd3 sizes...) are left out: a name hint never guesses between versions.
+_NAME_ALIASES = {
+    "krea": "krea_2",
+    "krea2": "krea_2",
+    "schnell": "flux1",
+    "sdxl": "sdxl_base_v0.9",
+    "sdxl_base": "sdxl_base_v0.9",
+    "sdxlBase": "sdxl_base_v0.9",
+    "sdxl_refiner": "sdxl_refiner_v0.9",
+    "sdxlRefiner": "sdxl_refiner_v0.9",
+    "ssd1b": "ssd_1b",
+    "hidream": "hidream_i1",
+    "hiDreamI1": "hidream_i1",
+    "hunyuanVideo": "hunyuan_video",
+    "qwenImage2_1": "qwen_image_2.1",
+    "qwenimage21": "qwen_image_2.1",
+    "zimage": "z_image",
+    "zImage": "z_image",
+    "ernie": "ernie_image",
+    "ernieimage": "ernie_image",
+    "mossimage": "moss_image",
+    "minimaxh3": "minimax_h3",
+    "ideogram4": "ideogram_4",
+    "ltx2_3": "ltx2.3",
+}
+_NAME_MARKERS = {
+    **{version: version for version in ARCHITECTURE_TAGS if version not in ("v1", "v2")},
+    **{tag: version for version, tag in ARCHITECTURE_TAGS.items()},
+    **_NAME_ALIASES,
+}
+_NAME_MARKER_VERSIONS = {
+    re.sub(r"[_\s.-]+", "_", marker).casefold(): version for marker, version in _NAME_MARKERS.items()
+}
+_NAME_MARKER_PATTERN = re.compile(
+    r"(?i)(?<![a-z0-9])(?:"
+    + "|".join(
+        r"[_\s.-]*".join(re.escape(part) for part in re.split(r"[_\s.-]+", marker))
+        for marker in sorted(_NAME_MARKERS, key=len, reverse=True)
+    )
+    + r")(?![a-z0-9])"
+)
+
+
+def name_family(identifier: str) -> str | None:
+    """The exact architecture a LoRA filename points to: the managed shortcode, else one architecture tag or word.
+
+    Naming evidence only (labelled "shortcode", never user or file evidence). A name with words for two different
+    architectures, or none, gives None."""
+    if family := shortcode_family(identifier):
+        return family
+    stem = _basename(identifier)
+    if stem.casefold().endswith(".ckpt"):
+        stem = stem[:-5]
+    stem = FORMAT_SUFFIX.sub("", stem)
+    found = {
+        _NAME_MARKER_VERSIONS.get(re.sub(r"[_\s.-]+", "_", match.group(0)).casefold())
+        for match in _NAME_MARKER_PATTERN.finditer(stem)
+    }
+    found.discard(None)
+    return next(iter(found)) if len(found) == 1 else None
+
+
 _CONVERTED_FORMAT_SUFFIX = re.compile(r"(?i)(?:^|[_\s.-])(?:lora[_\s.-]*)?(q8p|f16|fp16)\.ckpt$")
 
 

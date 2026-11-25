@@ -3199,12 +3199,20 @@ class MainWindow:
         self._discovery_busy = True
         owner = holdings.owner
 
-        def done(result, failure) -> None:
+        def others_done(result, failure) -> None:
             self._discovery_busy = False
             if failure is not None or result is None or self.runner.closed:
                 return
-            selected, others = result
+            _, others = result
             self._other_keys_read.update(others)
+            if any(others.values()):
+                self.generation.lora.refresh_assets()
+
+        def selected_done(result, failure) -> None:
+            if self.runner.closed:
+                self._discovery_busy = False
+                return
+            selected = () if failure is not None or result is None else result[0]
             if selected and revision == self._free_space_revision:
                 current = self.generation.lora._holdings
                 if current is not None and current.owner == owner:
@@ -3217,20 +3225,24 @@ class MainWindow:
                             discovered=len(selected),
                         )
                     )
-            if selected or any(others.values()):
-                self.generation.lora.refresh_assets()
+            if selected:
+                self.generation.lora.refresh_assets()  # shown now, not after the other keys
+            if self._saved is None:
+                self._discovery_busy = False
+                return
+            self.runner.submit(
+                discover_keys(
+                    self.state_dir,
+                    None,
+                    owner,
+                    saved=self._optional_saved,
+                    store=self._saved,
+                    skip=frozenset(self._other_keys_read),
+                ),
+                others_done,
+            )
 
-        self.runner.submit(
-            discover_keys(
-                self.state_dir,
-                listing,
-                owner,
-                saved=self._optional_saved,
-                store=self._saved,
-                skip=frozenset(self._other_keys_read),
-            ),
-            done,
-        )
+        self.runner.submit(discover_keys(self.state_dir, listing, owner, saved=self._optional_saved), selected_done)
 
     def open_dt_storage(self, *_, needed: int | None = None, protect: tuple[str, ...] = ()) -> None:
         """Open the DT+ storage panel; it reads the selected key's stored files with one dummy-file lookup.

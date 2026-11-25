@@ -46,7 +46,7 @@ from dtflow.services.lora_convert.errors import UnsupportedFamilyError, Unsuppor
 from dtflow.services.lora_convert_prepare import convert_for_prepare
 from dtflow.services.lora_digest import DigestCancelled, hash_file
 from dtflow.services.lora_family import DETECTABLE_FAMILIES, LoraFamily, detect_lora_family, validate_converted_lora
-from dtflow.services.lora_naming import LoraPrepareMetadata, display_label, lora_offer_notice, shortcode_family
+from dtflow.services.lora_naming import LoraPrepareMetadata, display_label, lora_offer_notice, name_family
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.prepare_progress import (
     CONFIRMING,
@@ -101,7 +101,7 @@ def _family_evidence_label(value: str | None, source: str | None, *, conflict: b
     if source == "user":
         return f"{label} (user selected, conflicts with file)" if conflict else f"{label} (user selected)"
     if source == "shortcode":
-        return f"{label} (shortcode)"
+        return f"{label} (name)"
     return f"{label} (file)" if source == "file" else f"{label} (unverified)"
 
 
@@ -310,7 +310,7 @@ class LoraAssetPanel:
                 for entry in self._catalogue.lora_definitions()
                 if (version := single_family_version(entry.base_model))
             }
-        return self._inventory_families.get(name) or self._catalogue_versions.get(name) or shortcode_family(name)
+        return self._inventory_families.get(name) or self._catalogue_versions.get(name) or name_family(name)
 
     def _candidate_compatible(self, name: str) -> bool:
         candidate = self._candidate_family(name)
@@ -411,8 +411,8 @@ class LoraAssetPanel:
         for name, value in self._inventory_families.items():
             family.setdefault(name, f"{FAMILY_LABELS.get(value, value)} (provider)")
         for name, _ in self.all_choices():  # includes custom LoRAs known only from receipts
-            if name not in family and (value := shortcode_family(name)):
-                family[name] = f"{FAMILY_LABELS.get(value, value)} (shortcode)"
+            if name not in family and (value := name_family(name)):
+                family[name] = f"{FAMILY_LABELS.get(value, value)} (name)"
         records: dict[str, list[dict]] = {}
         for (asset_id, name), record in self._records.items():
             if record.get("state") not in ("confirmed", "missing"):

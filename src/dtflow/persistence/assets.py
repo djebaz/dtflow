@@ -136,17 +136,17 @@ def _effective_version(row) -> tuple[str | None, str]:
 
 
 def _with_name_family(prepared: PreparedAsset) -> PreparedAsset:
-    """Fill an unclassified receipt from its managed filename shortcode, labelled as such (never as user/file).
+    """Fill an unclassified receipt from its filename (managed shortcode, else one architecture tag or word), labelled
+    "shortcode" (never user/file).
 
-    The shortcode names the exact architecture DTFlow gave the file when it was converted or prepared; it is naming
-    evidence, kept distinct from tensor detection and from an explicit user declaration."""
+    It is naming evidence, kept distinct from tensor detection and from an explicit user declaration."""
     if prepared.family:
         return prepared
     from dataclasses import replace
 
-    from dtflow.services.lora_naming import shortcode_family
+    from dtflow.services.lora_naming import name_family
 
-    family = shortcode_family(prepared.identifier)
+    family = name_family(prepared.identifier)
     return replace(prepared, family=family, family_source="shortcode") if family else prepared
 
 
