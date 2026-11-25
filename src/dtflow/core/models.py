@@ -402,17 +402,22 @@ class ResolvedGenerationRequest:
         ):
             raise ValidationError("Prepared assets must be an immutable tuple.")
         if self.advanced is not None:
-            from dtflow.core.advanced import AdvancedSettings, check_first_pass
+            from dtflow.core.advanced import (
+                SCOPE_NAMES,
+                AdvancedSettings,
+                check_first_pass,
+                scope_for,
+                unsupported_fields,
+            )
 
             if not isinstance(self.advanced, AdvancedSettings):
                 raise ValidationError("advanced settings are malformed.")
-            if (
-                self.operation != "txt2img"
-                or self.num_frames is not None
-                or self.pose_control is not None
-                or self.image_inputs is not None
-            ):
-                raise ValidationError("advanced settings are available for text-to-image only so far.")
+            scope = scope_for(video=self.num_frames is not None, pose=self.pose_control is not None)
+            if unsupported := unsupported_fields(self.advanced, scope):
+                raise ValidationError(
+                    f"{unsupported[0]} is not available for {SCOPE_NAMES[scope]} requests; "
+                    f"clear {', '.join(unsupported)} or change mode."
+                )
             check_first_pass(self.width_px, self.height_px, self.advanced)
         selected = {item.identifier for item in self.loras}
         if len({x.identifier for x in self.prepared_assets}) != len(self.prepared_assets) or any(
