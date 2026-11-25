@@ -2154,8 +2154,10 @@ class QueuePage:
         ]
         if loras:
             parts.append(f"{loras} LoRA{'s' if loras != 1 else ''}")
-        if request.advanced is not None:
-            parts.append(advanced_summary(request.width_px, request.height_px, request.advanced))
+        if request.advanced is not None and (
+            chosen := advanced_summary(request.width_px, request.height_px, request.advanced)
+        ):
+            parts.append(chosen)
         if request.num_frames is not None:
             from dtflow.core.video import duration_seconds
 
