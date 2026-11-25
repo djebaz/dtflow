@@ -1,5 +1,7 @@
 # DTFlow release roadmap
 
+**6.5.5 preparation (2026-11-25):** [6.5.1](https://github.com/djebaz/dtflow/releases/tag/v6.5.1) is the published baseline. [6.5.5 notes](../releases/v6.5.5.md) cover merged changes through #618: cloud-only LoRA discovery, Cross LoRA weights, preset and script limits and Krea 2 previews. Windows acceptance of the exact executable precedes publication.
+
 **6.5.1 preparation (2026-11-25):** [6.5.0](https://github.com/djebaz/dtflow/releases/tag/v6.5.0) is the published baseline. [6.5.1 notes](../releases/v6.5.1.md) cover merged fixes through #600: independent LoRA conversion and Prepare, LoRA and settings integrity, cancellation and restart reliability. Windows acceptance of the exact executable precedes publication.
 
 **6.5.0 preparation (2026-11-23):** [6.4.1](https://github.com/djebaz/dtflow/releases/tag/v6.4.1) is the published baseline. [6.5.0 notes](../releases/v6.5.0.md) cover merged changes through #583: pose guidance, videos, shared generation scheduling, result grids, progress and responsiveness fixes. The owner requested the manual Windows Actions build/draft path with the default imageio-mini FFmpeg provider. Exact-artifact Windows acceptance and corresponding-source compliance review precede publication. See the [release audit](2026-11-23-release-6.5.0.md) and [release guide](../guides/releasing.md).

@@ -1,6 +1,10 @@
 # Current development status
 
-## Release candidate: 6.5.1 (2026-11-25)
+## Release candidate: 6.5.5 (2026-11-25)
+
+Merged scope through PR #618 is consolidated in the [6.5.5 notes](releases/v6.5.5.md): cloud-only LoRA discovery, Cross LoRA weights, preset and script limits, long-session and cancellation fixes and Krea 2 previews. [6.5.1](https://github.com/djebaz/dtflow/releases/tag/v6.5.1) is the published baseline; the 6.5.5 executable still needs Windows smoke acceptance before publication.
+
+## Published: 6.5.1 (2026-11-25)
 
 Merged scope through PR #600 is consolidated in the [6.5.1 notes](releases/v6.5.1.md): independent LoRA conversion and Prepare, LoRA and settings integrity, cancellation and restart reliability. [6.5.0](https://github.com/djebaz/dtflow/releases/tag/v6.5.0) is the published baseline; the 6.5.1 executable still needs Windows smoke acceptance before publication.
 
