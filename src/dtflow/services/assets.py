@@ -1508,9 +1508,17 @@ class AssetService:
         known_names = {item.identifier.casefold() for item in known}
         candidates = {}
         duplicates = set()
-        counts = {"listed": len(listing.files), "known": 0, "not_checkpoint": 0,
-                  "invalid_size": 0, "no_digest": 0, "ambiguous_digest": 0,
-                  "invalid_name": 0, "hex": 0, "base64": 0}
+        counts = {
+            "listed": len(listing.files),
+            "known": 0,
+            "not_checkpoint": 0,
+            "invalid_size": 0,
+            "no_digest": 0,
+            "ambiguous_digest": 0,
+            "invalid_name": 0,
+            "hex": 0,
+            "base64": 0,
+        }
         seen_names = set()
         for item in listing.files:
             folded = item.name.casefold()
@@ -1529,12 +1537,14 @@ class AssetService:
             seen_names.add(folded)
             # Digest-shaped tokens in a delete key are hypotheses, never proof of content identity.
             hex_digests = {
-                value.lower()
-                for value in re.findall(r"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])", item.key)
+                value.lower() for value in re.findall(r"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])", item.key)
             }
             encoded_digests = set()
-            for token in re.findall(r"(?<![A-Za-z0-9+/_-])[A-Za-z0-9+/_-]{43}=?"
-                                    r"(?![A-Za-z0-9+/_=-])", item.key):
+            for token in re.findall(
+                r"(?<![A-Za-z0-9+/_-])[A-Za-z0-9+/_-]{43}=?"
+                r"(?![A-Za-z0-9+/_=-])",
+                item.key,
+            ):
                 try:
                     raw = base64.b64decode(token.rstrip("=") + "=", altchars=b"-_", validate=True)
                 except (ValueError, binascii.Error):
@@ -1570,9 +1580,7 @@ class AssetService:
         for offset in range(0, len(names), 64):
             batch = names[offset : offset + 64]
             try:
-                answers = await lookup(
-                    tuple(FileIdentity(name, True, candidates[name][1].sha256) for name in batch)
-                )
+                answers = await lookup(tuple(FileIdentity(name, True, candidates[name][1].sha256) for name in batch))
             except (BackendError, ValidationError, OSError) as exc:
                 counts["lookup_failed"] += len(batch)
                 diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": type(exc).__name__})
@@ -1593,7 +1601,9 @@ class AssetService:
                 else:
                     counts["not_reusable"] += 1
         if not verified:
-            diagnostic_event(log, "assets.cloud_discovery", data={**counts, "candidates": len(candidates), "verified": 0})
+            diagnostic_event(
+                log, "assets.cloud_discovery", data={**counts, "candidates": len(candidates), "verified": 0}
+            )
             return 0
         registry = AssetRegistry(self.state, writer=True, recover=False)
         try:
@@ -1604,7 +1614,8 @@ class AssetService:
         finally:
             await registry.aclose()
         diagnostic_event(
-            log, "assets.cloud_discovery",
+            log,
+            "assets.cloud_discovery",
             data={**counts, "candidates": len(candidates), "verified": len(verified), "added": added},
         )
         return added

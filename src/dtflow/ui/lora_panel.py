@@ -425,7 +425,9 @@ class LoraAssetPanel:
                 continue
             value, source = next(iter(values))
             family[name] = (
-                _family_evidence_label(value, source, conflict=any(record.get("architecture_conflict") for record in entries))
+                _family_evidence_label(
+                    value, source, conflict=any(record.get("architecture_conflict") for record in entries)
+                )
                 if any(record["state"] == "confirmed" for record in entries)
                 else f"{FAMILY_LABELS.get(value, value) or 'Unknown'} (historical)"
             )
