@@ -11,6 +11,7 @@ Changes through 6.5.1 are consolidated in [DTFlow 6.5.1](v6.5.1.md). The publish
 ## Changed
 
 - Requests with oversized numbers, including inpainting mask feather settings, report validation errors. Presets with unrepresentable guidance or LoRA weights preserve those values for re-export.
+- The desktop releases its references to background work as soon as that work starts, keeping tracking bounded during long sessions.
 
 ## Fixed
 
