@@ -3164,8 +3164,6 @@ class MainWindow:
         listing, holdings = result if result is not None else (None, None)
         # A failed read is unknown, never "not on key" and never "held".
         self.generation.lora.set_holdings(holdings if failure is None else None)
-        if failure is None and holdings is not None and holdings.discovered:
-            self.generation.lora.refresh_assets()
         label = self.form.dtFreeSpaceLabel
         if failure is not None or listing is None:
             label.setText("DT+ free space on this key: could not be read.")

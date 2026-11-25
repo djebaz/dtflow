@@ -8,12 +8,9 @@ HTTP and signed-URL handling; the registry owns durable receipts. Uncertain tran
 from __future__ import annotations
 
 import asyncio
-import base64
-import binascii
 import hashlib
 import logging
 import os
-import re
 import time
 import threading
 from pathlib import Path, PureWindowsPath
@@ -33,7 +30,6 @@ from dtflow.core.models import (
     BackendFailure,
     ErrorCategory,
     KeyHoldings,
-    FileIdentity,
     PreparedAsset,
     RemoteOutcome,
     ResolvedGenerationRequest,
@@ -52,7 +48,7 @@ from functools import partial
 from dtflow.services.lora_digest import cached_digest, remember
 from dtflow.services.lora_family import LoraFamily, detect_lora_family, validate_converted_lora
 from dtflow.services.lora_auto_naming import auto_prepare_metadata
-from dtflow.services.lora_naming import LoraPrepareMetadata, shortcode_family
+from dtflow.services.lora_naming import LoraPrepareMetadata
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.prepare_progress import CHECKING, CONFIRMING, EXISTS, UPLOADING, PrepareEvent
 
@@ -1499,146 +1495,6 @@ class AssetService:
         credential = await self.backend.asset_credential_identity()
         return credential, await self.registry.confirmed_scope_rows(credential)
 
-    async def discover_stored_loras(self, listing: StorageListing, owner: str) -> int:
-        """Recover cloud-only receipts from positive authenticated hash lookup, never from delete keys alone."""
-        lookup = getattr(self.backend, "lookup_lora_assets", None)
-        if not listing.files or not callable(lookup) or self.state is None:
-            return 0
-        known = await self.registry.choices(include_missing=True)
-        known_names = {item.identifier.casefold() for item in known}
-        candidates = {}
-        duplicates = set()
-        counts = {
-            "listed": len(listing.files),
-            "known": 0,
-            "not_checkpoint": 0,
-            "invalid_size": 0,
-            "no_digest": 0,
-            "ambiguous_digest": 0,
-            "invalid_name": 0,
-            "hex": 0,
-            "base64": 0,
-        }
-        seen_names = set()
-        for item in listing.files:
-            folded = item.name.casefold()
-            if folded in known_names:
-                counts["known"] += 1
-                continue
-            if not folded.endswith(".ckpt"):
-                counts["not_checkpoint"] += 1
-                continue
-            if item.size <= 0:
-                counts["invalid_size"] += 1
-                continue
-            if folded in seen_names:
-                duplicates.add(folded)
-                continue
-            seen_names.add(folded)
-            # Digest-shaped tokens in a delete key are hypotheses, never proof of content identity.
-            hex_digests = {
-                value.lower() for value in re.findall(r"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])", item.key)
-            }
-            encoded_digests = set()
-            for token in re.findall(
-                r"(?<![A-Za-z0-9+/_-])[A-Za-z0-9+/_-]{43}=?"
-                r"(?![A-Za-z0-9+/_=-])",
-                item.key,
-            ):
-                try:
-                    raw = base64.b64decode(token.rstrip("=") + "=", altchars=b"-_", validate=True)
-                except (ValueError, binascii.Error):
-                    continue
-                if len(raw) == 32:
-                    canonical = base64.b64encode(raw).decode().rstrip("=")
-                    if token.rstrip("=").replace("-", "+").replace("_", "/") == canonical:
-                        encoded_digests.add(raw.hex())
-            digests = hex_digests | encoded_digests
-            if not digests:
-                counts["no_digest"] += 1
-                continue
-            if len(digests) != 1:
-                counts["ambiguous_digest"] += 1
-            # Keep each distinct hypothesis. The lookup result is keyed by filename,
-            # so each batch must contain at most one hypothesis for each name.
-            contents = []
-            for digest in sorted(digests):
-                try:
-                    content = AssetContent("lora", item.name, digest, item.size, provenance="cloud discovery")
-                except ValidationError:
-                    counts["invalid_name"] += 1
-                    continue
-                counts["hex" if digest in hex_digests else "base64"] += 1
-                contents.append(content)
-            if contents:
-                candidates[folded] = (item, contents)
-        for name in duplicates:
-            candidates.pop(name, None)
-        candidates = {item.name: (item, contents) for item, contents in candidates.values()}
-        counts["duplicate_names"] = len(duplicates)
-        counts["lookup_failed"] = 0
-        counts["not_reusable"] = 0
-        counts["reference_mismatch"] = 0
-        counts["unresolved_ambiguity"] = 0
-        counts["hypotheses"] = sum(len(contents) for _, contents in candidates.values())
-        matches = {}
-        incomplete = set()
-        rounds = max((len(contents) for _, contents in candidates.values()), default=0)
-        for index in range(rounds):
-            names = [name for name, (_, contents) in candidates.items() if index < len(contents)]
-            for offset in range(0, len(names), 64):
-                batch = names[offset : offset + 64]
-                try:
-                    answers = await lookup(
-                        tuple(FileIdentity(name, True, candidates[name][1][index].sha256) for name in batch)
-                    )
-                except (BackendError, ValidationError, OSError) as exc:
-                    counts["lookup_failed"] += len(batch)
-                    incomplete.update(batch)
-                    diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": type(exc).__name__})
-                    continue
-                for name in batch:
-                    item, contents = candidates[name]
-                    content = contents[index]
-                    answer = answers.get(name)
-                    if (
-                        answer is not None
-                        and answer.availability == "byom_reusable"
-                        and answer.sha256 == content.sha256
-                        and answer.reference
-                    ):
-                        if _receipt_matches(answer.reference, item.key):
-                            matches.setdefault(name, []).append((content, answer.reference, shortcode_family(name)))
-                        else:
-                            counts["reference_mismatch"] += 1
-                    else:
-                        counts["not_reusable"] += 1
-        verified = []
-        for name, evidence in matches.items():
-            if len(evidence) == 1 and name not in incomplete:
-                verified.append(evidence[0])
-            else:
-                counts["unresolved_ambiguity"] += 1
-        if not verified:
-            diagnostic_event(
-                log, "assets.cloud_discovery", data={**counts, "candidates": len(candidates), "verified": 0}
-            )
-            return 0
-        registry = AssetRegistry(self.state, writer=True, recover=False)
-        try:
-            await registry.open()
-            added = await registry.adopt_cloud_loras(
-                tuple(verified), self.backend.backend_id, self.backend.origin, owner
-            )
-        finally:
-            await registry.aclose()
-        diagnostic_event(
-            log,
-            "assets.cloud_discovery",
-            data={**counts, "candidates": len(candidates), "verified": len(verified), "added": added},
-        )
-        return added
-
     async def key_holdings(
         self, listing: StorageListing, snapshot: tuple[str, tuple[tuple[str, str, str, str], ...]] | None = None
     ) -> KeyHoldings:
@@ -1674,6 +1530,40 @@ class AssetService:
                 "complete": complete,
                 "stale": len(stale),
                 **self._key_diagnostics(),
+            },
+        )
+        # Compare the provider's opaque reference and measured content digest with the
+        # same stored key. Log aggregate evidence only, without additional network I/O.
+        import re
+
+        known = {item.receipt_id: item for item in await self.registry.choices(include_missing=True)}
+        shapes = {}
+        matched = digest_first = digest_last = digest_absent = 0
+        for item in listing.files:
+            tokens = re.findall(r"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])", item.key)
+            shape = str(len(tokens))
+            shapes[shape] = shapes.get(shape, 0) + 1
+            for asset_id, _, remote_id, _ in rows:
+                if not _receipt_matches(remote_id, item.key) or asset_id not in known:
+                    continue
+                matched += 1
+                digest = known[asset_id].sha256.lower()
+                if tokens and tokens[0].lower() == digest:
+                    digest_first += 1
+                elif tokens and tokens[-1].lower() == digest:
+                    digest_last += 1
+                else:
+                    digest_absent += 1
+        diagnostic_event(
+            log,
+            "assets.storage_reference_shape",
+            data={
+                "listed": len(listing.files),
+                "hex_token_counts": shapes,
+                "matched_receipts": matched,
+                "content_digest_first": digest_first,
+                "content_digest_last": digest_last,
+                "content_digest_absent": digest_absent,
             },
         )
         gone = {identifier for _, identifier, _, _ in stale}

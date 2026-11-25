@@ -1179,13 +1179,6 @@ async def observe_key(
             # No pre-request evidence: never judge newer receipts against this older remote list.
             return listing, KeyHoldings(False, frozenset(), 0, 0, False)
         holdings = await service.key_holdings(listing, snapshot)
-        try:
-            added = await service.discover_stored_loras(listing, snapshot[0])
-        except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
-            diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": type(exc).__name__})
-            added = 0
-        if added:
-            holdings = replace(holdings, discovered=added)
     if not holdings.stale or holdings.owner is None:
         return listing, holdings
     registry = AssetRegistry(state, writer=True, recover=False)

@@ -217,7 +217,6 @@ class KeyHoldings:
     stale: tuple[tuple[str, str, str, str], ...] = field(
         default=(), repr=False, compare=False
     )  # (asset_id, identifier, remote_id, seen) of receipts the complete list lacks; written by the caller, not here
-    discovered: int = 0  # verified cloud-only receipts added during the storage read
 
 
 @dataclass(frozen=True, slots=True)
