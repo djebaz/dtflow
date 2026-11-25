@@ -26,6 +26,7 @@ from PySide6.QtGui import QDesktopServices, QIcon, QStandardItem, QStandardItemM
 from PySide6.QtWidgets import QApplication, QFormLayout, QListWidgetItem, QMenu, QPlainTextEdit, QWidget
 
 from dtflow.core.models import BackendEvent, Designation, LoRASelection, ValidationError
+from dtflow.core.advanced import summary as advanced_summary
 from dtflow.core.request_records import request_from_record
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry
@@ -1042,7 +1043,7 @@ class QueuePage:
         page.itemBackendLabel.setText(summarize(view).backend if view else "—")
         page.itemSeedLabel.setText("—" if row.seed is None else str(row.seed))
         page.itemDimensionsLabel.setText(row.dimensions_text)
-        page.itemOperationLabel.setText(row.operation_text)
+        page.itemOperationLabel.setText(" · ".join(part for part in (row.operation_text, row.advanced_text) if part))
         page.itemOutcomeLabel.setText(row.outcome_line)
         outputs = [*row.outputs, *([row.metadata] if row.metadata else [])]
         # Full paths stay in the tooltip; the panel shows a summary and a button to the attempt's folder.
@@ -2153,6 +2154,8 @@ class QueuePage:
         ]
         if loras:
             parts.append(f"{loras} LoRA{'s' if loras != 1 else ''}")
+        if request.advanced is not None:
+            parts.append(advanced_summary(request.width_px, request.height_px, request.advanced))
         if request.num_frames is not None:
             from dtflow.core.video import duration_seconds
 

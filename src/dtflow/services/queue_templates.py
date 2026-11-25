@@ -8,6 +8,7 @@ from dtflow.core.image_inputs import ImageContent
 from dtflow.core.models import ResolvedGenerationRequest, ValidationError, integer
 from dtflow.core.pose import PoseControl
 from dtflow.core.queue_authoring import PlanForm, queue_edit_from_source
+from dtflow.core.advanced import summary as advanced_summary
 from dtflow.core.request_records import request_from_record
 from dtflow.persistence import queue_templates as storage
 
@@ -115,6 +116,10 @@ def recipe_record(recipe: Recipe) -> dict:
     return record
 
 
+# Base fields added after templates existed; their absence in an older record means "not chosen".
+OPTIONAL_BASE_FIELDS = ("advanced",)
+
+
 def recipe_from_record(record: dict) -> Recipe:
     try:
         # A recipe saved by an older version also carries a "cap"; queues have no maximum of their own now (#492), so
@@ -145,6 +150,9 @@ def recipe_from_record(record: dict) -> Recipe:
             "prepared_assets",
             "resolution_evidence",
         }
+        if isinstance(base, dict):
+            # A template saved before a field existed has no such key; it loads with that field's default.
+            base = {**{name: None for name in OPTIONAL_BASE_FIELDS if name not in base}, **base}
         if not isinstance(base, dict) or set(base) != base_fields:
             raise ValidationError("Template base fields are incomplete or contain unsupported evidence.")
         if base.get("image_inputs") is not None or base.get("pose_control") is not None:
@@ -217,4 +225,9 @@ def summary(template: QueueTemplate) -> str:
     scope = f"{r.count} items" if r.form.mode == "Repeat" else "ordered comparison dimensions"
     seeds = "incrementing" if r.form.increment or r.form.mode == "Repeat" else "fixed/listed"
     pose = f" · Pose · {r.pose.control.checkpoint} · strength {r.pose.control.strength:g}" if r.pose else ""
+    pose += (
+        f" · {chosen}"
+        if (chosen := advanced_summary(r.request.width_px, r.request.height_px, r.request.advanced))
+        else ""
+    )
     return f"{r.backend} · {r.form.mode} · {scope} · {r.request.model_id} · {r.form.variation} · image seed {r.request.seed} ({seeds}) · plan seed {r.form.rng_seed or 'not set'}{pose}"

@@ -12,11 +12,13 @@ Changes through 6.5.5 are consolidated in [DTFlow 6.5.5](v6.5.5.md). The publish
 
 ## Fixed
 
+- Queue templates saved by earlier versions keep loading after advanced settings were added; new templates, queue items and the item panel carry and show the chosen advanced values.
+
 ## Upgrade and compatibility
 
 ## Validations checklist
 
 ## Release audit
 
-- PRs: #541, #542.
+- PRs: #541, #542, #543.
 - Scope: Version bump 6.5.5, release-note consolidation and the first advanced-settings slice (Hires Fix, seed mode, tiled decoding) across the supported modes.
