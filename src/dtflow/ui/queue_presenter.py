@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from dtflow.core.advanced import AdvancedSettings, summary as advanced_summary
+from dtflow.core.models import ValidationError
 from dtflow.core.output_layout import identity_from_path, is_metadata_name
 from dtflow.core.queue_eta import estimate_queue_seconds
 from dtflow.services.connection import failure_reason, local_time
@@ -255,11 +257,22 @@ class ItemRow:
     pose_control: dict | None = None  # exact recorded control, never inferred from the item operation
     num_frames: int | None = None
     has_start_image: bool = False
+    advanced: dict | None = None  # the recorded advanced values, as stored
     live_stage: str = ""  # window-owned transient observation; never persisted as an outcome
 
     @property
     def dimensions_text(self) -> str:
         return "—" if self.width is None or self.height is None else f"{self.width:g} × {self.height:g}"
+
+    @property
+    def advanced_text(self) -> str:
+        """The recorded advanced values in one line; empty when none were chosen or the record is unreadable."""
+        if not self.advanced or self.width is None or self.height is None:
+            return ""
+        try:
+            return advanced_summary(int(self.width), int(self.height), AdvancedSettings.from_record(self.advanced))
+        except ValidationError:
+            return ""
 
     @property
     def operation_text(self) -> str:
@@ -650,6 +663,7 @@ def item_rows(view: dict) -> tuple[ItemRow, ...]:
                 pose_control=item.get("pose_control"),
                 num_frames=item.get("num_frames"),
                 has_start_image=item.get("has_start_image", False),
+                advanced=item.get("advanced"),
                 script_preview_path=script_preview[0] if script_preview else None,
                 script_preview_identity=script_preview[1] if script_preview else None,
             )
