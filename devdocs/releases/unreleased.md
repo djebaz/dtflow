@@ -15,6 +15,7 @@ Changes through 6.5.1 are consolidated in [DTFlow 6.5.1](v6.5.1.md). The publish
 ## Fixed
 
 - Preset imports preserve the existing library if the selected file disappears. Import and save keep the library within the 4 MiB read limit.
+- Cancelling a video while local cleanup is running still frees its encoder slot and removes its temporary files.
 
 ## Upgrade and compatibility
 
