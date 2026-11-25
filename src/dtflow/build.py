@@ -91,8 +91,8 @@ def identity(*, checkout: bool = False) -> dict[str, str]:
     return build
 
 
-def display_identity() -> str:
-    build = identity()
+def display_identity(*, checkout: bool = False) -> str:
+    build = identity(checkout=checkout)
     if build["source_commit"] != "unknown":
         revision = "g" + build["source_commit"][:7]
     elif "source_modified" in build:
