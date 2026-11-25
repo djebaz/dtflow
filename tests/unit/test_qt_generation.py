@@ -257,14 +257,19 @@ def test_invalid_field_is_marked_and_nothing_is_submitted(window, qtbot):
 
 def test_state_busy_is_reported_without_dispatch(window, qtbot):
     owner = SQLiteAttempts(window.state_dir)
-    window.runner.submit(owner.open(), lambda *_: None)
-    qtbot.wait(200)
-    page = window.generation_page
-    page.generateButton.click()
-    qtbot.waitUntil(settled(window), timeout=5000)
-    assert page.generationStatusLabel.text().startswith("Dispatch is owned by another process")
-    window.runner.submit(owner.aclose(), lambda *_: None)
-    qtbot.wait(100)
+    opened, closed = [], []
+    window.runner.submit(owner.open(), lambda _, failure: opened.append(failure))
+    try:
+        qtbot.waitUntil(lambda: bool(opened), timeout=5000)
+        assert opened == [None]
+        page = window.generation_page
+        page.generateButton.click()
+        qtbot.waitUntil(settled(window), timeout=5000)
+        assert page.generationStatusLabel.text().startswith("Dispatch is owned by another process")
+    finally:
+        window.runner.submit(owner.aclose(), lambda _, failure: closed.append(failure))
+        qtbot.waitUntil(lambda: bool(closed), timeout=5000)
+        assert closed == [None]
 
 
 def test_inventory_refresh_populates_models_with_observation_time(window, qtbot):
