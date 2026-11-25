@@ -20,6 +20,8 @@ from dtflow.services.wildcards import bind_wildcards
 from dtflow.ui.generation_presenter import FormError
 
 MODES = {"Pair": "pair", "Cross": "cross"}
+LORA_WEIGHTS_MODE = "Cross LoRA weights"  # composer mode: Cross over the weights 0, 0.5 and 1 of every Fixed LoRA
+SWEEP_WEIGHTS = "0; 0.5; 1"
 # Dimension name (or leading error word) -> Designer object name of the owning widget.
 ERROR_FIELDS = {
     "prompt": "planPromptsEdit",
@@ -192,6 +194,11 @@ def candidate_counts(form: PlanForm) -> dict[str, int]:
         "loras": distinct(_tokens(form.lora_sets)),
         "lora_weight": min((distinct(_tokens(line), float) for line in lines), default=0),
     }
+
+
+def sweep_lora_lines(identifiers) -> str:
+    """The planner's LoRA weight lines for Cross LoRA weights: every given LoRA at each of 0, 0.5 and 1."""
+    return "\n".join(f"{identifier}: {SWEEP_WEIGHTS}" for identifier in identifiers)
 
 
 def parse_lora_set(chip: str) -> tuple[tuple[str, float], ...]:
