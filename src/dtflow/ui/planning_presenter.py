@@ -6,12 +6,13 @@ that owns the field, using the same leading-word approach as the Generate form.
 """
 
 import re
+from dataclasses import replace
 from pathlib import Path
 
 from dtflow.core.queue_authoring import (
     PlanForm as PlanForm,
     QueueEdit as QueueEdit,
-    queue_edit_from_source as queue_edit_from_source,
+    queue_edit_from_source as _stored_edit,
 )
 from dtflow.core.models import MAX_QUEUE_ITEMS, SEED_LIMIT, ValidationError
 from dtflow.services.planning import Plan, PlanError, PlanTable, PromptVariation, plan_size, seed_range
@@ -199,6 +200,27 @@ def candidate_counts(form: PlanForm) -> dict[str, int]:
 def sweep_lora_lines(identifiers) -> str:
     """The planner's LoRA weight lines for Cross LoRA weights: every given LoRA at each of 0, 0.5 and 1."""
     return "\n".join(f"{identifier}: {SWEEP_WEIGHTS}" for identifier in identifiers)
+
+
+def queue_edit_from_source(source: dict) -> QueueEdit:
+    """The stored composer input; a Cross over exactly the base LoRAs at 0, 0.5 and 1 reopens as Cross LoRA weights.
+
+    The mode stores its plan as plain Cross lines, so Edit as new would otherwise show the Fixed LoRAs and the same
+    weights again as a LoRA weights row.
+    """
+    edit = _stored_edit(source)
+    form = edit.form
+    if form.mode != "Cross" or form.lora_sets or not form.loras:
+        return edit
+    try:
+        lines = _loras(form.loras)
+    except FormError:
+        return edit
+    swept = {identifier for identifier, _ in lines}
+    fixed = {item["identifier"] for item in edit.base.get("loras", ())}
+    if swept == fixed and all(weights == (0.0, 0.5, 1.0) for _, weights in lines):
+        return replace(edit, form=replace(form, mode=LORA_WEIGHTS_MODE, loras=""))
+    return edit
 
 
 def parse_lora_set(chip: str) -> tuple[tuple[str, float], ...]:
