@@ -170,8 +170,6 @@ def save_preset(state: Path, name: str, values: dict) -> None:
 
 def update_preset_lora_names(state: Path, expected: dict, swaps: Mapping[str, str]) -> dict | None:
     """Update only LoRA filenames in the library entry that was actually opened."""
-    from dtflow.services.artifacts import atomic_write
-
     if not swaps:
         return None
     configuration = expected["configuration"]
@@ -190,10 +188,7 @@ def update_preset_lora_names(state: Path, expected: dict, swaps: Mapping[str, st
             if item != expected:
                 return None
             presets[index] = replacement
-            encoded = json.dumps(presets, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-            if len(encoded) > MAX_PRESET_BYTES:
-                raise ValidationError("The updated preset library would exceed 4 MiB.")
-            atomic_write(preset_path(state), encoded)
+            _atomic_json(preset_path(state), presets)
             return replacement
     return None
 
