@@ -1,7 +1,7 @@
 """Bounded read-only script projection of existing inventory/classification evidence.
 
 No backend creation, refresh, network, credential or filesystem discovery here.
-Prepared means a historical confirmed local receipt, not fresh server validation.
+Prepared means acknowledged local preparation history, including receipts marked missing, not fresh server validation.
 """
 
 from pathlib import Path

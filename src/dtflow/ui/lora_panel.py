@@ -298,7 +298,7 @@ class LoraAssetPanel:
         versions = {
             record.get("family")
             for record in self._records.values()
-            if record["identifier"] == name and record["state"] == "confirmed"
+            if record["identifier"] == name and record["state"] in ("confirmed", "missing")
         }
         if versions:
             return next(iter(versions)) if len(versions) == 1 else None
@@ -413,7 +413,7 @@ class LoraAssetPanel:
                 family[name] = f"{FAMILY_LABELS.get(value, value)} (shortcode)"
         records: dict[str, list[dict]] = {}
         for (asset_id, name), record in self._records.items():
-            if record.get("state") != "confirmed":
+            if record.get("state") not in ("confirmed", "missing"):
                 continue
             if name in self._receipts and self._receipts[name] != asset_id:
                 continue
@@ -424,8 +424,10 @@ class LoraAssetPanel:
                 family[name] = "Unknown (conflicting receipts)"
                 continue
             value, source = next(iter(values))
-            family[name] = _family_evidence_label(
-                value, source, conflict=any(record.get("architecture_conflict") for record in entries)
+            family[name] = (
+                _family_evidence_label(value, source, conflict=any(record.get("architecture_conflict") for record in entries))
+                if any(record["state"] == "confirmed" for record in entries)
+                else f"{FAMILY_LABELS.get(value, value) or 'Unknown'} (historical)"
             )
         return family
 

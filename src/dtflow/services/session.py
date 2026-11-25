@@ -259,10 +259,10 @@ async def bind_prepared(
 
 
 async def script_asset_choices(state: Path, backend_name: str) -> tuple[PreparedAsset, ...]:
-    """Confirmed receipt pool for queues, scripts and workflows, independent of Generate's selected LoRAs.
+    """Acknowledged receipt candidates for queues, scripts and workflows, independent of Generate's selection.
 
     Local reads only. Actual dispatch still validates each selected receipt against
-    the active backend/account; a confirmed historical record is not live consent.
+    the active backend/account; historical missing receipts may be checked/restored but are not live holdings.
 
     One receipt per LoRA name, the one prepared on purpose last (else first seen last): a file converted again under the same
     name has a new hash, and the old receipt must never be bound for it, or the request names the old bytes (#361).
@@ -272,7 +272,7 @@ async def script_asset_choices(state: Path, backend_name: str) -> tuple[Prepared
     registry = AssetRegistry(state)
     await registry.open()
     try:
-        choices = await registry.choices()
+        choices = await registry.choices(include_missing=True)
         selected = newest_per_name(choices, await asyncio.to_thread(LoraStore(state).current_by_name))
         return await registry.resolve_prepared(selected)
     finally:
@@ -1235,12 +1235,14 @@ async def list_assets(state: Path, *, named: bool = False) -> list[dict]:
             for record in records
             if record["state"] != "confirmed"
         }
-        for alias in await registry.choices():
+        confirmed = await registry.choices()
+        confirmed_names = {(item.receipt_id, item.identifier) for item in confirmed}
+        for alias in await registry.choices(include_missing=True):
             record = dict(parents[alias.receipt_id])
             record.update(
                 identifier=alias.identifier,
                 remote_id=alias.remote_id,
-                state="confirmed",
+                state="confirmed" if (alias.receipt_id, alias.identifier) in confirmed_names else "missing",
                 confirmed_at_utc=alias.confirmed_at_utc,
             )
             shown[(alias.receipt_id, alias.identifier)] = asset_view(record)
