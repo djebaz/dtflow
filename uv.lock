@@ -141,7 +141,7 @@ wheels = [
 
 [[package]]
 name = "dtflow"
-version = "6.5.0"
+version = "6.5.1"
 source = { editable = "." }
 dependencies = [
     { name = "drawthings-py" },
