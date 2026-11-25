@@ -308,6 +308,39 @@ class AssetRegistry:
                 db.execute("ROLLBACK")
                 raise
 
+    async def adopt_cloud_loras(self, verified, backend_id: str, origin: str, owner: str) -> int:
+        """Record positive BYOM evidence without a local file, preserving existing metadata and names."""
+
+        def adopt(db):
+            added = 0
+            for content, reference, family in verified:
+                # Never replace an existing logical name or interfere with a live Prepare.
+                if db.execute(
+                    "SELECT 1 FROM assets WHERE backend_id=? AND origin=? AND identifier=? COLLATE NOCASE "
+                    "UNION SELECT 1 FROM asset_key_receipts WHERE identifier=? COLLATE NOCASE",
+                    (backend_id, origin, content.identifier, content.identifier),
+                ).fetchone():
+                    continue
+                if db.execute(
+                    "SELECT 1 FROM assets WHERE backend_id=? AND origin=? AND sha256=? AND size=?",
+                    (backend_id, origin, content.sha256, content.size),
+                ).fetchone():
+                    continue
+                asset_id, operation = self._begin(db, content, backend_id, origin, "rebind", None, None)
+                # Filename shortcode is naming evidence, not measured tensor evidence.
+                # Store only when the canonical row has no existing classification.
+                if family:
+                    db.execute(
+                        "UPDATE lora_records SET declared_version=? "
+                        "WHERE sha256=? AND size=? AND declared_version IS NULL AND detected_version IS NULL",
+                        (family, content.sha256, content.size),
+                    )
+                self._confirm(db, asset_id, operation, reference, "reconciled", owner, content.identifier)
+                added += 1
+            return added
+
+        return await self._run(self._write, adopt)
+
     async def begin(
         self,
         content: AssetContent,

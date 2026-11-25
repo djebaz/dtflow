@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import re
 import time
 import threading
 from pathlib import Path, PureWindowsPath
@@ -30,6 +31,7 @@ from dtflow.core.models import (
     BackendFailure,
     ErrorCategory,
     KeyHoldings,
+    FileIdentity,
     PreparedAsset,
     RemoteOutcome,
     ResolvedGenerationRequest,
@@ -48,7 +50,7 @@ from functools import partial
 from dtflow.services.lora_digest import cached_digest, remember
 from dtflow.services.lora_family import LoraFamily, detect_lora_family, validate_converted_lora
 from dtflow.services.lora_auto_naming import auto_prepare_metadata
-from dtflow.services.lora_naming import LoraPrepareMetadata
+from dtflow.services.lora_naming import LoraPrepareMetadata, shortcode_family
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.prepare_progress import CHECKING, CONFIRMING, EXISTS, UPLOADING, PrepareEvent
 
@@ -1494,6 +1496,72 @@ class AssetService:
         """This key's opaque identity and its confirmed receipts, read before a stored-list request is made."""
         credential = await self.backend.asset_credential_identity()
         return credential, await self.registry.confirmed_scope_rows(credential)
+
+    async def discover_stored_loras(self, listing: StorageListing, owner: str) -> int:
+        """Recover cloud-only receipts from positive authenticated hash lookup, never from delete keys alone."""
+        lookup = getattr(self.backend, "lookup_lora_assets", None)
+        if not listing.files or not callable(lookup) or self.state is None:
+            return 0
+        known = await self.registry.choices(include_missing=True)
+        known_names = {item.identifier for item in known}
+        candidates = {}
+        duplicates = set()
+        for item in listing.files:
+            if item.name in known_names or item.size <= 0 or not item.name.lower().endswith(".ckpt"):
+                continue
+            if item.name in candidates:
+                duplicates.add(item.name)
+                continue
+            # A storage key may contain a digest. This is only a lookup hypothesis.
+            digests = set(re.findall(r"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])", item.key))
+            if len(digests) != 1:
+                continue
+            digest = next(iter(digests)).lower()
+            try:
+                content = AssetContent("lora", item.name, digest, item.size, provenance="cloud discovery")
+            except ValidationError:
+                continue
+            candidates[item.name] = (item, content)
+        for name in duplicates:
+            candidates.pop(name, None)
+        verified = []
+        names = list(candidates)
+        for offset in range(0, len(names), 64):
+            batch = names[offset : offset + 64]
+            try:
+                answers = await lookup(
+                    tuple(FileIdentity(name, True, candidates[name][1].sha256) for name in batch)
+                )
+            except (BackendError, ValidationError, OSError) as exc:
+                diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": type(exc).__name__})
+                continue
+            for name in batch:
+                item, content = candidates[name]
+                answer = answers.get(name)
+                if (
+                    answer is not None
+                    and answer.availability == "byom_reusable"
+                    and answer.sha256 == content.sha256
+                    and answer.reference
+                    and _receipt_matches(answer.reference, item.key)
+                ):
+                    verified.append((content, answer.reference, shortcode_family(name)))
+        if not verified:
+            diagnostic_event(log, "assets.cloud_discovery", data={"candidates": len(candidates), "verified": 0})
+            return 0
+        registry = AssetRegistry(self.state, writer=True, recover=False)
+        try:
+            await registry.open()
+            added = await registry.adopt_cloud_loras(
+                tuple(verified), self.backend.backend_id, self.backend.origin, owner
+            )
+        finally:
+            await registry.aclose()
+        diagnostic_event(
+            log, "assets.cloud_discovery",
+            data={"candidates": len(candidates), "verified": len(verified), "added": added},
+        )
+        return added
 
     async def key_holdings(
         self, listing: StorageListing, snapshot: tuple[str, tuple[tuple[str, str, str, str], ...]] | None = None
