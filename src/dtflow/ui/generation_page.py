@@ -38,6 +38,7 @@ from dtflow.core.models import (
     TimeoutPolicy,
     ValidationError,
     eligible_model_ids,
+    listed_loras,
 )
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import dev_enabled
@@ -2294,14 +2295,15 @@ class GenerationPage:
             label.setToolTip(self._inventory_error)
             return
         models = len(eligible_model_ids(snapshot))
-        loras = sum(entry.kind == "lora" for entry in snapshot.entries)
+        loras = len(listed_loras(snapshot))
         other = 0
         if dict(snapshot.diagnostics).get("model_metadata") != "present":
             # Metadata-less inventories (direct DT+ cloud) list every file as unknown: count what the catalogue
             # can prove instead of calling every file a model.
             view = self._catalogue.view()
             models = len({entry.identifier for entry in view.checkpoints} | set(view.unclassified_checkpoints))
-            loras = len(view.loras)
+            unconfirmed = self._catalogue.unconfirmed_cloud_lora_ids()
+            loras = sum(entry.identifier not in unconfirmed for entry in view.loras)
             other = len(snapshot.entries) - models - loras
         try:
             observed = datetime.fromisoformat(snapshot.observed_at_utc).astimezone(UTC).strftime("%d %b %H:%M UTC")
@@ -2528,7 +2530,7 @@ class GenerationPage:
             return
         names = tuple(item.identifier for item in loras)
         snapshot = self._inventory_snapshot
-        listed = tuple(entry.identifier for entry in snapshot.entries if entry.kind == "lora") if snapshot else ()
+        listed = self._catalogue.dt_plus_lora_names()
         checkpoint = self.page.modelCombo.currentText().strip()
         family = checkpoint_exact_version(checkpoint, snapshot)
         revision = self._inventory_revision

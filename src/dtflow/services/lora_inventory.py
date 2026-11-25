@@ -14,6 +14,7 @@ from dtflow.core.models import (
     LoRABackendAvailability,
     LoRAInventoryEntry,
     LoRAInventorySnapshot,
+    listed_loras,
 )
 from dtflow.persistence.inventory_cache import save_lora_inventory
 
@@ -81,6 +82,24 @@ async def resolve_lora_inventory(
                 entry.default_weight,
                 local_status,
                 cloud_status,
+            )
+        )
+
+    # Local entries listed as LoRAs are already resolved above; a same-named file the local server did not classify is
+    # only a name, never local availability evidence.
+    resolved_ids = {entry.identifier for entry in entries}
+    for entry in listed_loras(cloud_snapshot):
+        if entry.identifier in resolved_ids:
+            continue
+        entries.append(
+            LoRAInventoryEntry(
+                entry.identifier,
+                entry.display_name,
+                entry.architecture,
+                entry.trigger_prefix,
+                entry.default_weight,
+                LoRABackendAvailability("unknown", "grpc.echo"),
+                LoRABackendAvailability("listed_in_server_inventory", "dt_cloud.echo"),
             )
         )
 

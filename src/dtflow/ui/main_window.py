@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import time
+from dataclasses import replace
 from copy import deepcopy
 from pathlib import Path
 
@@ -61,8 +62,9 @@ from dtflow.services.lora_auto_naming import normalize_previous_retained
 from dtflow.services.lora_metadata_edit import read_lora_rows, read_unretained_loras, remove_unretained_lora
 from dtflow.services.lora_naming import label_overrides, set_label_overrides
 from dtflow.services.preflight import checkpoint_picker_versions
-from dtflow.services.session import observe_key
+from dtflow.services.session import discover_keys, observe_key
 from dtflow.services.storage_probe import probe_content
+from dtflow.services.assets import forget_unverified_stored
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.managed_lora_quantization import available_quantizations, library_formats, confirmed_contents
 from dtflow.services.connection import Presentation, check_connection, present_failure, present_status
@@ -265,6 +267,8 @@ class MainWindow:
 
         self._saved = saved or SavedCredentials()
         self._optional_saved = OptionalSavedCredentials(self._saved)
+        self._other_keys_read: set[str] = set()  # other saved keys whose stored LoRAs were attempted this run
+        self._discovery_busy = False
         self._download_tokens = DownloadTokens()
         self._token_busy = False
         self._connection_check = None
@@ -1016,7 +1020,7 @@ class MainWindow:
             "models": models,
             "loras": choices.get("loras", {}),
             "lora_families": choices.get("lora_families", {}),
-            "listed_loras": tuple(e.identifier for e in snapshot.entries if e.kind == "lora") if snapshot else (),
+            "listed_loras": self.generation._catalogue.dt_plus_lora_names(),
             "lora_versions": choices.get("lora_versions", {}),
             "model_versions": {model: checkpoint_picker_versions(model, snapshot) for model in models},
             "backend": self.form.backendCombo.currentText(),
@@ -2157,8 +2161,7 @@ class MainWindow:
         )
         if not names:
             return
-        snapshot = self.generation._inventory_snapshot
-        listed = tuple(entry.identifier for entry in snapshot.entries if entry.kind == "lora") if snapshot else ()
+        listed = self.generation._catalogue.dt_plus_lora_names()
 
         def done(matches, failure) -> None:
             if failure is not None:
@@ -3164,6 +3167,8 @@ class MainWindow:
         listing, holdings = result if result is not None else (None, None)
         # A failed read is unknown, never "not on key" and never "held".
         self.generation.lora.set_holdings(holdings if failure is None else None)
+        if failure is None and holdings is not None and holdings.owner is not None and listing is not None:
+            self._discover_keys(listing, holdings, revision)
         label = self.form.dtFreeSpaceLabel
         if failure is not None or listing is None:
             label.setText("DT+ free space on this key: could not be read.")
@@ -3183,6 +3188,61 @@ class MainWindow:
             level=logging.INFO,
             data={"read": failure is None and listing is not None, "free_bytes": getattr(listing, "free_space", None)},
         )
+
+    def _discover_keys(self, listing, holdings, revision) -> None:
+        """After the storage read is shown: record LoRAs DT+ confirms the keys hold (#614), in the background.
+
+        The selected key uses the list just read; other saved keys are read once per run (attempted, read or not)
+        until an explicit Connection check. Bounded metadata requests only; nothing is uploaded or deleted."""
+        if self._discovery_busy or self.runner.closed:
+            return
+        self._discovery_busy = True
+        owner = holdings.owner
+
+        def others_done(result, failure) -> None:
+            self._discovery_busy = False
+            if failure is not None or result is None or self.runner.closed:
+                return
+            _, others = result
+            self._other_keys_read.update(others)
+            if any(others.values()):
+                self.generation.lora.refresh_assets()
+
+        def selected_done(result, failure) -> None:
+            if self.runner.closed:
+                self._discovery_busy = False
+                return
+            selected = () if failure is not None or result is None else result[0]
+            if selected and revision == self._free_space_revision:
+                current = self.generation.lora._holdings
+                if current is not None and current.owner == owner:
+                    # The same list proves the key holds them: on this key, not "needs re-attach".
+                    self.generation.lora.set_holdings(
+                        replace(
+                            current,
+                            held=current.held | frozenset(selected),
+                            receipts=current.receipts + len(selected),
+                            discovered=len(selected),
+                        )
+                    )
+            if selected:
+                self.generation.lora.refresh_assets()  # shown now, not after the other keys
+            if self._saved is None:
+                self._discovery_busy = False
+                return
+            self.runner.submit(
+                discover_keys(
+                    self.state_dir,
+                    None,
+                    owner,
+                    saved=self._optional_saved,
+                    store=self._saved,
+                    skip=frozenset(self._other_keys_read),
+                ),
+                others_done,
+            )
+
+        self.runner.submit(discover_keys(self.state_dir, listing, owner, saved=self._optional_saved), selected_done)
 
     def open_dt_storage(self, *_, needed: int | None = None, protect: tuple[str, ...] = ()) -> None:
         """Open the DT+ storage panel; it reads the selected key's stored files with one dummy-file lookup.
@@ -3521,6 +3581,9 @@ class MainWindow:
         self._present(shown)
         if failure is None and shown.level == "ok":
             self.remember()
+            # An explicit check asks DT+ again about stored files it did not confirm, on every saved key.
+            forget_unverified_stored()
+            self._other_keys_read.clear()
             self._read_dt_free_space()
 
     def save_key(self) -> None:

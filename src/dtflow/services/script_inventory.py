@@ -1,12 +1,12 @@
 """Bounded read-only script projection of existing inventory/classification evidence.
 
 No backend creation, refresh, network, credential or filesystem discovery here.
-Prepared means a historical confirmed local receipt, not fresh server validation.
+Prepared means acknowledged local preparation history, including receipts marked missing, not fresh server validation.
 """
 
 from pathlib import Path
 
-from dtflow.core.models import InventorySnapshot, PreparedAsset, ValidationError
+from dtflow.core.models import InventorySnapshot, PreparedAsset, ValidationError, listed_loras
 from dtflow.services.catalogue import Catalogue
 
 
@@ -20,10 +20,12 @@ def script_lora_inventory(
     if len(model) > 1024 or not _symbolic(model):
         raise ValidationError("The selected model needs a bounded symbolic identifier for script inventory.")
     catalogue = Catalogue(state)
+    catalogue.set_inventory(snapshot)
+    unconfirmed = catalogue.unconfirmed_cloud_lora_ids()
     definitions = {entry.identifier: entry for entry in catalogue.lora_definitions()}
     raw = {entry.identifier: entry for entry in snapshot.entries}
     prepared = {asset.identifier for asset in assets}
-    known = set(definitions) | prepared | {entry.identifier for entry in snapshot.entries if entry.kind == "lora"}
+    known = set(definitions) | prepared | {entry.identifier for entry in listed_loras(snapshot)}
     if len(known) > 4096:
         raise ValidationError("The script inventory exceeds its 4096-LoRA bound.")
     omitted = {identifier for identifier in known if not _symbolic(identifier)}
@@ -48,6 +50,7 @@ def script_lora_inventory(
             compatibility_source = "catalogue_modes"
         listed = observed is not None and observed.kind in ("lora", "unknown")
         ready = listed or identifier in prepared
+        eligible = ready or identifier in unconfirmed
         reason = "metadata_mismatch" if compatibility == "mismatch" else "unconfirmed_availability" if not ready else ""
         name = (definition.name if definition else None) or (observed.display_name if observed else None) or identifier
         if not _symbolic(name):
@@ -60,7 +63,7 @@ def script_lora_inventory(
                 "prepared": identifier in prepared,
                 "compatibility": compatibility,
                 "compatibilitySource": compatibility_source,
-                "eligible": ready and compatibility != "mismatch",
+                "eligible": eligible and compatibility != "mismatch",
                 "reason": reason,
             }
         )
@@ -71,5 +74,8 @@ def script_lora_inventory(
         "items": rows,
         "total": len(rows),
         "omitted": len(omitted),
-        "notice": "Listed/prepared are observations, not verified current availability or runtime compatibility.",
+        "notice": (
+            "Listed/prepared are observations, not verified current availability or runtime compatibility. "
+            "Bundled cloud candidates may be eligible with availability unconfirmed."
+        ),
     }

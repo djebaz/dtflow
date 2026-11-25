@@ -30,7 +30,7 @@ from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.logging_setup import development_mode
 from dtflow.persistence.asset_leases import AssetsBusyError
 from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version, single_family_version
-from dtflow.core.models import KeyHoldings
+from dtflow.core.models import KeyHoldings, listed_loras
 from dtflow.services.dt_storage import reported_free_space, storage_refusal, storage_size
 from dtflow.services.storage_probe import probe_content
 from dtflow.services.connection import (
@@ -46,7 +46,7 @@ from dtflow.services.lora_convert.errors import UnsupportedFamilyError, Unsuppor
 from dtflow.services.lora_convert_prepare import convert_for_prepare
 from dtflow.services.lora_digest import DigestCancelled, hash_file
 from dtflow.services.lora_family import DETECTABLE_FAMILIES, LoraFamily, detect_lora_family, validate_converted_lora
-from dtflow.services.lora_naming import LoraPrepareMetadata, display_label, lora_offer_notice, shortcode_family
+from dtflow.services.lora_naming import LoraPrepareMetadata, display_label, lora_offer_notice, name_family
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.prepare_progress import (
     CONFIRMING,
@@ -100,6 +100,8 @@ def _family_evidence_label(value: str | None, source: str | None, *, conflict: b
     label = FAMILY_LABELS.get(value, value)
     if source == "user":
         return f"{label} (user selected, conflicts with file)" if conflict else f"{label} (user selected)"
+    if source == "shortcode":
+        return f"{label} (name)"
     return f"{label} (file)" if source == "file" else f"{label} (unverified)"
 
 
@@ -255,9 +257,7 @@ class LoraAssetPanel:
         self._inventory_checkpoints = (
             tuple(entry.identifier for entry in snapshot.entries if entry.kind == "model") if snapshot else ()
         )
-        self._inventory_candidates = (
-            [(e.identifier, e.default_weight) for e in snapshot.entries if e.kind == "lora"] if snapshot else []
-        )
+        self._inventory_candidates = [(e.identifier, e.default_weight) for e in listed_loras(snapshot)]
         self._candidates = list(self._inventory_candidates)
 
     def eligible_architectures(self) -> tuple[str, ...]:
@@ -300,7 +300,7 @@ class LoraAssetPanel:
         versions = {
             record.get("family")
             for record in self._records.values()
-            if record["identifier"] == name and record["state"] == "confirmed"
+            if record["identifier"] == name and record["state"] in ("confirmed", "missing")
         }
         if versions:
             return next(iter(versions)) if len(versions) == 1 else None
@@ -310,7 +310,7 @@ class LoraAssetPanel:
                 for entry in self._catalogue.lora_definitions()
                 if (version := single_family_version(entry.base_model))
             }
-        return self._inventory_families.get(name) or self._catalogue_versions.get(name) or shortcode_family(name)
+        return self._inventory_families.get(name) or self._catalogue_versions.get(name) or name_family(name)
 
     def _candidate_compatible(self, name: str) -> bool:
         candidate = self._candidate_family(name)
@@ -403,14 +403,19 @@ class LoraAssetPanel:
             for entry in self._catalogue.lora_definitions()
             if entry.base_model
         }
+        for name in self._catalogue.unconfirmed_cloud_lora_ids():
+            if name in family:
+                family[name] = family[name].removesuffix(" (catalogue)") + " (cloud unconfirmed)"
+            else:
+                family[name] = "Unknown (cloud unconfirmed)"
         for name, value in self._inventory_families.items():
             family.setdefault(name, f"{FAMILY_LABELS.get(value, value)} (provider)")
         for name, _ in self.all_choices():  # includes custom LoRAs known only from receipts
-            if name not in family and (value := shortcode_family(name)):
-                family[name] = f"{FAMILY_LABELS.get(value, value)} (shortcode)"
+            if name not in family and (value := name_family(name)):
+                family[name] = f"{FAMILY_LABELS.get(value, value)} (name)"
         records: dict[str, list[dict]] = {}
         for (asset_id, name), record in self._records.items():
-            if record.get("state") != "confirmed":
+            if record.get("state") not in ("confirmed", "missing"):
                 continue
             if name in self._receipts and self._receipts[name] != asset_id:
                 continue
@@ -421,8 +426,12 @@ class LoraAssetPanel:
                 family[name] = "Unknown (conflicting receipts)"
                 continue
             value, source = next(iter(values))
-            family[name] = _family_evidence_label(
-                value, source, conflict=any(record.get("architecture_conflict") for record in entries)
+            family[name] = (
+                _family_evidence_label(
+                    value, source, conflict=any(record.get("architecture_conflict") for record in entries)
+                )
+                if any(record["state"] == "confirmed" for record in entries)
+                else f"{FAMILY_LABELS.get(value, value) or 'Unknown'} (historical)"
             )
         return family
 
@@ -534,6 +543,10 @@ class LoraAssetPanel:
         """Include every provider and local LoRA for multi-checkpoint queue composition."""
         listed = list(getattr(self, "_inventory_candidates", ()))
         known = {name for name, _ in listed}
+        for entry in self._catalogue.view().loras:
+            if entry.identifier not in known:
+                listed.append((entry.identifier, None))
+                known.add(entry.identifier)
         for name, weight in self._candidates:
             if name not in known:
                 listed.append((name, weight))

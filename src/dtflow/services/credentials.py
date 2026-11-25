@@ -354,6 +354,30 @@ class SavedCredentials:
         self._write({"active": active, "keys": keys})
 
 
+class PinnedSavedCredentials:
+    """One specific saved key, whatever key is selected; for read-only per-key storage reads, never generation.
+
+    It never prefers or falls back to the environment key: a missing or empty saved key yields no credential."""
+
+    def __init__(self, saved: SavedCredentials, key_id: str):
+        self.saved, self.key_id = saved, key_id
+
+    def environment_preferred(self) -> bool:
+        return False
+
+    async def get(self) -> Credential | None:
+        def read() -> Credential | None:
+            if not self.saved.available():
+                return None
+            value = self.saved._secret(self.saved._store(), self.key_id)
+            if not value:
+                return None
+            alias = next((item["name"] for item in self.saved._read()["keys"] if item["id"] == self.key_id), None)
+            return Credential("saved", value, _safe_alias(alias, value))
+
+        return await asyncio.to_thread(read)
+
+
 class OptionalSavedCredentials:
     """Defer desktop vault discovery until a worker needs credentials, never a Qt getter."""
 

@@ -57,15 +57,16 @@ from dtflow.persistence.settings import load_dtplus_concurrency
 from dtflow.persistence.queues import read_attempt_record
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts, StateBusyError
 from dtflow.services.assets import AssetService, possible_missing_asset
-from dtflow.services.credentials import EnvironmentCredentials, resolve_credentials
+from dtflow.services.credentials import EnvironmentCredentials, PinnedSavedCredentials, resolve_credentials
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.prepare_progress import PrepareEvent
 from dtflow.services.lora_auto_naming import normalize_previous_retained
-from dtflow.services.lora_naming import LoraPrepareMetadata, ManagedName, occupied_from_snapshot
+from dtflow.services.lora_naming import LoraPrepareMetadata, ManagedName, name_family, occupied_from_snapshot
 from dtflow.services.image_preparation import prepare_image_files, validate_prepared_inputs
 from dtflow.services.preflight import apply_trigger_prefixes
+from dtflow.services.storage_probe import probe_content
 from dtflow.services.timeline import GenerationTimeline
 
 log = logging.getLogger(__name__)
@@ -259,10 +260,10 @@ async def bind_prepared(
 
 
 async def script_asset_choices(state: Path, backend_name: str) -> tuple[PreparedAsset, ...]:
-    """Confirmed receipt pool for queues, scripts and workflows, independent of Generate's selected LoRAs.
+    """Acknowledged receipt candidates for queues, scripts and workflows, independent of Generate's selection.
 
     Local reads only. Actual dispatch still validates each selected receipt against
-    the active backend/account; a confirmed historical record is not live consent.
+    the active backend/account; historical missing receipts may be checked/restored but are not live holdings.
 
     One receipt per LoRA name, the one prepared on purpose last (else first seen last): a file converted again under the same
     name has a new hash, and the old receipt must never be bound for it, or the request names the old bytes (#361).
@@ -272,7 +273,7 @@ async def script_asset_choices(state: Path, backend_name: str) -> tuple[Prepared
     registry = AssetRegistry(state)
     await registry.open()
     try:
-        choices = await registry.choices()
+        choices = await registry.choices(include_missing=True)
         selected = newest_per_name(choices, await asyncio.to_thread(LoraStore(state).current_by_name))
         return await registry.resolve_prepared(selected)
     finally:
@@ -1037,6 +1038,10 @@ def asset_view(record: dict) -> dict:
         "short_name", "managed_identifier", "format_code", "format_source",
     )  # fmt: skip
     view = {key: record.get(key) for key in keys}
+    if not view["family"] and view["kind"] == "lora" and isinstance(view["identifier"], str):
+        # Same naming fallback as dispatch receipts: the shortcode or one architecture word in the name, labelled as such.
+        if family := name_family(view["identifier"]):
+            view["family"], view["family_source"] = family, "shortcode"
     if "operations" in record:
         view["operations"] = record["operations"]
     return view
@@ -1200,6 +1205,65 @@ async def observe_key(
     return listing, replace(holdings, marked_stale=changed)
 
 
+async def discover_keys(
+    state: Path,
+    listing: StorageListing | None,
+    owner: str,
+    *,
+    saved: CredentialProvider | None,
+    store=None,
+    skip: frozenset[str] = frozenset(),
+) -> tuple[tuple[str, ...], dict[str, int]]:
+    """Record LoRAs DT+ confirms its keys hold, after (never inside) the Connection storage read.
+
+    First the selected key, from the ``listing`` that read already returned for ``owner`` (``None`` skips it); then each
+    other saved key in
+    ``store`` not in ``skip``, through a backend pinned to that key (one storage list each; never the environment key,
+    never generation). Each discovery makes a bounded number of metadata-only requests and uploads nothing. Receipts
+    stay scoped to the key that holds the file. Returns the names recorded on the selected key and
+    ``{key identity: receipts recorded}`` for every other key attempted, read or not, so a failing key is not retried
+    on every refresh."""
+    selected: tuple[str, ...] = ()
+    if listing is not None:
+        try:
+            async with open_assets(state, saved=saved, read_only=True) as service:
+                credential, rows = await service.receipt_snapshot()
+                if credential == owner:  # the selected key changed meanwhile: its own next read discovers it
+                    selected = await service.discover_stored_loras(listing, owner, rows)
+        except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
+            diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": type(exc).__name__})
+    others: dict[str, int] = {}
+    if store is None:
+        return selected, others
+    try:
+        entries = await asyncio.to_thread(store.entries)
+    except (BackendError, OSError, AttributeError) as exc:  # no secure store, or a provider without saved keys
+        diagnostic_event(log, "assets.saved_keys_unread", data={"reason": type(exc).__name__})
+        return selected, others
+    failed = 0
+    for entry in entries:
+        if entry.credential_id in skip or entry.credential_id == owner:
+            continue
+        others[entry.credential_id] = 0  # attempted: not asked again this run unless explicitly refreshed
+        try:
+            async with open_assets(state, saved=PinnedSavedCredentials(store, entry.id), read_only=True) as service:
+                credential, rows = await service.receipt_snapshot()
+                if credential != entry.credential_id:
+                    failed += 1
+                    continue  # the pinned key could not be resolved; never read another key's storage for it
+                key_listing = await service.storage_listing(probe_content())
+                others[entry.credential_id] = len(await service.discover_stored_loras(key_listing, credential, rows))
+        except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
+            failed += 1
+            diagnostic_event(log, "assets.saved_key_discovery_failed", data={"reason": type(exc).__name__})
+    diagnostic_event(
+        log,
+        "assets.saved_keys_discovered",
+        data={"keys": len(others), "failed": failed, "added": sum(others.values())},
+    )
+    return selected, others
+
+
 async def delete_storage(
     state: Path, selected: tuple, *, saved: CredentialProvider | None = None, expected_owner: str | None = None
 ) -> dict:
@@ -1235,12 +1299,14 @@ async def list_assets(state: Path, *, named: bool = False) -> list[dict]:
             for record in records
             if record["state"] != "confirmed"
         }
-        for alias in await registry.choices():
+        confirmed = await registry.choices()
+        confirmed_names = {(item.receipt_id, item.identifier) for item in confirmed}
+        for alias in await registry.choices(include_missing=True):
             record = dict(parents[alias.receipt_id])
             record.update(
                 identifier=alias.identifier,
                 remote_id=alias.remote_id,
-                state="confirmed",
+                state="confirmed" if (alias.receipt_id, alias.identifier) in confirmed_names else "missing",
                 confirmed_at_utc=alias.confirmed_at_utc,
             )
             shown[(alias.receipt_id, alias.identifier)] = asset_view(record)

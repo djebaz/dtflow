@@ -229,12 +229,17 @@ def present_preflight(diagnostics) -> Presentation:
     """Render shared preflight diagnostics as given; architecture, availability and application evidence stay separate."""
     if not diagnostics:
         return Presentation("unknown", "No LoRAs selected", "Compatibility is not checked.")
+    # Only the LoRAs that need attention get a full line; matching ones are summed up in one line (#614).
+    fine = [item for item in diagnostics if item.architecture_match == "match" and item.code == "ok"]
     lines = [
         f"{display_label(item.identifier)}: architecture {item.architecture_match}, {item.availability} ({item.code}); "
         f"LoRA family {item.lora_family or 'unknown'}, checkpoint family {item.model_family or 'unknown'}; "
         f"application {item.generation_evidence.removeprefix('application_')}"
         for item in diagnostics
+        if item not in fine
     ]
+    if fine:
+        lines.append(f"{len(fine)} OK: " + ", ".join(display_label(item.identifier) for item in fine) + ".")
     unprepared = [item for item in diagnostics if item.code == "availability_unknown"]
     if unprepared:
         # No prepared receipt and not listed by DT+: no custom file is sent, so application stays unconfirmed (#388).

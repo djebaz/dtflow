@@ -30,10 +30,15 @@ def lora_candidates(catalogue, inventory, *, checkpoint, family, domain, include
     """One candidate rule for worker setup and subsequent in-memory checkpoint filtering."""
     model = catalogue.checkpoint(checkpoint, include_unavailable=include_cloud)
     versions = checkpoint_picker_versions(checkpoint, inventory) if checkpoint else family_picker_versions(family)
-    entries = (
-        catalogue.compatible_loras(checkpoint, domain=domain, include_unavailable=include_cloud)
-        if versions and model is not None and model.base_model is not None
-        else None
+    if versions and model is not None and model.base_model is not None:
+        return catalogue.compatible_loras(checkpoint, domain=domain, include_unavailable=include_cloud), versions
+    # No catalogue family for this checkpoint: offer what is observed or prepared, and bundled LoRAs DT+ Echo omits
+    # only when their family matches the checkpoint's known versions (never every bundled LoRA unfiltered).
+    unconfirmed = catalogue.unconfirmed_cloud_lora_ids()
+    entries = tuple(
+        entry
+        for entry in catalogue.view().loras
+        if entry.identifier not in unconfirmed or (versions and catalogue_family_versions(entry.base_model) & versions)
     )
     return entries, versions
 

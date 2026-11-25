@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -216,6 +217,7 @@ class KeyHoldings:
     stale: tuple[tuple[str, str, str, str], ...] = field(
         default=(), repr=False, compare=False
     )  # (asset_id, identifier, remote_id, seen) of receipts the complete list lacks; written by the caller, not here
+    discovered: int = 0  # receipts recorded from positive DT+ lookups during this read
 
 
 @dataclass(frozen=True, slots=True)
@@ -242,7 +244,7 @@ class PreparedAsset:
         _asset_size(self.size)
         if self.family is not None and (not isinstance(self.family, str) or not self.family):
             raise ValidationError("LoRA family must be a non-empty string or unknown.")
-        if self.family_source not in ("unknown", "file", "user"):
+        if self.family_source not in ("unknown", "file", "user", "shortcode"):  # shortcode: managed filename tag
             raise ValidationError("Unsupported LoRA family evidence.")
         if (self.family is None) != (self.family_source == "unknown"):
             raise ValidationError("LoRA family and its evidence must agree.")
@@ -575,6 +577,22 @@ class InventorySnapshot:
         validate_metadata(self.diagnostics)
         if not isinstance(self.entries, tuple) or any(not isinstance(x, InventoryEntry) for x in self.entries):
             raise ValidationError("Inventory entries must be immutable typed values.")
+
+
+def listed_loras(snapshot: InventorySnapshot | None) -> tuple[InventoryEntry, ...]:
+    """Recognize provider LoRAs, including conventional names in metadata-less cloud Echo."""
+    if snapshot is None:
+        return ()
+    return tuple(
+        entry
+        for entry in snapshot.entries
+        if entry.kind == "lora"
+        or (
+            snapshot.backend_id.endswith("cloud")
+            and entry.kind == "unknown"
+            and re.search(r"_lora(?:_[a-z0-9]+)?\.ckpt$", entry.identifier, re.IGNORECASE)
+        )
+    )
 
 
 def eligible_model_ids(snapshot: InventorySnapshot) -> tuple[str, ...]:

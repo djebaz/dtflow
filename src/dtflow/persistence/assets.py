@@ -135,6 +135,21 @@ def _effective_version(row) -> tuple[str | None, str]:
     return None, "unknown"
 
 
+def _with_name_family(prepared: PreparedAsset) -> PreparedAsset:
+    """Fill an unclassified receipt from its filename (managed shortcode, else one architecture tag or word), labelled
+    "shortcode" (never user/file).
+
+    It is naming evidence, kept distinct from tensor detection and from an explicit user declaration."""
+    if prepared.family:
+        return prepared
+    from dataclasses import replace
+
+    from dtflow.services.lora_naming import name_family
+
+    family = name_family(prepared.identifier)
+    return replace(prepared, family=family, family_source="shortcode") if family else prepared
+
+
 def _record(row: sqlite3.Row) -> dict[str, Any]:
     value = {key: row[key] for key in row.keys()}
     if "detected_version" not in value:
@@ -307,6 +322,47 @@ class AssetRegistry:
             except BaseException:
                 db.execute("ROLLBACK")
                 raise
+
+    async def adopt_cloud_loras(
+        self, verified: tuple[tuple[AssetContent, str], ...], backend_id: str, origin: str, owner: str
+    ) -> tuple[str, ...]:
+        """Record this key's receipts for LoRAs DT+ positively reported as held (authenticated BYOM lookup).
+
+        One transaction. A name already confirmed for this key, a name bound to other content anywhere, and content
+        with a Prepare still in progress are left untouched. Known content gains this key's receipt under the listed
+        name; no metadata, accepted name or architecture is written. Returns the identifiers recorded."""
+
+        def adopt(db) -> tuple[str, ...]:
+            added = []
+            for content, reference in verified:
+                name = content.identifier
+                if db.execute(
+                    "SELECT 1 FROM asset_key_receipts WHERE credential_id=? AND identifier=? COLLATE NOCASE "
+                    "AND state='confirmed'",
+                    (owner, name),
+                ).fetchone():
+                    continue
+                if db.execute(
+                    "SELECT 1 FROM assets WHERE identifier=? COLLATE NOCASE AND NOT (sha256=? AND size=?) "
+                    "UNION SELECT 1 FROM asset_key_receipts k JOIN assets a ON a.asset_id=k.asset_id "
+                    "WHERE k.identifier=? COLLATE NOCASE AND NOT (a.sha256=? AND a.size=?) "
+                    "UNION SELECT 1 FROM lora_records WHERE managed_identifier=? COLLATE NOCASE "
+                    "AND NOT (sha256=? AND size=?)",
+                    (name, content.sha256, content.size) * 3,
+                ).fetchone():
+                    continue
+                if db.execute(
+                    "SELECT 1 FROM asset_operations o JOIN assets a ON a.asset_id=o.asset_id "
+                    "WHERE a.backend_id=? AND a.origin=? AND a.sha256=? AND a.size=? AND o.state IN (?, ?)",
+                    (backend_id, origin, content.sha256, content.size, *UNRESOLVED),
+                ).fetchone():
+                    continue
+                asset_id, operation = self._begin(db, content, backend_id, origin, "rebind", None, None)
+                self._confirm(db, asset_id, operation, reference, "reconciled", owner, name)
+                added.append(name)
+            return tuple(added)
+
+        return await self._run(self._write, adopt)
 
     async def begin(
         self,
@@ -582,7 +638,7 @@ class AssetRegistry:
                 remote_id=remote_id,
                 confirmed_at_utc=now,
             )
-        return prepared
+        return _with_name_family(prepared)
 
     async def scoped(self, asset_id: str, credential_id: str, identifier: str) -> PreparedAsset | None:
         """Return a confirmed receipt only for this exact key and logical LoRA filename."""
@@ -603,11 +659,13 @@ class AssetRegistry:
                 return None
             from dataclasses import replace
 
-            return replace(
-                self._prepared(row),
-                identifier=row["scoped_identifier"],
-                remote_id=row["scoped_remote"],
-                confirmed_at_utc=row["scoped_confirmed"],
+            return _with_name_family(
+                replace(
+                    self._prepared(row),
+                    identifier=row["scoped_identifier"],
+                    remote_id=row["scoped_remote"],
+                    confirmed_at_utc=row["scoped_confirmed"],
+                )
             )
 
     async def confirmed_lora_contents(self, credential_id: str) -> frozenset[tuple[str, int]]:
@@ -758,7 +816,12 @@ class AssetRegistry:
                 )
             # Oldest first by when the file's content was first seen. A relink or key switch re-stamps
             # ``confirmed_at_utc`` on old content and must never make it look newer (#361).
-            return tuple(sorted(by_name.values(), key=lambda item: (created.get(item.receipt_id, ""), item.identifier)))
+            return tuple(
+                _with_name_family(item)
+                for item in sorted(
+                    by_name.values(), key=lambda item: (created.get(item.receipt_id, ""), item.identifier)
+                )
+            )
 
     async def lora_metadata(self, sha256: str, size: int) -> dict[str, Any] | None:
         """Read canonical local content metadata; no provider or filesystem operation."""
@@ -1064,7 +1127,7 @@ class AssetRegistry:
             else:
                 version, source = _effective_version(row)
                 resolved.append(replace(item, family=version, family_source=source))
-        return tuple(resolved)
+        return tuple(_with_name_family(item) for item in resolved)
 
     async def get(self, asset_id: str) -> dict[str, Any] | None:
         return await self._run(self._get, asset_id)
@@ -1115,15 +1178,17 @@ class AssetRegistry:
             if alternatives:
                 return alternatives[0]
             raise ValidationError(f"Asset receipt is {record['state']}, not confirmed; run `dtflow assets reconcile`.")
-        return PreparedAsset(
-            record["backend_id"],
-            record["origin"],
-            record["identifier"],
-            record["remote_id"],
-            record["sha256"],
-            record["size"],
-            record["asset_id"],
-            record["confirmed_at_utc"],
-            record.get("family"),
-            record.get("family_source", "unknown"),
+        return _with_name_family(
+            PreparedAsset(
+                record["backend_id"],
+                record["origin"],
+                record["identifier"],
+                record["remote_id"],
+                record["sha256"],
+                record["size"],
+                record["asset_id"],
+                record["confirmed_at_utc"],
+                record.get("family"),
+                record.get("family_source", "unknown"),
+            )
         )

@@ -125,6 +125,12 @@ _STATUS = {
     "unverified": ("unverified", "", "A receipt names this family from the backend, not checked against the file."),
     "provider": ("provider", "ok", "The backend's inventory gives this LoRA this architecture."),
     "catalogue": ("catalogue", "info", "The bundled catalogue lists this LoRA with this base model."),
+    "historical": ("historical", "warning", "Previously prepared LoRA; DT+ availability will be checked at dispatch."),
+    "cloud unconfirmed": (
+        "unconfirmed",
+        "warning",
+        "Bundled LoRA not listed by DT+ Echo; availability is unconfirmed.",
+    ),
     "shortcode": ("shortcode", "", "The family tag in the managed filename (_F1_, _ZiT_, _Kr2_...)."),
 }
 _UNKNOWN_STATUS = {

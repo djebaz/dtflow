@@ -18,7 +18,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from dtflow.core.model_profiles import community_model_ids, profile_for
-from dtflow.core.models import InventorySnapshot
+from dtflow.core.models import InventorySnapshot, listed_loras
 from dtflow.diagnostics import event as diagnostic_event
 
 log = logging.getLogger(__name__)
@@ -195,6 +195,15 @@ def catalogue_family_versions(base_model: str | None) -> frozenset[str]:
     if base_model in _EXACT_BUNDLED_FAMILIES:
         return frozenset((_EXACT_BUNDLED_FAMILIES[base_model],))
     return frozenset(_FAMILY_VERSIONS.get(base_model or "", ()))
+
+
+def family_for_version(version: str | None) -> str | None:
+    """The one catalogue family an exact Draw Things version belongs to; None when unknown or shared."""
+    if not version:
+        return None
+    families = {family for family, exact in _EXACT_BUNDLED_FAMILIES.items() if exact == version}
+    families.update(family for family, versions in _FAMILY_VERSIONS.items() if version in versions)
+    return next(iter(families)) if len(families) == 1 else None
 
 
 def bundled_family_versions(model_id: str) -> frozenset[str]:
@@ -378,6 +387,21 @@ class Catalogue:
             return set()
         return {entry.identifier for entry in self._inventory.entries}
 
+    def unconfirmed_cloud_lora_ids(self) -> frozenset[str]:
+        """Bundled candidates omitted by cloud Echo; never evidence of availability."""
+        if self._inventory is None or not self._inventory.backend_id.endswith("cloud"):
+            return frozenset()
+        observed = self._available_ids()
+        return frozenset(entry.identifier for entry in self._bundled_loras if entry.identifier not in observed)
+
+    def dt_plus_lora_names(self) -> tuple[str, ...]:
+        """DT+'s own LoRA names for relinking: recognized in cloud Echo, plus bundled ones Echo omits.
+
+        Relinking must keep these exact names and never swap them for a local prepared file. Availability of the
+        bundled ones stays unconfirmed; this is a naming rule, not availability evidence."""
+        listed = tuple(entry.identifier for entry in listed_loras(self._inventory))
+        return tuple(dict.fromkeys((*listed, *sorted(self.unconfirmed_cloud_lora_ids()))))
+
     def lora_definitions(self) -> tuple[CatalogueEntry, ...]:
         """Known classification, including unlisted LoRAs; never availability evidence."""
         return self._merged_loras(self.user_loras())
@@ -410,10 +434,27 @@ class Catalogue:
             if entry.identifier in available:
                 checkpoints_by_id[entry.identifier] = entry
         checkpoints = tuple(checkpoints_by_id.values())
-        loras = tuple(entry for entry in self._merged_loras(user_loras) if entry.identifier in available)
+        candidates = available | self.unconfirmed_cloud_lora_ids()
+        loras_by_id = {
+            entry.identifier: entry for entry in self._merged_loras(user_loras) if entry.identifier in candidates
+        }
+        for observed in listed_loras(self._inventory):
+            loras_by_id.setdefault(
+                observed.identifier,
+                CatalogueEntry(
+                    observed.identifier,
+                    "lora",
+                    family_for_version(observed.architecture),  # the provider's own architecture, when it gives one
+                    frozenset(),
+                    source="provider",
+                    name=observed.display_name,
+                ),
+            )
+        loras = tuple(loras_by_id.values())
         known_entries = (*self._prime, *self._niche)
         known = {entry.identifier for entry in known_entries}
         known_nonmodels = {entry.identifier for entry in (*self._bundled_loras, *user_loras, *self._controls)}
+        known_nonmodels.update(loras_by_id)
         unknown = ()
         other = ()
         if self._inventory is not None:
@@ -503,9 +544,9 @@ class Catalogue:
             return ()
         candidates = []
         for lora in self.view().loras:
-            if lora.base_model != checkpoint.base_model:
+            if lora.base_model is not None and lora.base_model != checkpoint.base_model:
                 continue
-            if domain != "all" and not lora.supports_domain(domain):
+            if lora.modes and domain != "all" and not lora.supports_domain(domain):
                 continue
             if checkpoint.modes and lora.modes and not (checkpoint.modes & lora.modes):
                 continue
