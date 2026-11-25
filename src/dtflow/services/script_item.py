@@ -159,19 +159,27 @@ class ScriptItemRunner:
                 if request.prepared:
                     from dtflow.services.script_setup import adopt_setup
 
-                    setup = await asyncio.to_thread(
-                        adopt_setup,
-                        self.state,
-                        request,
-                        self.service,
-                        loop,
-                        persist=persist,
-                        reserve_child=reserve_child,
-                        release_child=release_child,
-                        output_group=group_name("queue", queue_id),
-                        available_assets=available_assets,
+                    adoption = asyncio.create_task(
+                        asyncio.to_thread(
+                            adopt_setup,
+                            self.state,
+                            request,
+                            self.service,
+                            loop,
+                            persist=persist,
+                            reserve_child=reserve_child,
+                            release_child=release_child,
+                            output_group=group_name("queue", queue_id),
+                            available_assets=available_assets,
+                        )
                     )
-                    hosts, cancel, task, run = setup.hosts, setup.cancel, setup.task, setup.run
+                    try:
+                        await settle(adoption)
+                    finally:
+                        # A completed handoff belongs to this dispatcher even if it was cancelled while waiting.
+                        if not adoption.cancelled() and adoption.exception() is None:
+                            setup = adoption.result()
+                            hosts, cancel, task, run = setup.hosts, setup.cancel, setup.task, setup.run
                     try:
                         if request.setup_ordinal is not None:
                             await asyncio.to_thread(
