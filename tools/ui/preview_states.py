@@ -3441,6 +3441,13 @@ def render_mapped_gallery_states(app, state, out):
     async def choices(_state):
         return (), ()
 
+    async def locate(_state, _query, identity):
+        return 0 if identity == item.identity else None
+
+    async def signature(_state):
+        # Stable synthetic gallery: explicit refreshes below drive all state transitions.
+        return ((0, 0, 0, 0),)
+
     async def detail(_state, _identity):
         return load_detail(item)
 
@@ -3459,6 +3466,8 @@ def render_mapped_gallery_states(app, state, out):
         patch.object(ArtifactReadPaths, "discover", return_value=paths),
         patch.object(gallery_ui, "query_outputs", query),
         patch.object(gallery_ui, "filter_choices", choices),
+        patch.object(gallery_ui, "locate_output", locate),
+        patch.object(gallery_ui, "gallery_file_signature", signature),
         patch.object(gallery_ui, "inspect_output", detail),
         patch.object(gallery_ui, "_image", fixture_image),
     ):
@@ -3467,8 +3476,10 @@ def render_mapped_gallery_states(app, state, out):
         try:
             shell.form.resize(1600, 1000)
             shell.show()
+            shell.gallery.auto_button.setChecked(False)
             shell.form.imagesNavigationButton.click()
-            wait_for(lambda: not shell.gallery._loading and bool(shell.gallery.items))
+            if not wait_for(lambda: not shell.gallery._loading and bool(shell.gallery.items)):
+                raise RuntimeError("Synthetic mapped gallery did not load")
             for mode, name in (
                 ("Grid", "images-03-mapped-grid-toggle-font"),
                 ("List", "images-04-mapped-list-toggle-font"),
@@ -3482,8 +3493,7 @@ def render_mapped_gallery_states(app, state, out):
             # Start a fresh Detail read after the Grid/List requests and wait for that decode.
             shell.gallery._clear_detail()
             shell.gallery.show_view("Detail", persist=False)
-            wait_for(lambda: not shell.gallery._image_pending)
-            if shell.gallery.surface_painter.pixmap.isNull():
+            if not wait_for(lambda: not shell.gallery._image_pending) or shell.gallery.surface_painter.pixmap.isNull():
                 raise RuntimeError(f"Synthetic mapped-image fixture did not decode: {shell.gallery.surface.toolTip()}")
             QTest.qWait(150)
             save(shell.form, out, "images-102-buffered-detail-decoded")
@@ -3505,6 +3515,9 @@ def render_mapped_gallery_states(app, state, out):
             if not write_capture(target, lambda: shell.form.grab()):
                 raise RuntimeError(f"Could not save {target.name}")
             report(target)
+
+            # Re-enable Live for the explicitly controlled snapshot recovery sequence.
+            shell.gallery.auto_button.setChecked(True)
 
             async def frozen_query(_state, options):
                 return GalleryResults((item,), 1, options.offset, options.limit, "2026-10-17T07:00:00+00:00")

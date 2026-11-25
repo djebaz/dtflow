@@ -91,6 +91,7 @@ from dtflow.ui.generation_presenter import (
 from dtflow.ui.generation_grid import GenerationGrid
 from dtflow.ui.inline_feedback import InlineNotice, edit_text
 from dtflow.ui.progress_model import SOLO_QUEUE, ItemProgress, ProgressModel, ProgressSnapshot, QueueTotals
+from dtflow.core.advanced import unsupported_fields
 from dtflow.ui.advanced_panel import FIELD_WIDGETS as ADVANCED_FIELD_WIDGETS, AdvancedPanel
 from dtflow.ui.video_panel import VideoPanel
 from dtflow.core import video as rules
@@ -958,11 +959,19 @@ class GenerationPage:
         self._config_name = None
         if document.get("pose_control") is not None:
             self.controlnet.restore_record(document)  # the pose goes back into Controlnet mode, never dropped
+        note = ""
+        if document.get("advanced") and values.advanced is None:
+            note = " The recorded advanced settings could not be read by this version, so they were not restored."
+        elif values.advanced is not None and (
+            unsent := unsupported_fields(values.advanced, self.advanced.scope_name or "image")
+        ):
+            note = f" Advanced {', '.join(unsent)} is shown but not sent in the current mode."
         self._status(
             Presentation(
-                "ok",
+                "warning" if note else "ok",
                 "Saved settings loaded",
-                f"Generate was populated from {origin}. Nothing was submitted; availability is revalidated on use.",
+                f"Generate was populated from {origin}. Nothing was submitted; availability is revalidated on use."
+                + note,
             )
         )
         return True
