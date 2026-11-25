@@ -379,17 +379,31 @@ async def test_credentials_and_signed_urls_are_absent_from_logs_durable_state_an
 
 
 @pytest.mark.asyncio
-async def test_registry_refuses_newer_schemas_second_writers_and_read_only_changes(tmp_path):
+async def test_registry_preserves_live_transfers_and_rejects_unsupported_writes(tmp_path):
     state = tmp_path / "state"
     reader = AssetRegistry(state)
     await reader.open()
     assert await reader.list() == [] and not (state / "assets.sqlite3").exists()  # reading creates nothing
 
     writer = AssetRegistry(state, writer=True)
-    await writer.open()
-    with pytest.raises(PersistenceError):
-        await AssetRegistry(state, writer=True).open()  # one preparing/reconciling process at a time
-    await writer.aclose()
+    other = AssetRegistry(state, writer=True)
+    content = AssetContent("lora", "style.ckpt", "a" * 64, 1024)
+    try:
+        await writer.open()
+        asset_id, operation = await writer.begin(content, "drawthings-cloud", "test-origin")
+        await writer.mark(asset_id, operation, "transferring", "transfer_started")
+        await other.open()
+        record = await other.get(asset_id)
+        assert record["state"] == "transferring"
+        assert [row["state"] for row in record["operations"]] == ["transferring"]
+        with pytest.raises(PersistenceError, match="read-only"):
+            await reader.mark(asset_id, operation, "failed", "not_a_writer")
+        await writer.confirm(asset_id, operation, "remote-style", "transfer")
+        assert (await other.get(asset_id))["state"] == "confirmed"
+    finally:
+        await other.aclose()
+        await writer.aclose()
+        await reader.aclose()
 
     with sqlite3.connect(state / "assets.sqlite3") as db:
         db.execute("PRAGMA user_version=99")

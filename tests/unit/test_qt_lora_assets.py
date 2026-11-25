@@ -200,18 +200,17 @@ def test_unconfirmed_upload_is_unknown_with_its_code_and_not_retried(window, clo
     assert "unknown" in page.assetList.item(0).text() and len(cloud.puts) == 1
 
 
-def test_asset_writer_contention_is_a_clear_busy_message(window, cloud, qtbot, tmp_path):
+def test_prepare_completes_while_an_unrelated_registry_writer_is_open(window, cloud, qtbot, tmp_path):
     loop = asyncio.new_event_loop()
     other = AssetRegistry(window.state_dir, writer=True)
     loop.run_until_complete(other.open())
     try:
         prepare(window, qtbot, lora_file(tmp_path))
         page = window.generation_page
-        qtbot.waitUntil(lambda: page.assetStatusLabel.text().startswith("Assets busy"), timeout=30000)
-        assert cloud.puts == []
-        # Inspection may read advisory key headroom without the writer lock. The actual selected file must
-        # still never negotiate or upload while another writer owns the registry.
-        assert all(call["entry"]["file"] == "dtflow-storage-probe.ckpt" for call in cloud.api_calls)
+        qtbot.waitUntil(lambda: page.assetList.count() == 1, timeout=30000)
+        assert "confirmed" in page.assetList.item(0).text()
+        assert page.assetStatusLabel.text().startswith(("Receipt confirmed", "Receipt bound"))
+        assert len(cloud.puts) == 1
     finally:
         loop.run_until_complete(other.aclose())
         loop.close()
