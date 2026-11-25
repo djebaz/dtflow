@@ -1,5 +1,8 @@
 """One version/build identity, without requiring Git at runtime."""
 
+import re
+import subprocess
+import sys
 from datetime import UTC, datetime
 from functools import cache
 from importlib.metadata import PackageNotFoundError, version
@@ -37,7 +40,39 @@ def source_modified() -> str | None:
     return datetime.fromtimestamp(newest / 1e9, UTC).strftime("%Y-%m-%dT%H:%MZ")
 
 
-def identity() -> dict[str, str]:
+@cache
+def checkout_revision() -> tuple[str, str]:
+    """Resolve a source checkout once, without making Git a runtime requirement."""
+    if STAMPED or getattr(sys, "frozen", False):
+        return "unknown", "unknown"
+    root = PACKAGE_DIR.resolve().parents[1]
+    if not (root / ".git").exists():
+        return "unknown", "unknown"
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", "-C", str(root), *args],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=1,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        ).stdout.strip()
+
+    try:
+        commit = git("rev-parse", "--verify", "HEAD")
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        return "unknown", "unknown"
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", commit):
+        return "unknown", "unknown"
+    try:
+        status = "dirty" if git("status", "--porcelain", "--untracked-files=no") else "clean"
+    except (OSError, subprocess.SubprocessError, UnicodeError):
+        status = "unknown"
+    return commit, status
+
+
+def identity(*, checkout: bool = False) -> dict[str, str]:
     try:
         application_version = version("dtflow")
     except PackageNotFoundError:
@@ -48,6 +83,11 @@ def identity() -> dict[str, str]:
         build["source_status"] = "dev" if modified else SOURCE_STATUS
         if modified:
             build["source_modified"] = modified
+    if checkout and not STAMPED:
+        commit, status = checkout_revision()
+        if commit != "unknown":
+            build["source_commit"] = commit
+            build["source_status"] = status
     return build
 
 

@@ -1027,7 +1027,7 @@ def start_logging(args: argparse.Namespace):
         return configure_logging(
             directory=args.logs,
             dev=args.dev,
-            build=identity(),
+            build=identity(checkout=args.dev),
             backend=getattr(args, "backend", None) or "-",
             video_decoder=getattr(args, "video_decoder", "lut"),
         )
