@@ -12,6 +12,8 @@ Changes through 6.5.0 are consolidated in [DTFlow 6.5.0](v6.5.0.md). The publish
 
 ## Fixed
 
+- Videos waiting to resume provider admission can use a free slot when the open-call cap blocks new calls.
+
 ## Upgrade and compatibility
 
 ## Validations checklist

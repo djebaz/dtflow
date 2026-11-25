@@ -26,6 +26,8 @@ queues, Scripts and Workflows.
 - Script and Workflow child generations, automatic retries and a video returning from its local-resource wait **wait in
   rank order** (`acquire`). Queues rank by start order (older first); a manual class (`PRIORITY_MANUAL`) sorts before
   them (see below).
+  At the open-call cap, only already-admitted calls can take freed slots. Returning calls keep their rank order
+  so they can finish and release capacity for new calls.
 - Up next queues stay reorderable until they start. The next one starts early when every live queue is open, the newest
   one is still running and the pool has capacity nobody wants (`spare`: a free slot, no waiting call, no ready queue). A
   queue that has work but cannot use a slot (repairing assets, a Script/Workflow at its child limit) does not count as
