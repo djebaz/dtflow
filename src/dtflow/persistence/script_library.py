@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from dtflow.scripting.engine import MAX_SOURCE_BYTES
+from dtflow.scripting.source import MAX_SOURCE_BYTES, read_source_bytes
 
 SCHEMA_VERSION = 1
 MAX_VERSIONS = 50
@@ -116,11 +116,13 @@ class ScriptLibrary:
         """Verified source text. A missing or altered file raises; nothing is repaired or replaced."""
         path = self._source_path(sha256)
         try:
-            data = path.read_bytes()
+            data = read_source_bytes(path)
         except OSError as exc:
             raise ScriptLibraryError(
                 f"The stored file for version {sha256[:7]} cannot be read ({exc.strerror})."
             ) from exc
+        except ValueError as exc:
+            raise ScriptLibraryError(str(exc)) from exc
         if hashlib.sha256(data).hexdigest() != sha256:
             raise ScriptLibraryError(f"The stored file for version {sha256[:7]} no longer matches its SHA-256.")
         try:
@@ -140,10 +142,11 @@ class ScriptLibrary:
         """Copy a local ``.js`` file into the library. Returns ``(version, already_present)``."""
         path = Path(path)
         try:
-            with path.open("rb") as handle:
-                data = handle.read(MAX_SOURCE_BYTES + 1)
+            data = read_source_bytes(path)
         except OSError as exc:
             raise ScriptLibraryError(f"Cannot read {path.name}: {exc.strerror or type(exc).__name__}.") from exc
+        except ValueError as exc:
+            raise ScriptLibraryError(str(exc)) from exc
         return self._add(sanitize_name(path.name), data, "")
 
     def add_source(self, name: str, source: str, *, based_on: str = "") -> tuple[ScriptVersion, bool]:
