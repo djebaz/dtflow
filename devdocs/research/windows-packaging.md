@@ -124,7 +124,7 @@ uv run --with pyinstaller python tools/packaging/build_exe.py
 .\dist\dtflow-0.1.0-g<short-sha>-windows-x64.exe --version
 ```
 
-The version line must show the same `g<short-sha>` as the filename and `source: clean` (current format `DTFlow <version> | revision <g-sha or date> | source: <status>`; the W16, W20 and W21 rows record the earlier parenthesised wording). The script only exists from the commit that added it, so the `v0.1.0` tag cannot be built stamped. See W21 for the first Windows result.
+The historical build used the `g<short-sha>` prefix in both filename and display. New builds omit that prefix; the version line must show the same short SHA as the filename and `source: clean` (current format `DTFlow <version> | revision <sha or date> | source: <status>`; W16, W20 and W21 record the earlier parenthesised wording). The script only exists from the commit that added it, so the `v0.1.0` tag cannot be built stamped. See W21 for the first Windows result.
 
 ## Findings table
 

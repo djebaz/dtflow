@@ -1,4 +1,4 @@
-"""Build a stamped DTFlow desktop executable named dtflow-<version>-g<short-sha>-<platform>-<arch>.exe.
+"""Build a stamped DTFlow desktop executable named dtflow-<version>-<short-sha>-<platform>-<arch>.exe.
 
 Run from the repository root: ``uv run --with pyinstaller python tools/packaging/build_exe.py``.
 It records the full source commit and clean/dirty status in the ignored ``src/dtflow/_buildinfo.py``,
@@ -37,7 +37,7 @@ def source_identity() -> tuple[str, str]:
 def artifact_name(version: str, commit: str, system: str, machine: str) -> str:
     arch = ARCHES.get(machine.lower(), machine.lower())
     extension = ".exe" if system.lower() == "windows" else ""
-    return f"dtflow-{version}-g{commit[:7]}-{system.lower()}-{arch}{extension}"
+    return f"dtflow-{version}-{commit[:7]}-{system.lower()}-{arch}{extension}"
 
 
 def main(argv: list[str] | None = None) -> int:

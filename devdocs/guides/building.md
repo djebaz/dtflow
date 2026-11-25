@@ -48,7 +48,7 @@ The q8p dependency needs package data as well as its Python/native modules and d
 The script prints the output path and source identity only after a successful build. The artifact is:
 
 ```text
-dist/dtflow-<version>-g<short-sha>-windows-<arch>.exe
+dist/dtflow-<version>-<short-sha>-windows-<arch>.exe
 ```
 
 The version comes from the project metadata, not the proposed roadmap number. Follow [version bump and release](releasing.md) before building the final release; the owner runs the local build or requests the Actions build after the release PR is squash-merged. The builder records the full source commit and clean/dirty status, bundles it, then removes the generated identity module. The runtime does not need Git or a source checkout.
@@ -105,7 +105,7 @@ For GitHub Actions, select the reviewed `feat/529-bundle-ffmpeg-windows` workflo
 gh workflow run build-and-release.yml --ref feat/529-bundle-ffmpeg-windows -f pr=533 -f ffmpeg_provider=imageio-mini
 ```
 
-The workflow **must** come from the feature branch until merged: main does not expose this provider input. This builds an artifact only, without publishing. imageio-mini is stamped `dtflow-<version>-g<sha>-windows-x64-ffmpeg-imageio-mini.exe`; the earlier imageio build uses `-ffmpeg-imageio.exe`, Unpins `-ffmpeg-unpins.exe`, TAS `-ffmpeg-tas.exe`, and Gyan the ordinary filename. Compare builds from the **same source commit** if you want strict A/B size and startup evidence.
+The workflow **must** come from the feature branch until merged: main does not expose this provider input. This builds an artifact only, without publishing. imageio-mini is stamped `dtflow-<version>-<sha>-windows-x64-ffmpeg-imageio-mini.exe`; the earlier imageio build uses `-ffmpeg-imageio.exe`, Unpins `-ffmpeg-unpins.exe`, TAS `-ffmpeg-tas.exe`, and Gyan the ordinary filename. Compare builds from the **same source commit** if you want strict A/B size and startup evidence.
 
 **Licensing:** Gyan is GPLv3. TAS is GPL-2.0-or-later and publishes a corresponding-source archive, which DTFlow does not attach automatically. Unpins declares GPL-3.0-or-later, and publishes pinned Nix build recipes; a complete corresponding-source bundle has **not** been independently verified for its release. The imageio wheel is a separate upstream FFmpeg 4.2.2 executable, and its Python wrapper license does not establish source compliance for the compiled FFmpeg. Both imageio combinations are **mixed-version** FFmpeg/ffprobe bundles; the minimal FFprobe's publisher declares LGPL and includes a license text, but complete corresponding source and exact build revisions are not verified. Both need a legal/source audit. DTFlow is GPL-3.0-only. Before publicly distributing any build, satisfy the chosen FFmpeg build's full GPL corresponding-source and notice obligations. Provenance links are not certification. None of the choices changes DTFlow's encoder, backend or billing policy.
 

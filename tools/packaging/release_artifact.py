@@ -25,7 +25,7 @@ def verify(commit: str, tag: str, provider: str = DEFAULT_PROVIDER) -> dict:
     if tag and tag != f"v{source_version}":
         raise ValueError("Release tag does not match the installed application version.")
     suffix = f"-ffmpeg-{provider}" if provider != "gyan" else ""
-    artifact = ROOT / "dist" / f"dtflow-{source_version}-g{commit[:7]}-windows-x64{suffix}.exe"
+    artifact = ROOT / "dist" / f"dtflow-{source_version}-{commit[:7]}-windows-x64{suffix}.exe"
     if not artifact.is_file() or artifact.stat().st_size == 0:
         raise ValueError("Expected stamped Windows x64 executable is missing or empty.")
     archive = CArchiveReader(str(artifact))
