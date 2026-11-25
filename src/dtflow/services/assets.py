@@ -168,10 +168,17 @@ def _receipt_matches(remote_id: str, stored_key: str) -> bool:
 
 _HEX_DIGEST = re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])")
 _LOOKUP_BATCH = 64
+_LOOKUP_BUDGET = 8  # metadata requests per discovery of one key; the rest waits for the next storage read
 # Batch answers that can come from a single file of the batch; anything else stops discovery for this read.
 _PER_FILE_REFUSALS = frozenset(("cloud_storage_limit_exceeded", "cloud_byom_response_invalid"))
-# (key identity, stored key, digest) that DT+ did not confirm as held in this process; never persisted.
+# (key identity, stored key, digest) DT+ definitely answered as not held in this process; never persisted.
+# An explicit Connection check clears it (``forget_unverified_stored``).
 _UNVERIFIED_STORED: set[tuple[str, str, str]] = set()
+
+
+def forget_unverified_stored() -> None:
+    """Let the next discovery ask DT+ again about every stored file (explicit refresh)."""
+    _UNVERIFIED_STORED.clear()
 
 
 class AssetService:
@@ -1514,7 +1521,8 @@ class AssetService:
         metadata-only BYOM negotiation as Prepare (file, digest and size; nothing is uploaded and upload URLs are
         ignored). A name is recorded only when DT+ answers that it already holds that digest with a reference matching
         the same listed key. ``rows`` are this key's confirmed receipts read before the list, so names already held
-        here are skipped. Names that did not verify are not asked again in this process for this key."""
+        here are skipped. Files DT+ definitely answered as not held are not asked again until an explicit refresh; at most
+        ``_LOOKUP_BUDGET`` requests are made per call."""
         negotiate = getattr(self.backend, "negotiate_assets", None)
         if not listing.files or not callable(negotiate) or self.state is None:
             return ()
@@ -1530,6 +1538,7 @@ class AssetService:
                 "invalid_name",
                 "skipped_unverified",
                 "lookup_failed",
+                "deferred",
                 "not_held",
                 "reference_mismatch",
                 "receipt_digest_first",
@@ -1581,8 +1590,14 @@ class AssetService:
             tuple(candidates.values())[offset : offset + _LOOKUP_BATCH]
             for offset in range(0, len(candidates), _LOOKUP_BATCH)
         ]
+        requests = 0
         while pending:
+            if requests >= _LOOKUP_BUDGET:
+                # Bounded per read: the rest waits for the next storage read, nothing is marked unverified.
+                counts["deferred"] = sum(len(rest) for rest in pending)
+                break
             batch = pending.pop()
+            requests += 1
             try:
                 answers.update(await negotiate(tuple(content for _, content in batch)))
             except BackendError as exc:
@@ -1592,18 +1607,21 @@ class AssetService:
                     diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": exc.failure.code})
                     break
                 # One file DT+ does not hold can turn the whole answer into a refusal (a full key): split and retry
-                # the halves, down to single files, so held ones are still answered.
+                # the halves, so held ones are still answered within the request budget.
                 if len(batch) > 1:
                     half = len(batch) // 2
                     pending.extend((batch[:half], batch[half:]))
                     continue
                 item, content = batch[0]
                 counts["lookup_failed"] += 1
-                _UNVERIFIED_STORED.add((owner, item.key, content.sha256))
+                if exc.failure.code == "cloud_storage_limit_exceeded":
+                    # A held file is answered as held even on a full key, so this file is definitely not held.
+                    _UNVERIFIED_STORED.add((owner, item.key, content.sha256))
                 diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": exc.failure.code})
             except (ValidationError, OSError) as exc:
                 counts["lookup_failed"] += len(batch)
                 diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": type(exc).__name__})
+        counts["requests"] = requests
         verified = []
         for item, content in candidates.values():
             answer = answers.get((content.identifier, content.sha256, content.size))

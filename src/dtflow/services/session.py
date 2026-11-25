@@ -1184,20 +1184,6 @@ async def observe_key(
             # No pre-request evidence: never judge newer receipts against this older remote list.
             return listing, KeyHoldings(False, frozenset(), 0, 0, False)
         holdings = await service.key_holdings(listing, snapshot)
-        try:
-            # Positive BYOM evidence for listed files this computer has no receipt for; never a weight upload.
-            added = await service.discover_stored_loras(listing, snapshot[0], snapshot[1])
-        except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
-            diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": type(exc).__name__})
-            added = ()
-        if added:
-            # The same list proves the key holds them: they are held now, not "needs re-attach".
-            holdings = replace(
-                holdings,
-                held=holdings.held | frozenset(added),
-                receipts=holdings.receipts + len(added),
-                discovered=len(added),
-            )
     if not holdings.stale or holdings.owner is None:
         return listing, holdings
     registry = AssetRegistry(state, writer=True, recover=False)
@@ -1219,35 +1205,61 @@ async def observe_key(
     return listing, replace(holdings, marked_stale=changed)
 
 
-async def discover_saved_keys(state: Path, saved, *, skip: frozenset[str] = frozenset()) -> dict[str, int]:
-    """Read each other saved DT+ key's stored list once and record the LoRAs DT+ confirms that key holds.
+async def discover_keys(
+    state: Path,
+    listing: StorageListing,
+    owner: str,
+    *,
+    saved: CredentialProvider | None,
+    store=None,
+    skip: frozenset[str] = frozenset(),
+) -> tuple[tuple[str, ...], dict[str, int]]:
+    """Record LoRAs DT+ confirms its keys hold, after (never inside) the Connection storage read.
 
-    One storage list and metadata-only checks per key, through a backend pinned to that key (never the environment
-    key, never generation). Receipts stay scoped to the key that holds the file: Generate on the selected key still
-    relinks or re-attaches it there, or shows it as not on this key. Returns ``{key identity: receipts recorded}`` for
-    the keys read; a key that could not be read is left out. ``skip`` holds key identities already read."""
+    First the selected key, from the ``listing`` that read already returned for ``owner``; then each other saved key in
+    ``store`` not in ``skip``, through a backend pinned to that key (one storage list each; never the environment key,
+    never generation). Each discovery makes a bounded number of metadata-only requests and uploads nothing. Receipts
+    stay scoped to the key that holds the file. Returns the names recorded on the selected key and
+    ``{key identity: receipts recorded}`` for every other key attempted, read or not, so a failing key is not retried
+    on every refresh."""
+    selected: tuple[str, ...] = ()
     try:
-        entries = await asyncio.to_thread(saved.entries)
+        async with open_assets(state, saved=saved, read_only=True) as service:
+            credential, rows = await service.receipt_snapshot()
+            if credential == owner:  # the selected key changed meanwhile: its own next read discovers it
+                selected = await service.discover_stored_loras(listing, owner, rows)
+    except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
+        diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": type(exc).__name__})
+    others: dict[str, int] = {}
+    if store is None:
+        return selected, others
+    try:
+        entries = await asyncio.to_thread(store.entries)
     except (BackendError, OSError, AttributeError) as exc:  # no secure store, or a provider without saved keys
         diagnostic_event(log, "assets.saved_keys_unread", data={"reason": type(exc).__name__})
-        return {}
-    results: dict[str, int] = {}
+        return selected, others
+    failed = 0
     for entry in entries:
-        if entry.credential_id in skip:
+        if entry.credential_id in skip or entry.credential_id == owner:
             continue
+        others[entry.credential_id] = 0  # attempted: not asked again this run unless explicitly refreshed
         try:
-            async with open_assets(state, saved=PinnedSavedCredentials(saved, entry.id), read_only=True) as service:
+            async with open_assets(state, saved=PinnedSavedCredentials(store, entry.id), read_only=True) as service:
                 credential, rows = await service.receipt_snapshot()
                 if credential != entry.credential_id:
+                    failed += 1
                     continue  # the pinned key could not be resolved; never read another key's storage for it
-                listing = await service.storage_listing(probe_content())
-                added = await service.discover_stored_loras(listing, credential, rows)
+                key_listing = await service.storage_listing(probe_content())
+                others[entry.credential_id] = len(await service.discover_stored_loras(key_listing, credential, rows))
         except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
+            failed += 1
             diagnostic_event(log, "assets.saved_key_discovery_failed", data={"reason": type(exc).__name__})
-            continue
-        results[entry.credential_id] = len(added)
-    diagnostic_event(log, "assets.saved_keys_discovered", data={"keys": len(results), "added": sum(results.values())})
-    return results
+    diagnostic_event(
+        log,
+        "assets.saved_keys_discovered",
+        data={"keys": len(others), "failed": failed, "added": sum(others.values())},
+    )
+    return selected, others
 
 
 async def delete_storage(
