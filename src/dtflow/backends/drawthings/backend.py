@@ -641,7 +641,11 @@ class DrawThingsBackend:
                                     try:
                                         preview = await settle(
                                             asyncio.to_thread(
-                                                decode_preview_artifact, response.preview_image, previews, limits
+                                                decode_preview_artifact,
+                                                response.preview_image,
+                                                previews,
+                                                limits,
+                                                (spec or {}).get("version") or base_version,
                                             )
                                         )
                                     finally:
