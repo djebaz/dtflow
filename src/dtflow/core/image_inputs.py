@@ -1,6 +1,5 @@
 """Immutable backend-neutral image-preparation evidence; no provider or image-library types."""
 
-import math
 from dataclasses import dataclass, field
 
 from dtflow.core.models import ValidationError
@@ -21,6 +20,11 @@ def max_mask_grow(width: int, height: int) -> int:
     """Absolute grow/shrink radius permitted by the exact padded-pixel-pass budget."""
     validate_source_dimensions(width, height)
     return max(b for b in range(65) if (width + 2 * b) * (height + 2 * b) * b <= MORPHOLOGY_PIXEL_PASS_LIMIT)
+
+
+def validate_mask_feather(feather: float) -> None:
+    if type(feather) not in (int, float) or not 0 <= feather <= 64:
+        raise ValidationError("Mask feather must be finite in 0..64 source pixels.")
 
 
 def suggest_generation_size(width: int, height: int, *, max_edge: int) -> tuple[int, int]:
@@ -148,8 +152,7 @@ class PreparedImageInputs:
                 raise ValidationError("Prepared mask dimensions/channels do not match its grid.")
         if type(self.grow) is not int or not -64 <= self.grow <= 64:
             raise ValidationError("Mask grow must be an integer in -64..64 source pixels.")
-        if type(self.feather) not in (int, float) or not math.isfinite(self.feather) or not 0 <= self.feather <= 64:
-            raise ValidationError("Mask feather must be finite in 0..64 source pixels.")
+        validate_mask_feather(self.feather)
         if self.mask is None and (self.grow or self.feather):
             raise ValidationError("Mask adjustments require prepared masks.")
 
@@ -251,8 +254,7 @@ class ImageInputSnapshot:
                 raise ValidationError("Input mask does not match its recorded grid.")
         if type(self.grow) is not int or not -64 <= self.grow <= 64:
             raise ValidationError("Mask grow must be an integer in -64..64 source pixels.")
-        if type(self.feather) not in (int, float) or not math.isfinite(self.feather) or not 0 <= self.feather <= 64:
-            raise ValidationError("Mask feather must be finite in 0..64 source pixels.")
+        validate_mask_feather(self.feather)
         if self.mask is None and (self.grow or self.feather or self.preserve_outside):
             raise ValidationError("Mask adjustments/compositing require inpainting masks.")
 

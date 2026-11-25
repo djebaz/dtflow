@@ -1,9 +1,8 @@
 """Narrow FLUX.1 Dev pose experiment, not a general control compatibility matrix."""
 
-import math
 from dataclasses import dataclass
 
-from dtflow.core.models import ValidationError
+from dtflow.core.models import ValidationError, is_finite_number
 
 # community-models ce4b2ae34a2ef7899fa014f019d04f2632dabe6f, controlnets/*/metadata.json.
 # Draw Things a982e3dafee0a10a56c1f16a38b3d272eb821e8d ControlModel.swift:
@@ -71,14 +70,14 @@ class PoseControl:
         if self.checkpoint not in CONTROLS or self.input_type != "pose":
             raise ValidationError("Only the two pinned Union pose controls are offered by this experiment.")
         # A conservative POC subset of the native weight control, not denoising strength.
-        if type(self.strength) not in (int, float) or not math.isfinite(self.strength) or not 0 < self.strength <= 2:
+        if not is_finite_number(self.strength) or not 0 < self.strength <= 2:
             raise ValidationError(
                 "Pose strength must be finite and greater than 0, at most 2; omit control for baseline."
             )
         if self.control_mode not in CONTROL_MODES:
             raise ValidationError("Pose control mode must be Balanced, Prompt or Control.")
         for value in (self.guidance_start, self.guidance_end):
-            if type(value) not in (int, float) or not math.isfinite(value) or not 0 <= value <= 1:
+            if not is_finite_number(value) or not 0 <= value <= 1:
                 raise ValidationError("Pose start and end must be between 0 and 1.")
         if not self.guidance_start < self.guidance_end:
             raise ValidationError("Pose start must be before its end.")
