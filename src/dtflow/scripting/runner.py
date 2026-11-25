@@ -328,12 +328,18 @@ def check_syntax(source: str, *, timeout_seconds: float = 5.0) -> str | None:
     context = multiprocessing.get_context("spawn")
     parent, child = context.Pipe()
     process = context.Process(target=syntax_main, args=(child,), name="dtflow-syntax", daemon=True)
+    deadline = time.monotonic() + timeout_seconds
     process.start()
     child.close()
     containment = contain_child(process)
     try:
+        # The source can exceed the pipe buffer. Wait for the reader before sending it.
+        if not parent.poll(max(0.0, deadline - time.monotonic())):
+            return parser_failure("the parsing deadline was reached.")
+        if parent.recv() != {"ready": True}:
+            return parser_failure("the syntax child ended unexpectedly.")
         parent.send(source)
-        if not parent.poll(timeout_seconds):
+        if not parent.poll(max(0.0, deadline - time.monotonic())):
             return parser_failure("the parsing deadline was reached.")
         return parent.recv()["error"]
     except (EOFError, OSError):

@@ -18,9 +18,9 @@ from importlib import resources
 import quickjs
 
 from dtflow.scripting.hooks import HOOKS
+from dtflow.scripting.source import MAX_SOURCE_BYTES
 
 API_HEADER = re.compile(r"^\s*//\s*@api-(\d+(?:\.\d+)*)\s*$")
-MAX_SOURCE_BYTES = 1_048_576
 MAX_CALL_BYTES = 8 * 1024 * 1024
 SHARED_SCRIPT_RESOURCE = "shared_script.js"
 ACORN_RESOURCE = "acorn.js"
