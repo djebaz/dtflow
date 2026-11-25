@@ -639,6 +639,18 @@ class GenerationPage:
             self._advanced_values(),
         )
 
+    def _draft_values(self) -> FormValues:
+        """The form as remembered or saved: advanced choices kept even in a mode that does not send them."""
+        values = self._values()
+        advanced = getattr(self, "advanced", None)
+        return replace(values, advanced=self._advanced_draft(advanced)) if advanced is not None else values
+
+    def _advanced_draft(self, panel):
+        try:
+            return panel.settings()
+        except ValidationError as exc:
+            raise FormError(str(exc), field_for(str(exc))) from exc
+
     def _advanced_values(self):
         """The panel's values; an unusable combination is a form error on its widget, like any other bad field."""
         panel = getattr(self, "advanced", None)
@@ -666,8 +678,17 @@ class GenerationPage:
             advanced.restore(values.advanced)
 
     def _sync_advanced_scope(self, *_args) -> None:
-        """Advanced values are sent for text-to-image only so far; elsewhere they stay visible but are labelled unsent."""
-        self.advanced.set_applies(self.page.textToImageModeButton.isChecked() and not self.video.active)
+        """Tell the Advanced section which request this form would send: only the values that kind carries are sent."""
+        page = self.page
+        if self.video.active:
+            scope = "video"
+        elif page.controlnetModeButton.isChecked():
+            scope = "pose"
+        elif page.textToImageModeButton.isChecked() or page.inpaintModeButton.isChecked():
+            scope = "image"
+        else:
+            scope = None  # Scripts and Workflows build their own requests
+        self.advanced.set_scope(scope)
 
     def _filter_samplers(self, keep: str | None = None) -> None:
         """Offer every sampler in every mode; the selected model's profile only steers the choice.
@@ -742,7 +763,7 @@ class GenerationPage:
 
     def _provider_form(self) -> dict:
         """The fields that belong to the provider in use: everything but the prompts, plus bound receipts."""
-        document = form_to_document(self._values())
+        document = form_to_document(self._draft_values())
         form = {name: document[name] for name in self.PROVIDER_FIELDS}
         form["receipts"] = self.lora.receipts()
         video = getattr(self, "video", None)
@@ -816,7 +837,7 @@ class GenerationPage:
 
     def form_document(self) -> dict:
         """The remembered form values (credential-free, unvalidated)."""
-        return form_to_document(self._values())
+        return form_to_document(self._draft_values())
 
     def forms_document(self) -> dict:
         """Every provider's remembered fields, the one in use included."""
@@ -2523,7 +2544,7 @@ class GenerationPage:
     def _load_preset(self, preset: dict, *, recorded: bool = False) -> None:
         application = apply_preset(preset)
         try:
-            current = form_to_document(self._values())
+            current = form_to_document(self._draft_values())
         except ValidationError as exc:
             self._status(Presentation("error", "Preset not loaded", str(exc)))
             return
@@ -2646,7 +2667,7 @@ class GenerationPage:
     def save_preset(self) -> None:
         def save(name):
             try:
-                values = self._values()
+                values = self._draft_values()
                 save_preset(self._state, name, form_to_document(values))
             except (ValidationError, OSError, ValueError) as exc:
                 self._status(Presentation("error", "Preset not saved", str(exc)))

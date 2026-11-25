@@ -8,7 +8,7 @@ Expressibility here is not provider acceptance: DT+ honouring a field is a separ
 
 from __future__ import annotations
 
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, fields, replace
 from typing import Any
 
 from dtflow.core.models import ValidationError, integer, is_finite_number
@@ -78,6 +78,47 @@ class AdvancedSettings:
     def to_record(self) -> dict[str, Any]:
         """Only the chosen values, so an untouched field never appears in a saved document."""
         return {item.name: getattr(self, item.name) for item in fields(self) if getattr(self, item.name) is not None}
+
+
+HIRES_FIELDS = ("hires_fix_factor", "hires_fix_width", "hires_fix_height", "hires_fix_strength")
+# What each kind of request can carry. Exposure is not support: a field is listed only where the pinned inventory marks
+# the mode as a candidate (Hires Fix and tiled decoding: images; seed mode: every mode), never for an unverified one.
+SCOPE_FIELDS = {
+    "image": (*HIRES_FIELDS, "seed_mode", "tiled_decoding"),  # text-to-image, image-to-image and Inpaint
+    "pose": ("seed_mode", "tiled_decoding"),  # the Controlnet pose hint is final-size, so no first pass
+    "video": ("seed_mode",),
+}
+SCOPE_NAMES = {"image": "image", "pose": "Controlnet pose", "video": "video"}
+FIELD_NAMES = {name: "hires_fix" for name in HIRES_FIELDS} | {
+    "seed_mode": "seed_mode",
+    "tiled_decoding": "tiled_decoding",
+}
+
+
+def scope_for(*, video: bool, pose: bool) -> str:
+    return "video" if video else "pose" if pose else "image"
+
+
+def unsupported_fields(advanced: AdvancedSettings | None, scope: str) -> tuple[str, ...]:
+    """Display names of chosen fields the given kind of request cannot carry (empty when all can)."""
+    if advanced is None:
+        return ()
+    allowed = SCOPE_FIELDS[scope]
+    names = (
+        FIELD_NAMES[item.name]
+        for item in fields(advanced)
+        if getattr(advanced, item.name) is not None and item.name not in allowed
+    )
+    return tuple(dict.fromkeys(names))
+
+
+def restrict(advanced: AdvancedSettings | None, scope: str | None) -> AdvancedSettings | None:
+    """The chosen values a request of this kind carries; ``None`` scope (no request) carries nothing."""
+    if advanced is None or scope is None:
+        return None
+    allowed = SCOPE_FIELDS[scope]
+    result = replace(advanced, **{item.name: None for item in fields(advanced) if item.name not in allowed})
+    return None if result.is_default else result
 
 
 def snap_first_pass(value: float) -> int:

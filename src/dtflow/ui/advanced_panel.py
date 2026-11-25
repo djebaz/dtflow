@@ -62,7 +62,7 @@ class AdvancedPanel(QObject):
         self.seed_mode.addItem(DEFAULT_TEXT)
         self.seed_mode.addItems(rules.SEED_MODES)
         self.tiled.setCheckState(Qt.CheckState.PartiallyChecked)
-        self._applies = True
+        self._scope: str | None = "image"
         self._first_pass_seen = {self.first_width: 0, self.first_height: 0}
         for spin in self._first_pass_seen:
             spin.valueChanged.connect(lambda value, spin=spin: self._snap_first_pass(spin, value))
@@ -111,7 +111,7 @@ class AdvancedPanel(QObject):
 
     def _sync_enabled(self) -> None:
         """The factor needs the check; strength and the first-pass size need a factor above 1 (a factor of 1 is off)."""
-        checked = self.hires.isChecked()
+        checked = self.hires.isChecked() and self.hires.isEnabled()
         self.factor.setEnabled(checked)
         for widget in (self.strength, self.first_width, self.first_height):
             widget.setEnabled(checked and self.factor.value() > rules.HIRES_MIN_FACTOR)
@@ -123,6 +123,8 @@ class AdvancedPanel(QObject):
 
     def _preview(self) -> str:
         """First pass -> final for the settings as shown, or the reason they cannot be used; never blocks editing."""
+        if not self.hires.isEnabled():
+            return ""
         width, height = self.page.widthSpinBox.value(), self.page.heightSpinBox.value()
         try:
             settings = self.settings()
@@ -134,15 +136,26 @@ class AdvancedPanel(QObject):
             return "Hires Fix is off." if self.hires.isChecked() else ""
         return f"First pass {size[0]}x{size[1]} → final {width}x{height}"
 
-    def set_applies(self, applies: bool) -> None:
-        """Outside text-to-image the values stay on screen but are not sent; the panel says so instead of hiding them."""
-        self._applies = applies
-        self.scope.setVisible(not applies)
-        self.contents.setEnabled(applies)
+    def set_scope(self, scope: str | None) -> None:
+        """Which kind of request the form would send now: ``image``, ``pose``, ``video`` or ``None`` (not a single
+        request, as in Scripts). Controls a kind cannot carry stay on screen, disabled and labelled, never hidden."""
+        self._scope = scope
+        allowed = rules.SCOPE_FIELDS.get(scope, ())
+        notes = {
+            "pose": "Hires Fix is not sent with a Controlnet pose; the other settings are.",
+            "video": "Only seed mode is sent for video; Hires Fix and tiled decoding are image settings.",
+            None: "Advanced settings are not sent in this mode.",
+        }
+        self.scope.setText(notes.get(scope, ""))
+        self.scope.setVisible(scope != "image")
+        self.hires.setEnabled("hires_fix_factor" in allowed)
+        self.seed_mode.setEnabled("seed_mode" in allowed)
+        self.tiled.setEnabled("tiled_decoding" in allowed)
+        self._edited()
 
     @property
-    def applies(self) -> bool:
-        return self._applies
+    def scope_name(self) -> str | None:
+        return self._scope
 
     # -- values -----------------------------------------------------------------------------------------------------
     def settings(self) -> AdvancedSettings | None:
@@ -164,7 +177,7 @@ class AdvancedPanel(QObject):
 
     def values(self) -> AdvancedSettings | None:
         """What a request carries: the chosen values in a mode that sends them, otherwise nothing."""
-        return self.settings() if self._applies else None
+        return rules.restrict(self.settings(), self._scope)
 
     def restore(self, settings: AdvancedSettings | None) -> None:
         """Show recorded values exactly; ``None`` resets every control to "not chosen"."""
