@@ -31,4 +31,5 @@ def test_metadata_less_cloud_files_use_explicit_checkpoint_classification(tmp_pa
         "fasth3_omni_i4x.ckpt": "minimax_h3",
     }
     assert not view.unclassified_checkpoints
-    assert view.other_files == ("unknown_lora_f16.ckpt",)  # The VAE is a hidden companion file.
+    assert "unknown_lora_f16.ckpt" in {entry.identifier for entry in view.loras}  # A conventional LoRA name.
+    assert view.other_files == ()  # The VAE is a hidden companion file.
