@@ -2043,7 +2043,14 @@ class QueuePage:
             label.setVisible(planned)
             getattr(page, name).setVisible(planned)
         page.planIncrementCheck.setVisible(planned)
-        if page.planModeCombo.currentText() == LORA_WEIGHTS_MODE:  # the mode sets the weights; no LoRA row applies
+        sweep = page.planModeCombo.currentText() == LORA_WEIGHTS_MODE
+        page.planFixedLorasLabel.setText("Swept LoRAs" if sweep else "Fixed LoRAs")
+        page.planFixedLorasLabel.setToolTip(
+            "Every LoRA here is taken at 0, 0.5 and 1 in every combination; the weight shown on its chip is not used."
+            if sweep
+            else ""
+        )
+        if sweep:  # the mode sets the weights; no LoRA row applies
             for name in ("planLorasLabel", "planLorasEdit", "planLoraSetsLabel", "planLoraSetsEdit"):
                 getattr(page, name).setVisible(False)
             for name in ("planDrawLoraSetsLabel", "planDrawLoraSetsSpin", "planDrawLorasLabel", "planDrawLorasSpin"):
