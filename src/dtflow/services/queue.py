@@ -195,7 +195,12 @@ class QueueDispatcher:
                                 )
                             break
                         waiting = False
-                        claim = await self.store.claim_next(queue_id, None)
+                        try:
+                            claim = await self.store.claim_next(queue_id, None)
+                        except BaseException:
+                            # No item task was created to release the permit.
+                            permit.close()
+                            raise
                         if claim is None:
                             permit.close()
                             break
