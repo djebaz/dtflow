@@ -7,7 +7,7 @@ Prepared means a historical confirmed local receipt, not fresh server validation
 from pathlib import Path
 
 from dtflow.core.models import InventorySnapshot, PreparedAsset, ValidationError
-from dtflow.services.catalogue import Catalogue
+from dtflow.services.catalogue import Catalogue, listed_loras
 
 
 def _symbolic(value: str) -> bool:
@@ -23,7 +23,7 @@ def script_lora_inventory(
     definitions = {entry.identifier: entry for entry in catalogue.lora_definitions()}
     raw = {entry.identifier: entry for entry in snapshot.entries}
     prepared = {asset.identifier for asset in assets}
-    known = set(definitions) | prepared | {entry.identifier for entry in snapshot.entries if entry.kind == "lora"}
+    known = set(definitions) | prepared | {entry.identifier for entry in listed_loras(snapshot)}
     if len(known) > 4096:
         raise ValidationError("The script inventory exceeds its 4096-LoRA bound.")
     omitted = {identifier for identifier in known if not _symbolic(identifier)}

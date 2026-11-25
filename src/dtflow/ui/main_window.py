@@ -55,7 +55,7 @@ from dtflow.persistence.original_io import (
     require_originals_ready,
 )
 from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
-from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, import_user_loras
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, import_user_loras, listed_loras
 from dtflow.services.lora_family import retained_families
 from dtflow.services.lora_auto_naming import normalize_previous_retained
 from dtflow.services.lora_metadata_edit import read_lora_rows, read_unretained_loras, remove_unretained_lora
@@ -1016,7 +1016,7 @@ class MainWindow:
             "models": models,
             "loras": choices.get("loras", {}),
             "lora_families": choices.get("lora_families", {}),
-            "listed_loras": tuple(e.identifier for e in snapshot.entries if e.kind == "lora") if snapshot else (),
+            "listed_loras": tuple(e.identifier for e in listed_loras(snapshot)),
             "lora_versions": choices.get("lora_versions", {}),
             "model_versions": {model: checkpoint_picker_versions(model, snapshot) for model in models},
             "backend": self.form.backendCombo.currentText(),

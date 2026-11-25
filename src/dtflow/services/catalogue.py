@@ -18,7 +18,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from dtflow.core.model_profiles import community_model_ids, profile_for
-from dtflow.core.models import InventorySnapshot
+from dtflow.core.models import InventoryEntry, InventorySnapshot
 from dtflow.diagnostics import event as diagnostic_event
 
 log = logging.getLogger(__name__)
@@ -68,6 +68,23 @@ _COMPANION = re.compile(
     r"remacri|^4x_|^2dn_f16|seedvr|ootd_|^film_|pulid|redux|upscaler|taesd|consistencydecoder|previewer|stage_a|"
     r"longcat|^eva02|(^|_)vit_|^dis_v|^is_net|parsenet|restoreformer"
 )
+
+
+
+def listed_loras(snapshot: InventorySnapshot | None) -> tuple[InventoryEntry, ...]:
+    """Recognize provider LoRAs, including conventional names in metadata-less cloud Echo."""
+    if snapshot is None:
+        return ()
+    return tuple(
+        entry
+        for entry in snapshot.entries
+        if entry.kind == "lora"
+        or (
+            snapshot.backend_id.endswith("cloud")
+            and entry.kind == "unknown"
+            and re.search(r"_lora(?:_[a-z0-9]+)?\.ckpt$", entry.identifier, re.IGNORECASE)
+        )
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -410,10 +427,16 @@ class Catalogue:
             if entry.identifier in available:
                 checkpoints_by_id[entry.identifier] = entry
         checkpoints = tuple(checkpoints_by_id.values())
-        loras = tuple(entry for entry in self._merged_loras(user_loras) if entry.identifier in available)
+        loras_by_id = {entry.identifier: entry for entry in self._merged_loras(user_loras) if entry.identifier in available}
+        for observed in listed_loras(self._inventory):
+            loras_by_id.setdefault(
+                observed.identifier,
+                CatalogueEntry(observed.identifier, "lora", None, frozenset(), source="provider", name=observed.display_name),
+            )
+        loras = tuple(loras_by_id.values())
         known_entries = (*self._prime, *self._niche)
         known = {entry.identifier for entry in known_entries}
-        known_nonmodels = {entry.identifier for entry in (*self._bundled_loras, *user_loras, *self._controls)}
+        known_nonmodels = {entry.identifier for entry in (*self._bundled_loras, *user_loras, *self._controls)} | set(loras_by_id)
         unknown = ()
         other = ()
         if self._inventory is not None:
@@ -503,9 +526,9 @@ class Catalogue:
             return ()
         candidates = []
         for lora in self.view().loras:
-            if lora.base_model != checkpoint.base_model:
+            if lora.base_model is not None and lora.base_model != checkpoint.base_model:
                 continue
-            if domain != "all" and not lora.supports_domain(domain):
+            if lora.modes and domain != "all" and not lora.supports_domain(domain):
                 continue
             if checkpoint.modes and lora.modes and not (checkpoint.modes & lora.modes):
                 continue

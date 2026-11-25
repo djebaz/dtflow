@@ -41,7 +41,7 @@ from dtflow.core.models import (
 )
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import dev_enabled
-from dtflow.services.catalogue import Catalogue, FAMILY_LABELS
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, listed_loras
 from dtflow.services.catalogue_setup import family_picker_versions, lora_candidates, read_choices
 from dtflow.services.checkpoint_metadata import resolve_checkpoint_metadata
 from dtflow.services.connection import (
@@ -2528,7 +2528,7 @@ class GenerationPage:
             return
         names = tuple(item.identifier for item in loras)
         snapshot = self._inventory_snapshot
-        listed = tuple(entry.identifier for entry in snapshot.entries if entry.kind == "lora") if snapshot else ()
+        listed = tuple(entry.identifier for entry in listed_loras(snapshot))
         checkpoint = self.page.modelCombo.currentText().strip()
         family = checkpoint_exact_version(checkpoint, snapshot)
         revision = self._inventory_revision

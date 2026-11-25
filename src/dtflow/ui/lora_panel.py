@@ -29,7 +29,7 @@ from dtflow.core.models import (
 from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.logging_setup import development_mode
 from dtflow.persistence.asset_leases import AssetsBusyError
-from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version, single_family_version
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version, listed_loras, single_family_version
 from dtflow.core.models import KeyHoldings
 from dtflow.services.dt_storage import reported_free_space, storage_refusal, storage_size
 from dtflow.services.storage_probe import probe_content
@@ -256,7 +256,7 @@ class LoraAssetPanel:
             tuple(entry.identifier for entry in snapshot.entries if entry.kind == "model") if snapshot else ()
         )
         self._inventory_candidates = (
-            [(e.identifier, e.default_weight) for e in snapshot.entries if e.kind == "lora"] if snapshot else []
+            [(e.identifier, e.default_weight) for e in listed_loras(snapshot)]
         )
         self._candidates = list(self._inventory_candidates)
 
@@ -533,6 +533,11 @@ class LoraAssetPanel:
     def all_choices(self) -> list[tuple[str, float | None]]:
         """Include every provider and local LoRA for multi-checkpoint queue composition."""
         listed = list(getattr(self, "_inventory_candidates", ()))
+        known = {name for name, _ in listed}
+        for entry in self._catalogue.view().loras:
+            if entry.identifier not in known:
+                listed.append((entry.identifier, None))
+                known.add(entry.identifier)
         known = {name for name, _ in listed}
         for name, weight in self._candidates:
             if name not in known:

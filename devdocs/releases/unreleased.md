@@ -30,3 +30,5 @@ Changes through 6.5.1 are consolidated in [DTFlow 6.5.1](v6.5.1.md). The publish
 
 - PRs: none yet.
 - Scope: Version bump 6.5.1 and release-note consolidation; no subsequent changes recorded.
+
+- Discover provider-listed LoRAs in Generate, Queues, Workflows and Scripts even without local files or catalogue definitions, including conventional LoRA checkpoint names from metadata-less DT+ Echo. Unknown compatibility remains unverified; custom asset preparation and account safeguards are unchanged.
