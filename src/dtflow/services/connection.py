@@ -271,9 +271,7 @@ def present_asset_failure(exc: Exception) -> Presentation:
             hint = COLAB_HINT
         return Presentation("error", "LoRA conversion failed", exc.user_message + (" " + hint if hint else ""))
     if isinstance(exc, AssetsBusyError):
-        return Presentation(
-            "warning", "Assets busy", "Another DTFlow process is preparing assets. Nothing was uploaded or changed."
-        )
+        return Presentation("warning", "Asset wait ended", str(exc))
     if isinstance(exc, BackendError) and exc.failure.remote_outcome == RemoteOutcome.UNKNOWN:
         detail = _api_explanation(exc.failure) if dict(exc.failure.diagnostics).get("transport") else exc.failure.code
         return Presentation(

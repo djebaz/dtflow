@@ -11,6 +11,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -18,6 +19,8 @@ from pathlib import Path
 from dtflow.core.models import ValidationError
 from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry
+from dtflow.persistence.asset_leases import AssetWaitCancelled, capacity, resource_lease
+from dtflow.core.tasks import settle
 from dtflow.services.lora_convert import CONVERTER_VERSION, ConversionProgress, ConversionRequest, convert_lora
 from dtflow.services.lora_convert.errors import ConversionCancelled, ConversionError
 from dtflow.services.lora_convert.detect import inspect_source
@@ -42,6 +45,13 @@ class PreparedConversion:
     retained: RetainedFile
     reused: bool
     metadata: LoraPrepareMetadata | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class _StagedConversion:
+    sha256: str
+    size: int
+    publish: Callable[[], PreparedConversion]
 
 
 def _prepared(
@@ -97,6 +107,7 @@ def _collision_name(
 
 
 def _convert_sync(
+    staging: ExitStack,
     state: Path,
     source: Path,
     family: str,
@@ -105,8 +116,7 @@ def _convert_sync(
     cancel: threading.Event | None,
     allow_experimental: bool,
     metadata: LoraPrepareMetadata | None = None,
-    occupied: tuple[ManagedName, ...] = (),
-) -> PreparedConversion:
+) -> PreparedConversion | _StagedConversion:
     start = time.monotonic()
     spec = lookup(family)
     if metadata is not None and (
@@ -181,65 +191,73 @@ def _convert_sync(
         level=logging.DEBUG,
         data={**hint, "source_bytes": source_size, "converter_version": CONVERTER_VERSION},
     )
-    with conversion_job(store.directory) as folder:
-        result = convert_lora(
-            ConversionRequest(
-                source=source,
-                destination=folder / "converted.ckpt",
-                family=family,
-                allow_experimental=allow_experimental,
-            ),
-            progress=progress,
-            cancel=cancel,
+    folder = staging.enter_context(conversion_job(store.directory))
+    result = convert_lora(
+        ConversionRequest(
+            source=source,
+            destination=folder / "converted.ckpt",
+            family=family,
+            allow_experimental=allow_experimental,
+        ),
+        progress=progress,
+        cancel=cancel,
+    )
+    if cancel is not None and cancel.is_set():
+        raise ConversionCancelled("Conversion stopped before retaining its output.")
+    try:
+        validate_converted_lora(result.destination)
+    except ValidationError as exc:
+        raise ConversionError("The converted checkpoint is not a valid Draw Things LoRA.") from exc
+    detected = detect_lora_family(result.destination)
+    if detected.family != spec.exact_architecture:
+        raise ConversionError(
+            "The converted output could not be verified as the selected family. A partial LoRA can be "
+            "recognised from its source yet still miss what the converted check requires. Nothing was retained."
         )
+    if (
+        result.source_sha256 != source_sha
+        or stat.st_size != source_size
+        or stat.st_mtime_ns != source.stat().st_mtime_ns
+    ):
+        raise ConversionError("The source changed during conversion. Nothing was retained.")
+    record = {
+        "converter_version": CONVERTER_VERSION,
+        "draw_things_revision": result.provenance.draw_things_revision,
+        "family": family,
+        "scale": 1.0,
+        "verification": spec.status,
+        "source": {
+            "sha256": source_sha,
+            "size": source_size,
+            "name": source.name,
+            "path": str(source.absolute()),
+            "mtime_ns": stat.st_mtime_ns,
+            "edge": store._edge(source, source_size),
+        },
+        "converted_at_utc": datetime.now(UTC).isoformat(),
+    }
+    # Descriptive header metadata (#414): bounded, display-only, never evidence for the family or the output.
+    # It is kept once per retained file (not per conversion record).
+    inspected = inspect_source(source)
+
+    def retain(name):
+        return store.retain_converted(
+            result.destination,
+            result.destination_sha256,
+            result.destination_size,
+            managed_name=name,
+            conversion=record,
+            source_metadata=inspected.metadata.retained_record(),
+            _owned=True,
+        )
+
+    def publish() -> PreparedConversion:
         if cancel is not None and cancel.is_set():
             raise ConversionCancelled("Conversion stopped before retaining its output.")
-        try:
-            validate_converted_lora(result.destination)
-        except ValidationError as exc:
-            raise ConversionError("The converted checkpoint is not a valid Draw Things LoRA.") from exc
-        detected = detect_lora_family(result.destination)
-        if detected.family != spec.exact_architecture:
-            raise ConversionError(
-                "The converted output could not be verified as the selected family. A partial LoRA can be "
-                "recognised from its source yet still miss what the converted check requires. Nothing was retained."
-            )
-        if (
-            result.source_sha256 != source_sha
-            or stat.st_size != source_size
-            or stat.st_mtime_ns != source.stat().st_mtime_ns
-        ):
-            raise ConversionError("The source changed during conversion. Nothing was retained.")
-        record = {
-            "converter_version": CONVERTER_VERSION,
-            "draw_things_revision": result.provenance.draw_things_revision,
-            "family": family,
-            "scale": 1.0,
-            "verification": spec.status,
-            "source": {
-                "sha256": source_sha,
-                "size": source_size,
-                "name": source.name,
-                "path": str(source.absolute()),
-                "mtime_ns": stat.st_mtime_ns,
-                "edge": store._edge(source, source_size),
-            },
-            "converted_at_utc": datetime.now(UTC).isoformat(),
-        }
-        # Descriptive header metadata (#414): bounded, display-only, never evidence for the family or the output.
-        # It is kept once per retained file (not per conversion record).
-        inspected = inspect_source(source)
-
-        def retain(name):
-            return store.retain_converted(
-                result.destination,
-                result.destination_sha256,
-                result.destination_size,
-                managed_name=name,
-                conversion=record,
-                source_metadata=inspected.metadata.retained_record(),
-            )
-
+        latest = source.stat()
+        if (latest.st_mtime_ns, latest.st_size) != (stat.st_mtime_ns, source_size):
+            raise ConversionError("The source changed before retention. Nothing was retained.")
+        occupied = ()
         final_name = managed_name
         if metadata is not None:
             # Conversion may take minutes. Read accepted reservations now, not before starting the worker.
@@ -278,6 +296,8 @@ def _convert_sync(
         )
         return _prepared(retained, False, metadata, allocated_name=final_name != managed_name)
 
+    return _StagedConversion(result.destination_sha256, result.destination_size, publish)
+
 
 async def convert_for_prepare(
     state: Path,
@@ -294,14 +314,45 @@ async def convert_for_prepare(
     if metadata is not None:
         if metadata.identifier != managed_name:
             raise ConversionError("Prepare metadata disagrees with the requested conversion name.")
-    return await asyncio.to_thread(
-        _convert_sync,
-        state,
-        source,
-        family,
-        managed_name,
-        progress,
-        cancel,
-        allow_experimental,
-        metadata,
+    cancel = cancel if cancel is not None else threading.Event()
+    waiting = (lambda: progress(ConversionProgress("waiting", 0, 0))) if progress else None
+    waiting_for_retention = (
+        (lambda: progress(ConversionProgress("waiting", 0, 0, "Waiting for retained file"))) if progress else None
     )
+    staging = ExitStack()
+    try:
+        async with resource_lease(state, "conversion:" + str(Path(source).resolve()), waiting=waiting, cancel=cancel):
+            async with capacity("conversion", waiting=waiting, cancel=cancel):
+                worker = asyncio.create_task(
+                    asyncio.to_thread(
+                        _convert_sync,
+                        staging,
+                        state,
+                        source,
+                        family,
+                        managed_name,
+                        progress,
+                        cancel,
+                        allow_experimental,
+                        metadata,
+                    )
+                )
+                try:
+                    result = await asyncio.shield(worker)
+                except asyncio.CancelledError:
+                    cancel.set()
+                    await settle(worker)
+                    raise
+            if isinstance(result, PreparedConversion):
+                return result
+            # The staging owner stays live, but a blocked publication does not hold a CPU slot.
+            async with resource_lease(
+                state, f"content:{result.sha256}:{result.size}", waiting=waiting_for_retention, cancel=cancel
+            ):
+                if progress is not None:
+                    progress(ConversionProgress("finishing", 1, 1, "Retaining conversion"))
+                return await settle(asyncio.to_thread(result.publish))
+    except AssetWaitCancelled as exc:
+        raise ConversionCancelled("Conversion stopped while waiting; the source is kept.") from exc
+    finally:
+        await settle(asyncio.to_thread(staging.close))

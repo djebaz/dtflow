@@ -139,7 +139,8 @@ class PrepareProgress:
         if previous in PHASES and previous != phase and previous in file.started:
             file.seconds[previous] = file.seconds.get(previous, 0.0) + now - file.started[previous]
         file.stage = phase
-        file.started.setdefault(phase, now)
+        if previous != phase:
+            file.started[phase] = now
 
     def event(self, index: int, event: PrepareEvent) -> None:
         """Apply the newest event of file ``index``; stale events for a settled file are ignored."""
@@ -154,10 +155,13 @@ class PrepareProgress:
             file.name = event.name  # display only: the row identity stays the selected source path
         if event.output_size > 0:
             file.size = event.output_size
+        if stage == "waiting":
+            self._enter(file, "waiting")
+            file.convert_label = event.label or "Waiting for capacity"
+            return
         if stage == UPLOADING:
-            if file.stage in ("pending", CHECKING, CONVERTING):
-                if file.stage == CONVERTING:
-                    file.frac[CONVERTING] = 1.0
+            if file.stage in ("pending", "waiting", CHECKING, CONVERTING):
+                file.frac[CONVERTING] = 1.0
                 file.frac[CHECKING] = 1.0
                 self._enter(file, UPLOADING)
             elif file.stage != UPLOADING:
@@ -179,7 +183,7 @@ class PrepareProgress:
             file.frac[UPLOADING] = 1.0
             self._enter(file, CONFIRMING)
         elif stage == CONVERTING:
-            if file.stage not in ("pending", CHECKING, CONVERTING):
+            if file.stage not in ("pending", "waiting", CHECKING, CONVERTING):
                 return
             self._enter(file, CONVERTING)
             if event.label:
@@ -189,10 +193,9 @@ class PrepareProgress:
                     file.frac.get(CONVERTING, 0.0), min(max(event.done / event.total, 0.0), 1.0)
                 )
         elif stage == CHECKING:
-            if file.stage not in ("pending", CHECKING, CONVERTING):
+            if file.stage not in ("pending", "waiting", CHECKING, CONVERTING):
                 return
-            if file.stage == CONVERTING:
-                file.frac[CONVERTING] = 1.0
+            file.frac[CONVERTING] = 1.0
             self._enter(file, CHECKING)
             if event.total:
                 # Two byte passes (hash, kept copy); the phase completes when DT+ has answered.
@@ -282,6 +285,8 @@ class PrepareProgress:
         return self._shown
 
     def _stalled(self, now: float) -> bool:
+        active = [i for i, file in enumerate(self._files) if file.stage not in ("pending", "settled")]
+        self._current = active[0] if active else self._current
         current = self._files[self._current] if self._current is not None else None
         if current is None or current.stage != UPLOADING:
             return False
@@ -303,7 +308,7 @@ class PrepareProgress:
                 continue
             if file.stage == UPLOADING:
                 remaining += max(0, (file.upload_total or file.size) - file.uploaded)
-            elif file.stage in ("pending", CHECKING, CONVERTING):
+            elif file.stage in ("pending", "waiting", CHECKING, CONVERTING):
                 remaining += file.size  # assumed to upload (pessimistic; shrinks when a file already exists)
         current = self._files[self._current] if self._current is not None else None
         if current is not None and current.stage == UPLOADING and (current.upload_total or current.size):
@@ -340,6 +345,9 @@ class PrepareProgress:
                 else:
                     stage = f"Uploading {position} · {percent}%"
                     wide = f"Uploading {current.name} · {amount}{rate}"
+            elif current.stage == "waiting":
+                stage = current.convert_label or "Waiting for capacity"
+                wide = f"{stage} · {current.name}"
             elif current.stage == CONFIRMING:
                 stage = "Confirming on DT+"
                 wide = f"Confirming {current.name} on DT+"

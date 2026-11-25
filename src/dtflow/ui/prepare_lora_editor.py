@@ -151,9 +151,11 @@ class PrepareBatchEditor:
         paths: Sequence[str],
         *,
         on_prepare: Callable[[list[tuple[Path, LoraPrepareMetadata]]], None],
+        available_slots: Callable[[], int] | None = None,
         on_inspect_progress: Callable[[int | None, int, int, int], None] | None = None,
         on_storage: Callable[[], None] | None = None,
     ):
+        self._available_slots = available_slots
         self._on_inspect_progress = on_inspect_progress
         self.parent = parent
         self.hash_cancelled = threading.Event()
@@ -885,14 +887,19 @@ class PrepareBatchEditor:
             self.form.prepareReadyCount.setText(
                 f"Prepared: {prepared} · Ready: {ready}" + (f" · Not valid: {invalid}" if invalid else "")
             )
+            admissible = min(ready, self._available_slots()) if self._available_slots is not None else ready
             button = self.panel.form.inlineEditorAcceptButton
             if not self.inspected:
                 button.setText("Inspecting files…")
             elif running and ready == 0:
                 button.setText(f"Preparing… {len(self.rows) - len(running) - invalid}/{len(self.rows) - invalid}")
+            elif ready and not admissible:
+                button.setText("Waiting for Prepare capacity")
+            elif admissible < ready:
+                button.setText(f"Prepare {admissible} of {ready} ready LoRAs")
             else:
                 button.setText(f"Prepare {ready} ready LoRA{'s' if ready != 1 else ''}")
-            button.setEnabled(ready > 0)
+            button.setEnabled(admissible > 0)
             if self.selected is not None:
                 index = self.rows.index(self.selected)
                 allocation = allocations[index]

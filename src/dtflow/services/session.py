@@ -8,6 +8,7 @@ dispatched) instead of the desktop blocking it for the window's lifetime.
 """
 
 import asyncio
+import threading
 import hashlib
 import logging
 import secrets
@@ -1049,7 +1050,7 @@ async def open_assets(
     timeouts: TimeoutPolicy | None = None,
     read_only: bool = False,
 ) -> AsyncIterator[AssetService]:
-    """Cloud asset service; mutations use an exclusive writer, storage inspection opens a read-only registry."""
+    """Cloud asset service; mutations use short transactions, storage inspection is read-only."""
     policy = timeouts or TimeoutPolicy()
     backend = create_backend(BackendSelection("cloud"), timeouts=policy, saved=saved)
     registry = AssetRegistry(state, writer=not read_only)
@@ -1075,6 +1076,7 @@ async def prepare_asset(
     saved: CredentialProvider | None = None,
     metadata: LoraPrepareMetadata | None = None,
     progress: Callable[[PrepareEvent], None] | None = None,
+    cancel: threading.Event | None = None,
 ) -> dict:
     """Explicitly Prepare using accepted naming metadata and a stable technical identifier.
 
@@ -1082,7 +1084,9 @@ async def prepare_asset(
     its final managed identifier in the same transaction as the Prepare intent.
     """
     async with open_assets(state, saved=saved) as service:
-        prepared = await service.prepare(file, name, provenance=provenance, metadata=metadata, progress=progress)
+        prepared = await service.prepare(
+            file, name, provenance=provenance, metadata=metadata, progress=progress, cancel=cancel
+        )
         record = await service.registry.get(prepared.receipt_id)
         # The historical content row can have another filename/key. Present this
         # exact successful preparation, rather than the first name to share its bytes.

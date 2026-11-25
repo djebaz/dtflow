@@ -17,12 +17,14 @@ import re
 import tempfile
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from functools import wraps
+from inspect import signature
 from datetime import UTC, datetime
 from pathlib import Path
 
 from dtflow.core.models import ValidationError
 from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
-from dtflow.persistence.assets import _lock_file
+from dtflow.persistence.asset_leases import resource_path, wait_lock
 from dtflow.services.lora_naming import display_label
 
 log = logging.getLogger(__name__)
@@ -76,6 +78,24 @@ def _hash(path: Path) -> tuple[str, int]:
             digest.update(chunk)
             total += len(chunk)
     return digest.hexdigest(), total
+
+
+def _content_owned(method):
+    """Store mutations share the upload lease; unrelated content never waits on it."""
+
+    @wraps(method)
+    def call(self, *args, **kwargs):
+        owned = kwargs.pop("_owned", False)
+        if owned:
+            return method(self, *args, **kwargs)
+        # retain/retain_converted take a path first; rename/remove take the identity first.
+        bound = signature(method).bind(self, *args, **kwargs)
+        sha256, size = bound.arguments["sha256"], bound.arguments["size"]
+        path = resource_path(self.directory.parent, f"content:{sha256}:{size}")
+        with wait_lock(path, timeout=300.0):
+            return method(self, *args, **kwargs)
+
+    return call
 
 
 class LoraStore:
@@ -143,7 +163,7 @@ class LoraStore:
 
     def _locked(self):
         self.directory.mkdir(parents=True, exist_ok=True)
-        return _lock_file(self.directory / ".store.lock")
+        return wait_lock(self.directory / ".store.lock")
 
     # -- operations (blocking; callers run them in a worker thread) -------------------------------------------------
 
@@ -205,6 +225,7 @@ class LoraStore:
                 f"Retained LoRA {display_label(retained.name)} no longer matches its recorded checksum."
             )
 
+    @_content_owned
     def retain(
         self,
         source: Path,
@@ -222,92 +243,80 @@ class LoraStore:
             _safe_name(managed_name) != managed_name or not managed_name.endswith(".ckpt")
         ):
             raise ValidationError("The managed LoRA filename is not portable.")
-        handle = self._locked()
+        existing = self.find(sha256, size)
+        if existing is not None:
+            try:
+                self.verify(existing)
+                return existing
+            except ValidationError:
+                pass  # Repair only from the freshly copied, verified source below.
+        # Copy/hash outside the index lock. Only publication and index replacement serialize.
+        self.directory.mkdir(parents=True, exist_ok=True)
+        temporary = None
         try:
-            files = self._read_recovering()
-            matching = next(
-                (item for item in files if item.get("sha256") == sha256 and item.get("size") == size),
-                None,
-            )
-            if matching is not None:
-                target = self._path(matching)
-                name = target.name
-                if target.is_file():
-                    retained = RetainedFile(name, sha256, size, target)
-                    try:
-                        self.verify(retained)
-                    except ValidationError:
-                        # Source is rehashed below before atomically repairing this recorded copy.
-                        pass
-                    else:
-                        return retained
-                elif target.exists():
-                    raise ValidationError("The retained LoRA destination is not a regular file.")
-            else:
-                original = _safe_name(source.name)
-                stem, suffix = os.path.splitext(original)
-                taken = {str(item.get("name", "")).casefold() for item in files}
-                name = managed_name or original
-                if managed_name is not None:
-                    # The canonical allocator decides managed-name collisions.
-                    # Never silently append a hash or overwrite another copy.
-                    if name.casefold() in taken or os.path.lexists(self.directory / name):
-                        raise ValidationError("The managed LoRA filename already exists; no copy was overwritten.")
+            with (
+                source.open("rb") as reader,
+                tempfile.NamedTemporaryFile(
+                    mode="wb", dir=self.directory, prefix=".lora-", suffix=".part", delete=False
+                ) as writer,
+            ):
+                temporary = Path(writer.name)
+                digest, total = hashlib.sha256(), 0
+                while chunk := reader.read(CHUNK):
+                    digest.update(chunk)
+                    total += len(chunk)
+                    writer.write(chunk)
+                    if on_progress is not None:
+                        on_progress(total, size)
+                writer.flush()
+                os.fsync(writer.fileno())
+            if (digest.hexdigest(), total) != (sha256, size):
+                raise ValidationError("The LoRA file changed while it was copied; no copy was kept.")
+            existing = self.find(sha256, size)
+            valid = False
+            if existing is not None:
+                try:
+                    self.verify(existing)
+                    valid = True
+                except ValidationError:
+                    pass
+            with self._locked():
+                files = self._read_recovering()
+                matching = next((row for row in files if (row.get("sha256"), row.get("size")) == (sha256, size)), None)
+                if matching is not None:
+                    target = self._path(matching)
+                    if valid and existing.path == target:
+                        return existing
+                    self._repair_damaged(target, temporary, sha256, size)
                 else:
-                    counter = 0
+                    original = _safe_name(source.name)
+                    stem, suffix = os.path.splitext(original)
+                    taken = {str(row.get("name", "")).casefold() for row in files}
+                    name, counter = managed_name or original, 0
                     while name.casefold() in taken or os.path.lexists(self.directory / name):
+                        if managed_name is not None:
+                            raise RetainedNameConflict(
+                                "The managed LoRA filename already exists; no copy was overwritten."
+                            )
                         counter += 1
                         end = f"-{sha256[:8]}" + (f"-{counter}" if counter > 1 else "")
                         name = f"{stem}{end}{suffix}"
-                target = self.directory / name
-
-            temporary = None
-            digest, total = hashlib.sha256(), 0
-            try:
-                with (
-                    source.open("rb") as reader,
-                    tempfile.NamedTemporaryFile(
-                        mode="wb", dir=self.directory, prefix=".lora-", suffix=".part", delete=False
-                    ) as writer,
-                ):
-                    temporary = Path(writer.name)
-                    while chunk := reader.read(CHUNK):
-                        digest.update(chunk)
-                        total += len(chunk)
-                        writer.write(chunk)
-                        if on_progress is not None:
-                            on_progress(total, size)
-                    writer.flush()
-                    os.fsync(writer.fileno())
-                if (digest.hexdigest(), total) != (sha256, size):
-                    raise ValidationError("The LoRA file changed while it was copied; no copy was kept.")
-                if matching is None and os.path.lexists(target):
-                    raise ValidationError(
-                        "The retained LoRA destination appeared during copying; nothing was overwritten."
+                    target = self.directory / name
+                    os.replace(temporary, target)
+                    files.append(
+                        {"name": name, "sha256": sha256, "size": size, "retained_at_utc": datetime.now(UTC).isoformat()}
                     )
-                os.replace(temporary, target)
-            except OSError as exc:
-                raise ValidationError("A copy of the LoRA file could not be kept in application data.") from exc
-            finally:
-                if temporary is not None:
-                    temporary.unlink(missing_ok=True)
-            if matching is None:
-                files.append(
-                    {"name": name, "sha256": sha256, "size": size, "retained_at_utc": datetime.now(UTC).isoformat()}
-                )
-                try:
-                    self._write(files)
-                except OSError as exc:
-                    # The source is still intact; don't leave a newly copied
-                    # file outside the retained index if its write failed.
                     try:
+                        self._write(files)
+                    except OSError as exc:
                         target.unlink(missing_ok=True)
-                    except OSError:
-                        diagnostic_event(log, "assets.retained_unindexed_copy", level=logging.WARNING)
-                    raise ValidationError("The retained LoRA index could not be saved.") from exc
-            return RetainedFile(name, sha256, size, target)
+                        raise ValidationError("The retained LoRA index could not be saved.") from exc
+                return RetainedFile(target.name, sha256, size, target)
+        except OSError as exc:
+            raise ValidationError("A copy of the LoRA file could not be kept in application data.") from exc
         finally:
-            handle.close()
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
 
     def find_converted(
         self, source_sha256: str, family: str, scale: float, converter_version: str
@@ -317,70 +326,66 @@ class LoraStore:
         Unknown/older provenance is not eligible. This lookup runs only after explicit Prepare, not inspection.
         """
         current = _converter_number(converter_version)
-        handle = self._locked()
-        try:
-            candidates = []
-            matches = 0
-            for item in self._read_recovering():
-                records = item.get("conversions")
-                if not isinstance(records, list):
-                    records = [item.get("conversion")]
-                for record in records:
-                    if not (
-                        isinstance(record, dict)
-                        and isinstance(record.get("source"), dict)
-                        and record["source"].get("sha256") == source_sha256
-                        and record.get("family") == family
-                        and record.get("scale") == scale
-                    ):
-                        continue
-                    matches += 1
-                    version = _converter_number(record.get("converter_version"))
-                    if current is None or version is None or version < current:
-                        continue
-                    candidates.append(
-                        (version == current, version, _conversion_time(record.get("converted_at_utc")), item)
-                    )
-            candidates.sort(key=lambda candidate: candidate[:3], reverse=True)
+        with self._locked():
+            files = self._read_recovering()
+        candidates = []
+        matches = 0
+        for item in files:
+            records = item.get("conversions")
+            if not isinstance(records, list):
+                records = [item.get("conversion")]
+            for record in records:
+                if not (
+                    isinstance(record, dict)
+                    and isinstance(record.get("source"), dict)
+                    and record["source"].get("sha256") == source_sha256
+                    and record.get("family") == family
+                    and record.get("scale") == scale
+                ):
+                    continue
+                matches += 1
+                version = _converter_number(record.get("converter_version"))
+                if current is None or version is None or version < current:
+                    continue
+                candidates.append((version == current, version, _conversion_time(record.get("converted_at_utc")), item))
+        candidates.sort(key=lambda candidate: candidate[:3], reverse=True)
+        diagnostic_event(
+            log,
+            "lora_store.conversion_candidates",
+            data={
+                **asset_ref_data(source_sha256=source_sha256),
+                "matched_count": matches,
+                "eligible_count": len(candidates),
+                "converter_version": current,
+            },
+        )
+        checked = set()
+        for is_current, version, _moment, item in candidates:
+            # An unsafe name or a link is tampering, not damage: it stays an error here (before any reconversion).
+            target = self._path(item)
+            identity = (target.name, str(item.get("sha256")), str(item.get("size")))
+            if identity in checked:
+                continue
+            checked.add(identity)
+            try:
+                retained = RetainedFile(target.name, item["sha256"], item["size"], target)
+                self.verify(retained)
+            except (ValidationError, KeyError, TypeError):
+                # A missing or altered earlier output is not reusable; the caller converts again and
+                # retain_converted() repairs the entry from the fresh bytes. An unreadable or malformed index
+                # is still an error (_read).
+                diagnostic_event(log, "lora_store.converted_entry_skipped", level=logging.WARNING, data={})
+                continue
             diagnostic_event(
                 log,
-                "lora_store.conversion_candidates",
+                "lora_store.conversion_selected",
                 data={
-                    **asset_ref_data(source_sha256=source_sha256),
-                    "matched_count": matches,
-                    "eligible_count": len(candidates),
-                    "converter_version": current,
+                    **asset_ref_data(source_sha256=source_sha256, sha256=retained.sha256),
+                    "converter_version": version,
+                    "match": "current" if is_current else "newer",
                 },
             )
-            checked = set()
-            for is_current, version, _moment, item in candidates:
-                # An unsafe name or a link is tampering, not damage: it stays an error here (before any reconversion).
-                target = self._path(item)
-                identity = (target.name, str(item.get("sha256")), str(item.get("size")))
-                if identity in checked:
-                    continue
-                checked.add(identity)
-                try:
-                    retained = RetainedFile(target.name, item["sha256"], item["size"], target)
-                    self.verify(retained)
-                except (ValidationError, KeyError, TypeError):
-                    # A missing or altered earlier output is not reusable; the caller converts again and
-                    # retain_converted() repairs the entry from the fresh bytes. An unreadable or malformed index
-                    # is still an error (_read).
-                    diagnostic_event(log, "lora_store.converted_entry_skipped", level=logging.WARNING, data={})
-                    continue
-                diagnostic_event(
-                    log,
-                    "lora_store.conversion_selected",
-                    data={
-                        **asset_ref_data(source_sha256=source_sha256, sha256=retained.sha256),
-                        "converter_version": version,
-                        "match": "current" if is_current else "newer",
-                    },
-                )
-                return retained
-        finally:
-            handle.close()
+            return retained
         return None
 
     def _repair_damaged(self, target: Path, staged: Path, sha256: str, size: int) -> None:
@@ -389,8 +394,6 @@ class LoraStore:
         An altered copy is moved aside to a hidden ``.<id>.damaged`` file in the store, never deleted; a link or
         another non-file is not touched. The staged file is consumed only after the target is free.
         """
-        if _hash(staged) != (sha256, size):
-            raise ValidationError("The converted LoRA changed before retention; nothing was kept.")
         aside: Path | None = None
         if os.path.lexists(target):
             if target.is_symlink() or not target.is_file():
@@ -411,6 +414,7 @@ class LoraStore:
             raise ValidationError("The damaged retained LoRA could not be repaired; nothing was changed.") from exc
         diagnostic_event(log, "lora_store.converted_entry_repaired", level=logging.WARNING, data={})
 
+    @_content_owned
     def retain_converted(
         self,
         staged: Path,
@@ -431,6 +435,16 @@ class LoraStore:
             raise ValidationError("The converted LoRA filename is not portable.")
         if staged.is_symlink() or not staged.is_file() or not staged.resolve().is_relative_to(self.directory.resolve()):
             raise ValidationError("The converted LoRA staging file is not owned by the retained store.")
+        if _hash(staged) != (sha256, size):
+            raise ValidationError("The converted LoRA changed before retention; nothing was kept.")
+        existing = self.find(sha256, size)
+        valid = False
+        if existing is not None:
+            try:
+                self.verify(existing)
+                valid = True
+            except ValidationError:
+                pass
         handle = self._locked()
         try:
             files = self._read_recovering()
@@ -442,9 +456,7 @@ class LoraStore:
             if matching is not None:
                 target = self._path(matching)
                 retained = RetainedFile(target.name, sha256, size, target)
-                try:
-                    self.verify(retained)
-                except ValidationError:
+                if not valid:
                     # The same bytes were just converted again, so a missing or altered earlier copy can be repaired.
                     self._repair_damaged(target, staged, sha256, size)
             else:
@@ -453,8 +465,6 @@ class LoraStore:
                 target = self.directory / managed_name
                 if os.path.lexists(target):
                     raise RetainedNameConflict("The converted LoRA filename already exists; no file was overwritten.")
-                if _hash(staged) != (sha256, size):
-                    raise ValidationError("The converted LoRA changed before retention; nothing was kept.")
                 try:
                     os.replace(staged, target)
                 except OSError as exc:
@@ -535,6 +545,7 @@ class LoraStore:
         finally:
             handle.close()
 
+    @_content_owned
     def rename_accepted(self, sha256: str, size: int, accepted_name: str) -> RetainedFile | None:
         """Give existing verified retained bytes their accepted canonical filename.
 
@@ -544,6 +555,10 @@ class LoraStore:
         """
         if _safe_name(accepted_name) != accepted_name or not accepted_name.endswith(".ckpt"):
             raise ValidationError("The accepted LoRA filename is not portable.")
+        retained = self.find(sha256, size)
+        if retained is None:
+            return None
+        self.verify(retained)  # Hash under the content lease, outside the index lock.
         handle = self._locked()
         try:
             files = self._read_recovering()
@@ -552,9 +567,7 @@ class LoraStore:
                 return None
             original = self._path(item)
             if original.name == accepted_name:
-                self.verify(RetainedFile(original.name, sha256, size, original))
                 return RetainedFile(original.name, sha256, size, original)
-            self.verify(RetainedFile(original.name, sha256, size, original))
             target = self.directory / accepted_name
             if original.name.casefold() == accepted_name.casefold() and os.path.lexists(target):
                 # Case-insensitive filesystem: both spellings are one file, so linking and unlinking would delete
@@ -778,34 +791,21 @@ class LoraStore:
                 present.add((item["sha256"], item["size"]))
         return frozenset(present)
 
+    @_content_owned
     def remove(self, sha256: str, size: int) -> bool:
         """Delete only the managed copy; refuse removal while an asset writer may be uploading it."""
-        self.directory.parent.mkdir(parents=True, exist_ok=True)
-        # An active restoration holds this existing registry lock through upload.
-        # Taking it before the store lock prevents deleting bytes being uploaded, across processes.
-        with _lock_file(self.directory.parent / "assets.lock"):
-            handle = self._locked()
-            try:
-                files = self._read()
-                kept = [item for item in files if (item.get("sha256"), item.get("size")) != (sha256, size)]
-                if len(kept) == len(files):
-                    return False
-                for item in files:
-                    if (item.get("sha256"), item.get("size")) == (sha256, size):
-                        self._path(item).unlink(missing_ok=True)
-                self._write(kept)
-                return True
-            finally:
-                handle.close()
+        with self._locked():
+            files = self._read()
+            kept = [item for item in files if (item.get("sha256"), item.get("size")) != (sha256, size)]
+            if len(kept) == len(files):
+                return False
+            for item in files:
+                if (item.get("sha256"), item.get("size")) == (sha256, size):
+                    self._path(item).unlink(missing_ok=True)
+            self._write(kept)
+            return True
 
     def clear(self) -> int:
         """Remove every retained copy; returns how many entries were removed."""
-        handle = self._locked()
-        try:
-            files = self._read()
-            for item in files:
-                self._path(item).unlink(missing_ok=True)
-            self._write([])
-            return len(files)
-        finally:
-            handle.close()
+        # Use the same per-content admission as single removal; never invert index/content lock order.
+        return sum(self.remove(item["sha256"], item["size"]) for item in self._read())

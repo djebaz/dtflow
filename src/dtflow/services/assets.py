@@ -12,7 +12,9 @@ import hashlib
 import logging
 import os
 import time
+import threading
 from pathlib import Path, PureWindowsPath
+from contextlib import AsyncExitStack
 from collections.abc import Callable
 from dataclasses import replace
 from typing import Protocol
@@ -40,6 +42,7 @@ from dtflow.core.tasks import settle
 from dtflow.diagnostics import api_error_data, asset_ref_data, cloud_key_data, event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per_name
 from dtflow.persistence.store import PersistenceError
+from dtflow.persistence.asset_leases import AssetWaitCancelled, capacity, resource_lease
 from functools import partial
 
 from dtflow.services.lora_digest import cached_digest, remember
@@ -52,16 +55,13 @@ from dtflow.services.prepare_progress import CHECKING, CONFIRMING, EXISTS, UPLOA
 log = logging.getLogger(__name__)
 CHUNK = 1024 * 1024
 
-# One shielded operation per (origin, auth scope, content): identical concurrent prepares join it, anything else never does.
 #: Seconds an outdated-receipt refresh that hit a DT+ limit is not tried again.
 REFRESH_LIMIT_PAUSE = 900.0
 #: Seconds a read of the per-name current receipts is reused.
 NEWEST_TTL = 2.0
-_INFLIGHT: dict[tuple, asyncio.Task] = {}
-# Concurrent queue/workflow items needing the same restore or rebind join one operation, and distinct ones take
-# turns, because the asset writer lock admits a single writer per state directory.
+# Concurrent queue/workflow items needing the same restore or rebind join one operation.
+# Independent content proceeds concurrently under bounded upload admission.
 _SHARED: dict[tuple, asyncio.Task] = {}
-_WRITER = asyncio.Lock()
 # Receipts relinked or restored during this process, so later items still carrying the older reference are validated
 # against the current one instead of repeating the same rebind for every item.
 _CURRENT: dict[tuple, PreparedAsset] = {}
@@ -213,6 +213,7 @@ class AssetService:
         provenance: str = "",
         metadata: LoraPrepareMetadata | None = None,
         progress: Callable[[PrepareEvent], None] | None = None,
+        cancel: threading.Event | None = None,
     ) -> PreparedAsset:
         """Explicit Prepare; derive a usable managed name before provider negotiation.
 
@@ -268,60 +269,41 @@ class AssetService:
             retain = partial(
                 self.store.retain, managed_name=managed_name, **({"on_progress": copied} if copied else {})
             )
-            retained = await asyncio.to_thread(retain, path, digest, stat.st_size)
+            waiting = (lambda: progress(PrepareEvent("waiting", label="Waiting for asset"))) if progress else None
+            async with resource_lease(
+                self.registry.directory, f"content:{digest}:{stat.st_size}", waiting=waiting, cancel=cancel
+            ):
+                retained = await settle(asyncio.to_thread(partial(retain, _owned=True), path, digest, stat.st_size))
             diagnostic_event(
                 log,
                 "assets.copy_kept",
                 level=logging.INFO,
                 data={**asset_ref_data(sha256=digest), "sha": digest[:8], "size": stat.st_size},
             )
-        key = (
-            self.backend.backend_id,
-            self.backend.origin,
-            self.backend.scope,
-            content.identifier,
-            content.sha256,
-            content.size,
-            metadata,
+        diagnostic_event(
+            log,
+            "assets.lora_family_detected",
+            level=logging.INFO,
+            data={
+                **asset_ref_data(sha256=digest),
+                "sha": digest[:8],
+                "family": detected.family or "unknown",
+                "family_source": detected.source,
+            },
         )
-        task = _INFLIGHT.get(key)
-        if task is None or task.done():
-            diagnostic_event(
-                log,
-                "assets.lora_family_detected",
-                level=logging.INFO,
-                data={
-                    **asset_ref_data(sha256=digest),
-                    "sha": digest[:8],
-                    "family": detected.family or "unknown",
-                    "family_source": detected.source,
-                },
-            )
-            task = asyncio.create_task(
-                self._prepare(
-                    path,
-                    content,
-                    stat,
-                    detected=detected,
-                    metadata=metadata,
-                    retained_name=retained.name if retained is not None else None,
-                    managed_name=managed_name,
-                    progress=progress,
-                )
-            )
-            _INFLIGHT[key] = task
-            task.add_done_callback(
-                lambda done, key=key: _INFLIGHT.pop(key, None) if _INFLIGHT.get(key) is done else None
-            )
-            # Retrieve abandoned-waiter failures so they are never logged with provider detail.
-            task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
-        # Cancelling this caller must not cancel an operation another caller still awaits.
-        receipt = await asyncio.shield(task)
-        if self.store is not None and provenance != "auto_restore":
-            # Only a confirmed upload makes this file the name's source and current version.
-            await asyncio.to_thread(self.store.record_origin, path, digest, stat.st_size, content.identifier, stat)
-            self._newest_cache = None
-        return receipt
+        # Same-content/name calls serialize under the resource lease. Each explicit caller
+        # owns its own cancellation and registry; no shielded task can outlive that context.
+        return await self._prepare(
+            path,
+            content,
+            detected=detected,
+            metadata=metadata,
+            retained_name=retained.name if retained is not None else None,
+            managed_name=managed_name,
+            progress=progress,
+            cancel=cancel,
+            origin_stat=stat if provenance != "auto_restore" else None,
+        )
 
     async def _credential_id(self) -> str | None:
         """Real DT+ clients have a durable key identity; fixture backends retain their legacy path."""
@@ -332,19 +314,66 @@ class AssetService:
         self,
         path: Path,
         content: AssetContent,
-        stat: os.stat_result,
-        negotiation: AssetNegotiation | None = None,
+        *,
+        cancel: threading.Event | None = None,
+        origin_stat: os.stat_result | None = None,
+        **kwargs,
+    ) -> PreparedAsset:
+        """Serialize only the same bytes/name; independent uploads have three slots."""
+        progress = kwargs.get("progress")
+        waiting = (lambda: progress(PrepareEvent("waiting", label="Waiting for asset"))) if progress else None
+        state = self.registry.directory
+        # Caller-owned source files have no retained-name mutation authority.
+        scope = "" if self.store is not None else ":" + self.backend.origin
+        async with AsyncExitStack() as stack:
+            await stack.enter_async_context(
+                resource_lease(state, f"content:{content.sha256}:{content.size}{scope}", waiting=waiting, cancel=cancel)
+            )
+            await stack.enter_async_context(
+                resource_lease(state, f"name:{content.identifier.casefold()}{scope}", waiting=waiting, cancel=cancel)
+            )
+            await stack.enter_async_context(capacity("prepare", waiting=waiting, cancel=cancel))
+            source = path
+            if self.store is not None:
+                retained = await asyncio.to_thread(self.store.find, content.sha256, content.size)
+                if retained is not None:
+                    await asyncio.to_thread(self.store.verify, retained)
+                    path = retained.path
+            receipt = await self._prepare_owned(path, content, cancel=cancel, **kwargs)
+            if origin_stat is not None and self.store is not None:
+                # Publish the confirmed source before another operation can prepare this name.
+                await settle(
+                    asyncio.to_thread(
+                        self.store.record_origin, source, content.sha256, content.size, content.identifier, origin_stat
+                    )
+                )
+                self._newest_cache = None
+            return receipt
+
+    @staticmethod
+    def _check_prepare_cancel(cancel: threading.Event | None) -> None:
+        if cancel is not None and cancel.is_set():
+            raise AssetWaitCancelled("Preparation stopped before upload. Use Retry to prepare it again.")
+
+    async def _prepare_owned(
+        self,
+        path: Path,
+        content: AssetContent,
         detected: LoraFamily | None = None,
         metadata: LoraPrepareMetadata | None = None,
         retained_name: str | None = None,
         managed_name: str | None = None,
         progress: Callable[[PrepareEvent], None] | None = None,
+        cancel: threading.Event | None = None,
+        restore: PreparedAsset | None = None,
     ) -> PreparedAsset:
         backend = self.backend
+        self._check_prepare_cancel(cancel)
         credential_id = await self._credential_id()
         if detected is None:
             await asyncio.to_thread(validate_converted_lora, path)
             detected = await asyncio.to_thread(detect_lora_family, path)
+        self._check_prepare_cancel(cancel)
         asset_id, operation = await self.registry.begin(
             content,
             backend.backend_id,
@@ -361,17 +390,23 @@ class AssetService:
         )
         transferred = False
         try:
+            self._check_prepare_cancel(cancel)
             if managed_name is not None and self.store is not None and retained_name != managed_name:
                 # A converted source may already live inside the retained store. Upload from the
                 # new path after an accepted-name rename, never from the now-missing old path.
-                renamed = await asyncio.to_thread(
-                    self.store.rename_accepted, content.sha256, content.size, managed_name
+                renamed = await settle(
+                    asyncio.to_thread(
+                        partial(self.store.rename_accepted, _owned=True), content.sha256, content.size, managed_name
+                    )
                 )
                 if renamed is not None and path.parent == self.store.directory:
                     path = renamed.path
                 if renamed is not None and progress is not None:
                     progress(PrepareEvent(CHECKING, name=renamed.path.name))  # show the final managed name
-            negotiation = negotiation or await backend.negotiate_asset(content)
+            self._check_prepare_cancel(cancel)
+            # A restore's batch result may predate a competing Prepare. Get a fresh answer under the leases.
+            negotiation = await backend.negotiate_asset(content)
+            self._check_prepare_cancel(cancel)
             if negotiation.status == "exists":
                 if progress is not None:
                     progress(PrepareEvent(EXISTS))
@@ -398,6 +433,9 @@ class AssetService:
                         },
                     )
                 return receipt
+            if restore is not None and credential_id is not None and negotiation.status == "upload_required":
+                # Invalidate only on the fresh response obtained while owning the content/name.
+                await self.registry.invalidate_scope(restore.receipt_id, credential_id, content.identifier)
             await self.registry.mark(
                 asset_id,
                 operation,
@@ -405,11 +443,13 @@ class AssetService:
                 "transfer_started",
                 protect_confirmed=credential_id is not None,
             )
+            if progress is not None:
+                progress(PrepareEvent(UPLOADING, 0, content.size))
+            self._check_prepare_cancel(cancel)
             transferred = True
             if progress is None:
                 await backend.upload_asset(path, content, negotiation)
             else:
-                progress(PrepareEvent(UPLOADING, 0, content.size))
                 await backend.upload_asset(
                     path,
                     content,
@@ -422,6 +462,9 @@ class AssetService:
                     asset_id, operation, "cancelled" if transferred else "cancelled_early", transferred, credential_id
                 )
             )
+            raise
+        except AssetWaitCancelled:
+            await settle(self.registry.mark(asset_id, operation, "failed", "cancelled_early", protect_confirmed=True))
             raise
         except ValidationError:
             await settle(
@@ -764,12 +807,10 @@ class AssetService:
                     results[index] = await self._shared(
                         "key-restore",
                         item,
-                        lambda item=item, negotiation=negotiation: self._restore(
+                        lambda item=item: self._restore(
                             item,
                             PureWindowsPath(item.identifier).name,
                             on_stage,
-                            negotiation=negotiation,
-                            credential_id=credential_id,
                         ),
                         scope_id=credential_id,
                     )
@@ -904,7 +945,7 @@ class AssetService:
     async def _refresh(self, item: PreparedAsset, path: Path, on_stage: Callable[[str], None] | None) -> PreparedAsset:
         """Measure the changed source file once and, if its bytes differ, prepare them again under the item's name.
 
-        Runs under the exclusive asset writer like a restore, with its own registry, so Stop can cancel it."""
+        Uses content/name ownership like a restore, with its own registry, so Stop can cancel it."""
         stat, digest = await asyncio.to_thread(_observe, path)
         if (digest, stat.st_size) == (item.sha256, item.size):
             # Touched but identical: stamp the measurement so the file is not read again.
@@ -918,12 +959,13 @@ class AssetService:
         registry = AssetRegistry(self.state, writer=True)
         try:
             await settle(registry.open())
-            fresh = await AssetService(self.backend, registry)._prepare(
-                path, AssetContent("lora", item.identifier, digest, stat.st_size, "outdated_refresh"), stat
+            fresh = await AssetService(self.backend, registry, state=self.state, store=self.store)._prepare(
+                path,
+                AssetContent("lora", item.identifier, digest, stat.st_size, "outdated_refresh"),
+                origin_stat=stat,
             )
         finally:
             await settle(registry.aclose())
-        await asyncio.to_thread(self.store.record_origin, path, digest, stat.st_size, item.identifier, stat)
         self._newest_cache = None
         diagnostic_event(
             log,
@@ -1193,12 +1235,7 @@ class AssetService:
         )
         task = _SHARED.get(key)
         if task is None or task.done():
-
-            async def serialized() -> PreparedAsset:
-                async with _WRITER:
-                    return await operation()
-
-            task = asyncio.create_task(serialized())
+            task = asyncio.create_task(operation())
             _SHARED[key] = task
             task.add_done_callback(lambda done, key=key: _SHARED.pop(key, None) if _SHARED.get(key) is done else None)
             task.add_done_callback(lambda done: None if done.cancelled() else done.exception())
@@ -1219,7 +1256,12 @@ class AssetService:
                         _SHARED.pop(key, None)
                     task.cancel()
 
-    async def _rebind(
+    async def _rebind(self, prepared, asset, reference, *, credential_id=None) -> PreparedAsset:
+        async with resource_lease(self.state, f"content:{prepared.sha256}:{prepared.size}"):
+            async with resource_lease(self.state, f"name:{prepared.identifier.casefold()}"):
+                return await self._rebind_owned(prepared, asset, reference, credential_id=credential_id)
+
+    async def _rebind_owned(
         self, prepared: PreparedAsset, asset: str, reference: str, *, credential_id: str | None = None
     ) -> PreparedAsset:
         """The server holds these exact bytes (matched by SHA-256 and size) under this reference.
@@ -1259,15 +1301,8 @@ class AssetService:
         prepared: PreparedAsset,
         asset: str,
         on_stage: Callable[[str], None] | None,
-        *,
-        negotiation: AssetNegotiation | None = None,
-        credential_id: str | None = None,
     ) -> PreparedAsset:
-        """Upload the retained copy once under the exclusive asset writer, then return its confirmed receipt.
-
-        The writer spans the network operation because the registry's active intent and its recovery semantics
-        are owned by that writer. Releasing it mid-upload would let another writer mark the transfer interrupted.
-        """
+        """Restore retained bytes under content/name ownership; unrelated writers remain independent."""
         store = self.store or LoraStore(self.state)
         try:
             retained = await asyncio.to_thread(store.find, prepared.sha256, prepared.size)
@@ -1316,16 +1351,12 @@ class AssetService:
                     "prepared_asset_restore_busy",
                     f"LoRA {asset} is missing on DT+, but another process is preparing assets. Nothing was submitted.",
                 ) from None
-            if credential_id is not None:
-                # Once DT+ positively reports a missing copy, no sibling can trust this key's old receipt.
-                await registry.invalidate_scope(prepared.receipt_id, credential_id, prepared.identifier)
             # The restore already has a shared task and verified source bytes. Avoid a separately shielded
             # explicit-Prepare task so Stop can cancel the upload and settle its registry state.
-            restored = await AssetService(self.backend, registry)._prepare(
+            restored = await AssetService(self.backend, registry, state=self.state, store=self.store)._prepare(
                 retained.path,
                 AssetContent("lora", prepared.identifier, prepared.sha256, prepared.size, "auto_restore"),
-                await asyncio.to_thread(retained.path.stat),
-                negotiation=negotiation,
+                restore=prepared,
             )
         finally:
             await settle(registry.aclose())
@@ -1473,7 +1504,7 @@ class AssetService:
         Without one nothing is judged missing and the receipts alone say what the key probably holds. ``snapshot`` is
         the receipts read *before* the list was requested, so a receipt confirmed while the request ran is never judged
         against the older list. Receipts the list lacks come back in ``stale`` with this key's opaque identity for the
-        caller to apply through ``AssetRegistry.invalidate_observed``; this method never opens the exclusive writer."""
+        caller to apply through ``AssetRegistry.invalidate_observed``; this method never opens a writer."""
         try:
             credential, rows = snapshot if snapshot is not None else await self.receipt_snapshot()
         except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
@@ -1513,6 +1544,12 @@ class AssetService:
         )
 
     async def delete_storage(self, selected: tuple) -> dict:
+        async with AsyncExitStack() as stack:
+            for name in sorted({item.name.casefold() for item in selected}):
+                await stack.enter_async_context(resource_lease(self.registry.directory, f"name:{name}"))
+            return await self._delete_storage_owned(selected)
+
+    async def _delete_storage_owned(self, selected: tuple) -> dict:
         """Delete the owner-selected stored files under this key, once, then invalidate matching local receipts.
 
         ``selected`` are ``StoredAsset`` entries from this key's own listing. After DT+ accepts the request, this key's
@@ -1551,6 +1588,15 @@ class AssetService:
         return {"deleted": len(keys), "receipts_invalidated": invalidated, "receipts_updated": True}
 
     async def reconcile(self, asset_id: str, identifier: str | None = None) -> tuple[dict, AssetReconciliation]:
+        record = await self.registry.get(asset_id)
+        if record is None:
+            raise ValidationError("No local asset receipt has that identifier.")
+        name = identifier or record["identifier"]
+        async with resource_lease(self.registry.directory, f"content:{record['sha256']}:{record['size']}"):
+            async with resource_lease(self.registry.directory, f"name:{name.casefold()}"):
+                return await self._reconcile_owned(asset_id, identifier)
+
+    async def _reconcile_owned(self, asset_id: str, identifier: str | None = None) -> tuple[dict, AssetReconciliation]:
         """Check one named LoRA against the selected DT+ key without uploading or changing other keys."""
         record = await self.registry.get(asset_id)
         if record is None:
