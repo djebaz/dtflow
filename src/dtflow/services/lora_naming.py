@@ -407,9 +407,17 @@ def architecture_shortcode(exact_architecture: str) -> str | None:
 
 
 def shortcode_family(identifier: str) -> str | None:
-    """The exact architecture named by the #373 shortcode of a managed LoRA filename (Name_F1_lora_f16.ckpt)."""
+    """The exact architecture named by the tag of a managed LoRA filename: #373 shortcode (Name_F1_lora_f16.ckpt) or
+    Draw Things version name (Name_v1_lora_f16.ckpt)."""
     match = _MANAGED_NAME.fullmatch(_basename(identifier))
-    return _TAG_ARCHITECTURES.get(match["tag"].casefold()) if match else None
+    if not match:
+        return None
+    tag = match["tag"].casefold()
+    return _TAG_ARCHITECTURES.get(tag) or _VERSION_TAGS.get(tag)
+
+
+# Draw Things' own version names in the tag slot (Name_v1_lora_f16.ckpt is SD 1.x), separators dropped (#614).
+_VERSION_TAGS = {re.sub(r"[_.]", "", version).casefold(): version for version in ARCHITECTURE_TAGS}
 
 
 # Name words that each point to one exact architecture (#614). Words shared by several (flux, qwen, wan, ltx, cosmos,
