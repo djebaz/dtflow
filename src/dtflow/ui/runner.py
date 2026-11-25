@@ -18,6 +18,7 @@ class AsyncRunner(QObject):
     def __init__(self, parent: QObject | None = None):
         super().__init__(parent)
         self._loop = asyncio.new_event_loop()
+        self._pending: set = set()
         self._unstarted: dict[object, Coroutine] = {}
         self._unstarted_lock = threading.Lock()
         self._stop = asyncio.Event()
@@ -78,6 +79,8 @@ class AsyncRunner(QObject):
                 raise RuntimeError("AsyncRunner is shut down.")
             self._unstarted[ticket] = coroutine
             future = asyncio.run_coroutine_threadsafe(wrapper(), self._loop)
+        self._pending.add(future)
+        future.add_done_callback(self._pending.discard)
 
         def cancelled_before_start(done) -> None:
             if not done.cancelled():
