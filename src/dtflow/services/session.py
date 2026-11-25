@@ -57,15 +57,16 @@ from dtflow.persistence.settings import load_dtplus_concurrency
 from dtflow.persistence.queues import read_attempt_record
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts, StateBusyError
 from dtflow.services.assets import AssetService, possible_missing_asset
-from dtflow.services.credentials import EnvironmentCredentials, resolve_credentials
+from dtflow.services.credentials import EnvironmentCredentials, PinnedSavedCredentials, resolve_credentials
 from dtflow.services.generation import GenerationService
 from dtflow.services.image_inputs import restore_image_inputs
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.prepare_progress import PrepareEvent
 from dtflow.services.lora_auto_naming import normalize_previous_retained
-from dtflow.services.lora_naming import LoraPrepareMetadata, ManagedName, occupied_from_snapshot
+from dtflow.services.lora_naming import LoraPrepareMetadata, ManagedName, occupied_from_snapshot, shortcode_family
 from dtflow.services.image_preparation import prepare_image_files, validate_prepared_inputs
 from dtflow.services.preflight import apply_trigger_prefixes
+from dtflow.services.storage_probe import probe_content
 from dtflow.services.timeline import GenerationTimeline
 
 log = logging.getLogger(__name__)
@@ -1037,6 +1038,10 @@ def asset_view(record: dict) -> dict:
         "short_name", "managed_identifier", "format_code", "format_source",
     )  # fmt: skip
     view = {key: record.get(key) for key in keys}
+    if not view["family"] and view["kind"] == "lora" and isinstance(view["identifier"], str):
+        # Same naming fallback as dispatch receipts: the managed shortcode, labelled as such.
+        if family := shortcode_family(view["identifier"]):
+            view["family"], view["family_source"] = family, "shortcode"
     if "operations" in record:
         view["operations"] = record["operations"]
     return view
@@ -1179,6 +1184,20 @@ async def observe_key(
             # No pre-request evidence: never judge newer receipts against this older remote list.
             return listing, KeyHoldings(False, frozenset(), 0, 0, False)
         holdings = await service.key_holdings(listing, snapshot)
+        try:
+            # Positive BYOM evidence for listed files this computer has no receipt for; never a weight upload.
+            added = await service.discover_stored_loras(listing, snapshot[0], snapshot[1])
+        except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
+            diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": type(exc).__name__})
+            added = ()
+        if added:
+            # The same list proves the key holds them: they are held now, not "needs re-attach".
+            holdings = replace(
+                holdings,
+                held=holdings.held | frozenset(added),
+                receipts=holdings.receipts + len(added),
+                discovered=len(added),
+            )
     if not holdings.stale or holdings.owner is None:
         return listing, holdings
     registry = AssetRegistry(state, writer=True, recover=False)
@@ -1198,6 +1217,37 @@ async def observe_key(
         return listing, replace(holdings, updated=False)
     diagnostic_event(log, "assets.stale_receipts_marked", data={"stale": len(holdings.stale), "marked": changed})
     return listing, replace(holdings, marked_stale=changed)
+
+
+async def discover_saved_keys(state: Path, saved, *, skip: frozenset[str] = frozenset()) -> dict[str, int]:
+    """Read each other saved DT+ key's stored list once and record the LoRAs DT+ confirms that key holds.
+
+    One storage list and metadata-only checks per key, through a backend pinned to that key (never the environment
+    key, never generation). Receipts stay scoped to the key that holds the file: Generate on the selected key still
+    relinks or re-attaches it there, or shows it as not on this key. Returns ``{key identity: receipts recorded}`` for
+    the keys read; a key that could not be read is left out. ``skip`` holds key identities already read."""
+    try:
+        entries = await asyncio.to_thread(saved.entries)
+    except (BackendError, OSError, AttributeError) as exc:  # no secure store, or a provider without saved keys
+        diagnostic_event(log, "assets.saved_keys_unread", data={"reason": type(exc).__name__})
+        return {}
+    results: dict[str, int] = {}
+    for entry in entries:
+        if entry.credential_id in skip:
+            continue
+        try:
+            async with open_assets(state, saved=PinnedSavedCredentials(saved, entry.id), read_only=True) as service:
+                credential, rows = await service.receipt_snapshot()
+                if credential != entry.credential_id:
+                    continue  # the pinned key could not be resolved; never read another key's storage for it
+                listing = await service.storage_listing(probe_content())
+                added = await service.discover_stored_loras(listing, credential, rows)
+        except (PersistenceError, AssetsBusyError, BackendError, ValidationError, OSError) as exc:
+            diagnostic_event(log, "assets.saved_key_discovery_failed", data={"reason": type(exc).__name__})
+            continue
+        results[entry.credential_id] = len(added)
+    diagnostic_event(log, "assets.saved_keys_discovered", data={"keys": len(results), "added": sum(results.values())})
+    return results
 
 
 async def delete_storage(

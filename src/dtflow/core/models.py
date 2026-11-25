@@ -217,6 +217,7 @@ class KeyHoldings:
     stale: tuple[tuple[str, str, str, str], ...] = field(
         default=(), repr=False, compare=False
     )  # (asset_id, identifier, remote_id, seen) of receipts the complete list lacks; written by the caller, not here
+    discovered: int = 0  # receipts recorded from positive DT+ lookups during this read
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,7 +244,7 @@ class PreparedAsset:
         _asset_size(self.size)
         if self.family is not None and (not isinstance(self.family, str) or not self.family):
             raise ValidationError("LoRA family must be a non-empty string or unknown.")
-        if self.family_source not in ("unknown", "file", "user"):
+        if self.family_source not in ("unknown", "file", "user", "shortcode"):  # shortcode: managed filename tag
             raise ValidationError("Unsupported LoRA family evidence.")
         if (self.family is None) != (self.family_source == "unknown"):
             raise ValidationError("LoRA family and its evidence must agree.")

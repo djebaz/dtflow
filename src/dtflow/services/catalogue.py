@@ -197,6 +197,15 @@ def catalogue_family_versions(base_model: str | None) -> frozenset[str]:
     return frozenset(_FAMILY_VERSIONS.get(base_model or "", ()))
 
 
+def family_for_version(version: str | None) -> str | None:
+    """The one catalogue family an exact Draw Things version belongs to; None when unknown or shared."""
+    if not version:
+        return None
+    families = {family for family, exact in _EXACT_BUNDLED_FAMILIES.items() if exact == version}
+    families.update(family for family, versions in _FAMILY_VERSIONS.items() if version in versions)
+    return next(iter(families)) if len(families) == 1 else None
+
+
 def bundled_family_versions(model_id: str) -> frozenset[str]:
     """Exact versions a bundled checkpoint's catalogue family allows; empty when the family is unknown."""
     exact = bundled_exact_version(model_id)
@@ -385,6 +394,14 @@ class Catalogue:
         observed = self._available_ids()
         return frozenset(entry.identifier for entry in self._bundled_loras if entry.identifier not in observed)
 
+    def dt_plus_lora_names(self) -> tuple[str, ...]:
+        """DT+'s own LoRA names for relinking: recognized in cloud Echo, plus bundled ones Echo omits.
+
+        Relinking must keep these exact names and never swap them for a local prepared file. Availability of the
+        bundled ones stays unconfirmed; this is a naming rule, not availability evidence."""
+        listed = tuple(entry.identifier for entry in listed_loras(self._inventory))
+        return tuple(dict.fromkeys((*listed, *sorted(self.unconfirmed_cloud_lora_ids()))))
+
     def lora_definitions(self) -> tuple[CatalogueEntry, ...]:
         """Known classification, including unlisted LoRAs; never availability evidence."""
         return self._merged_loras(self.user_loras())
@@ -425,7 +442,12 @@ class Catalogue:
             loras_by_id.setdefault(
                 observed.identifier,
                 CatalogueEntry(
-                    observed.identifier, "lora", None, frozenset(), source="provider", name=observed.display_name
+                    observed.identifier,
+                    "lora",
+                    family_for_version(observed.architecture),  # the provider's own architecture, when it gives one
+                    frozenset(),
+                    source="provider",
+                    name=observed.display_name,
                 ),
             )
         loras = tuple(loras_by_id.values())

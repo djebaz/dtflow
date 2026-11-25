@@ -2530,7 +2530,7 @@ class GenerationPage:
             return
         names = tuple(item.identifier for item in loras)
         snapshot = self._inventory_snapshot
-        listed = tuple(entry.identifier for entry in listed_loras(snapshot))
+        listed = self._catalogue.dt_plus_lora_names()
         checkpoint = self.page.modelCombo.currentText().strip()
         family = checkpoint_exact_version(checkpoint, snapshot)
         revision = self._inventory_revision

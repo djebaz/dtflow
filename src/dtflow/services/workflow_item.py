@@ -91,6 +91,7 @@ from dtflow.persistence.store import PersistenceError, SQLiteAttempts
 from dtflow.persistence.workflow_items import BAD_STEP_STATES, WorkflowRequest
 from dtflow.services import lora_relink, session
 from dtflow.services.assets import possible_missing_asset
+from dtflow.services.catalogue import Catalogue
 from dtflow.services import lora_run_notes as notes
 from dtflow.services.lora_naming import log_label
 from dtflow.services.preflight import checkpoint_exact_version
@@ -882,7 +883,8 @@ class _Execution:
                 except Exception:  # the cached inventory is only used to leave DT+'s own LoRAs alone
                     self.relink_snapshot = None
                 snapshot = self.relink_snapshot
-                listed = tuple(e.identifier for e in snapshot.entries if e.kind == "lora") if snapshot else ()
+                catalogue = await asyncio.to_thread(Catalogue.read_snapshot, self.runner.state, snapshot)
+                listed = catalogue.dt_plus_lora_names()
                 self.relink_evidence = await lora_relink.load_evidence(
                     self.runner.state, self.request.backend, choices, listed
                 )

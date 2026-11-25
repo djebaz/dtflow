@@ -85,7 +85,8 @@ async def resolve_lora_inventory(
             )
         )
 
-    local_ids = {entry.identifier for entry in local_snapshot.entries if entry.kind in ("lora", "unknown")}
+    # Local entries listed as LoRAs are already resolved above; a same-named file the local server did not classify is
+    # only a name, never local availability evidence.
     resolved_ids = {entry.identifier for entry in entries}
     for entry in listed_loras(cloud_snapshot):
         if entry.identifier in resolved_ids:
@@ -97,9 +98,7 @@ async def resolve_lora_inventory(
                 entry.architecture,
                 entry.trigger_prefix,
                 entry.default_weight,
-                LoRABackendAvailability(
-                    "listed_in_server_inventory" if entry.identifier in local_ids else "unknown", "grpc.echo"
-                ),
+                LoRABackendAvailability("unknown", "grpc.echo"),
                 LoRABackendAvailability("listed_in_server_inventory", "dt_cloud.echo"),
             )
         )

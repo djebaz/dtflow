@@ -11,6 +11,7 @@ import asyncio
 import hashlib
 import logging
 import os
+import re
 import time
 import threading
 from pathlib import Path, PureWindowsPath
@@ -163,6 +164,14 @@ def _guarded(progress: Callable[[PrepareEvent], None] | None, reference: dict) -
 def _receipt_matches(remote_id: str, stored_key: str) -> bool:
     """Whether a receipt's remote reference points at the stored file with this delete key."""
     return remote_id == stored_key or (len(remote_id) >= 32 and remote_id in stored_key)
+
+
+_HEX_DIGEST = re.compile(r"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])")
+_LOOKUP_BATCH = 64
+# Batch answers that can come from a single file of the batch; anything else stops discovery for this read.
+_PER_FILE_REFUSALS = frozenset(("cloud_storage_limit_exceeded", "cloud_byom_response_invalid"))
+# (key identity, stored key, digest) that DT+ did not confirm as held in this process; never persisted.
+_UNVERIFIED_STORED: set[tuple[str, str, str]] = set()
 
 
 class AssetService:
@@ -1495,6 +1504,142 @@ class AssetService:
         credential = await self.backend.asset_credential_identity()
         return credential, await self.registry.confirmed_scope_rows(credential)
 
+    async def discover_stored_loras(
+        self, listing: StorageListing, owner: str, rows: tuple[tuple[str, str, str, str], ...]
+    ) -> tuple[str, ...]:
+        """Record this key's receipts for listed LoRAs DT+ confirms it holds; returns the names recorded.
+
+        The first 64-hex token of a stored key is taken as the content SHA-256 hypothesis (owner logs 2026-11-25: it
+        was the content digest of every listed file with a local receipt). Each hypothesis goes through the same
+        metadata-only BYOM negotiation as Prepare (file, digest and size; nothing is uploaded and upload URLs are
+        ignored). A name is recorded only when DT+ answers that it already holds that digest with a reference matching
+        the same listed key. ``rows`` are this key's confirmed receipts read before the list, so names already held
+        here are skipped. Names that did not verify are not asked again in this process for this key."""
+        negotiate = getattr(self.backend, "negotiate_assets", None)
+        if not listing.files or not callable(negotiate) or self.state is None:
+            return ()
+        held_names = {identifier.casefold() for _, identifier, _, _ in rows}
+        known = {item.receipt_id: item for item in await self.registry.choices(include_missing=True)}
+        counts = dict.fromkeys(
+            (
+                "known",
+                "not_checkpoint",
+                "invalid_size",
+                "duplicate_names",
+                "no_digest",
+                "invalid_name",
+                "skipped_unverified",
+                "lookup_failed",
+                "not_held",
+                "reference_mismatch",
+                "receipt_digest_first",
+                "receipt_digest_other",
+                "receipt_digest_absent",
+            ),
+            0,
+        )
+        candidates: dict[str, tuple] = {}
+        duplicates: set[str] = set()
+        for item in listing.files:
+            tokens = [value.lower() for value in _HEX_DIGEST.findall(item.key)]
+            for asset_id, _, remote_id, _ in rows:
+                receipt = known.get(asset_id)
+                if receipt is None or not _receipt_matches(remote_id, item.key):
+                    continue
+                digest = receipt.sha256.lower()
+                position = "first" if tokens[:1] == [digest] else "other" if digest in tokens else "absent"
+                counts["receipt_digest_" + position] += 1
+            folded = item.name.casefold()
+            if folded in held_names:
+                counts["known"] += 1
+                continue
+            if not folded.endswith(".ckpt"):
+                counts["not_checkpoint"] += 1
+                continue
+            if item.size <= 0:
+                counts["invalid_size"] += 1
+                continue
+            if folded in candidates or folded in duplicates:
+                duplicates.add(folded)
+                candidates.pop(folded, None)
+                continue
+            if not tokens:
+                counts["no_digest"] += 1
+                continue
+            if (owner, item.key, tokens[0]) in _UNVERIFIED_STORED:
+                counts["skipped_unverified"] += 1
+                continue
+            try:
+                content = AssetContent("lora", item.name, tokens[0], item.size, provenance="cloud discovery")
+            except ValidationError:
+                counts["invalid_name"] += 1
+                continue
+            candidates[folded] = (item, content)
+        counts["duplicate_names"] = len(duplicates)
+        answers: dict[tuple[str, str, int], AssetNegotiation] = {}
+        pending = [
+            tuple(candidates.values())[offset : offset + _LOOKUP_BATCH]
+            for offset in range(0, len(candidates), _LOOKUP_BATCH)
+        ]
+        while pending:
+            batch = pending.pop()
+            try:
+                answers.update(await negotiate(tuple(content for _, content in batch)))
+            except BackendError as exc:
+                if exc.failure.code not in _PER_FILE_REFUSALS:
+                    # Authentication, transport or unknown failure: stop here; the next storage read tries again.
+                    counts["lookup_failed"] += len(batch) + sum(len(rest) for rest in pending)
+                    diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": exc.failure.code})
+                    break
+                # One file DT+ does not hold can turn the whole answer into a refusal (a full key): split and retry
+                # the halves, down to single files, so held ones are still answered.
+                if len(batch) > 1:
+                    half = len(batch) // 2
+                    pending.extend((batch[:half], batch[half:]))
+                    continue
+                item, content = batch[0]
+                counts["lookup_failed"] += 1
+                _UNVERIFIED_STORED.add((owner, item.key, content.sha256))
+                diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": exc.failure.code})
+            except (ValidationError, OSError) as exc:
+                counts["lookup_failed"] += len(batch)
+                diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": type(exc).__name__})
+        verified = []
+        for item, content in candidates.values():
+            answer = answers.get((content.identifier, content.sha256, content.size))
+            if answer is None:
+                continue
+            if answer.status != "exists":
+                counts["not_held"] += 1
+                _UNVERIFIED_STORED.add((owner, item.key, content.sha256))
+            elif not _receipt_matches(answer.reference, item.key):
+                counts["reference_mismatch"] += 1
+                _UNVERIFIED_STORED.add((owner, item.key, content.sha256))
+            else:
+                verified.append((content, answer.reference))
+        added: tuple[str, ...] = ()
+        if verified:
+            registry = AssetRegistry(self.state, writer=True, recover=False)
+            try:
+                await registry.open()
+                added = await registry.adopt_cloud_loras(
+                    tuple(verified), self.backend.backend_id, self.backend.origin, owner
+                )
+            finally:
+                await registry.aclose()
+        diagnostic_event(
+            log,
+            "assets.cloud_discovery",
+            data={
+                "listed": len(listing.files),
+                **counts,
+                "candidates": len(candidates),
+                "verified": len(verified),
+                "added": len(added),
+            },
+        )
+        return added
+
     async def key_holdings(
         self, listing: StorageListing, snapshot: tuple[str, tuple[tuple[str, str, str, str], ...]] | None = None
     ) -> KeyHoldings:
@@ -1530,40 +1675,6 @@ class AssetService:
                 "complete": complete,
                 "stale": len(stale),
                 **self._key_diagnostics(),
-            },
-        )
-        # Compare the provider's opaque reference and measured content digest with the
-        # same stored key. Log aggregate evidence only, without additional network I/O.
-        import re
-
-        known = {item.receipt_id: item for item in await self.registry.choices(include_missing=True)}
-        shapes = {}
-        matched = digest_first = digest_last = digest_absent = 0
-        for item in listing.files:
-            tokens = re.findall(r"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])", item.key)
-            shape = str(len(tokens))
-            shapes[shape] = shapes.get(shape, 0) + 1
-            for asset_id, _, remote_id, _ in rows:
-                if not _receipt_matches(remote_id, item.key) or asset_id not in known:
-                    continue
-                matched += 1
-                digest = known[asset_id].sha256.lower()
-                if tokens and tokens[0].lower() == digest:
-                    digest_first += 1
-                elif tokens and tokens[-1].lower() == digest:
-                    digest_last += 1
-                else:
-                    digest_absent += 1
-        diagnostic_event(
-            log,
-            "assets.storage_reference_shape",
-            data={
-                "listed": len(listing.files),
-                "hex_token_counts": shapes,
-                "matched_receipts": matched,
-                "content_digest_first": digest_first,
-                "content_digest_last": digest_last,
-                "content_digest_absent": digest_absent,
             },
         )
         gone = {identifier for _, identifier, _, _ in stale}

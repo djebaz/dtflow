@@ -32,7 +32,7 @@ _SUFFIXES = ("_lora_f16", "_lora_q8p", "_lora")
 @dataclass(frozen=True, slots=True)
 class LoraMatch:
     requested: str
-    status: str  # bound | matched | ambiguous | unprepared | listed (DT+ lists this exact name)
+    status: str  # bound | matched | ambiguous | unprepared | listed (a DT+ LoRA name, kept as is)
     identifier: str  # the name to use: the prepared one when bound or matched, else the requested one
     candidates: tuple[str, ...] = ()  # the prepared identifiers an ambiguous name could mean
     receipt_id: str | None = None  # populated for matches scoped to the selected key
@@ -43,7 +43,7 @@ class RelinkEvidence:
     pool: tuple[PreparedAsset, ...] = ()
     records: Mapping[tuple[str, int], Mapping] | None = None
     origins: Mapping[tuple[str, int], tuple[str, ...]] | None = None
-    listed: frozenset[str] = frozenset()  # LoRA names the cached DT+ inventory lists itself
+    listed: frozenset[str] = frozenset()  # DT+'s own LoRA names (Echo-recognized or bundled); never swapped
     historical_names: Mapping[tuple[str, int], Iterable[str]] | None = None  # preset loads only
 
 
@@ -308,7 +308,7 @@ def summary(matches: Mapping[str, LoraMatch], dropped: Sequence[str] = ()) -> st
     if relinked:
         parts.append(f"{len(relinked)} matched to prepared LoRA(s)")
     if listed:
-        parts.append("listed on DT+: " + ", ".join(listed))
+        parts.append("DT+ LoRAs kept as named: " + ", ".join(listed))
     if unprepared:
         parts.append("no prepared match, use Prepare: " + ", ".join(unprepared))
     if ambiguous:

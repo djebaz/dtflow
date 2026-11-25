@@ -100,6 +100,8 @@ def _family_evidence_label(value: str | None, source: str | None, *, conflict: b
     label = FAMILY_LABELS.get(value, value)
     if source == "user":
         return f"{label} (user selected, conflicts with file)" if conflict else f"{label} (user selected)"
+    if source == "shortcode":
+        return f"{label} (shortcode)"
     return f"{label} (file)" if source == "file" else f"{label} (unverified)"
 
 

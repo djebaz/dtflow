@@ -39,7 +39,7 @@ from dtflow import startup
 from dtflow.build import display_identity
 from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
-from dtflow.core.models import BackendError, ValidationError, eligible_model_ids, listed_loras
+from dtflow.core.models import BackendError, ValidationError, eligible_model_ids
 from dtflow.diagnostics import cloud_key_data, event as diagnostic_event
 from dtflow.logging_setup import configured_directory, development_mode
 from dtflow.paths import application_state_dir
@@ -61,7 +61,7 @@ from dtflow.services.lora_auto_naming import normalize_previous_retained
 from dtflow.services.lora_metadata_edit import read_lora_rows, read_unretained_loras, remove_unretained_lora
 from dtflow.services.lora_naming import label_overrides, set_label_overrides
 from dtflow.services.preflight import checkpoint_picker_versions
-from dtflow.services.session import observe_key
+from dtflow.services.session import discover_saved_keys, observe_key
 from dtflow.services.storage_probe import probe_content
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.managed_lora_quantization import available_quantizations, library_formats, confirmed_contents
@@ -265,6 +265,8 @@ class MainWindow:
 
         self._saved = saved or SavedCredentials()
         self._optional_saved = OptionalSavedCredentials(self._saved)
+        self._other_keys_read: set[str] = set()  # saved key identities whose stored LoRAs were read this run
+        self._other_keys_busy = False
         self._download_tokens = DownloadTokens()
         self._token_busy = False
         self._connection_check = None
@@ -1016,7 +1018,7 @@ class MainWindow:
             "models": models,
             "loras": choices.get("loras", {}),
             "lora_families": choices.get("lora_families", {}),
-            "listed_loras": tuple(e.identifier for e in listed_loras(snapshot)),
+            "listed_loras": self.generation._catalogue.dt_plus_lora_names(),
             "lora_versions": choices.get("lora_versions", {}),
             "model_versions": {model: checkpoint_picker_versions(model, snapshot) for model in models},
             "backend": self.form.backendCombo.currentText(),
@@ -2157,8 +2159,7 @@ class MainWindow:
         )
         if not names:
             return
-        snapshot = self.generation._inventory_snapshot
-        listed = tuple(entry.identifier for entry in snapshot.entries if entry.kind == "lora") if snapshot else ()
+        listed = self.generation._catalogue.dt_plus_lora_names()
 
         def done(matches, failure) -> None:
             if failure is not None:
@@ -3164,6 +3165,10 @@ class MainWindow:
         listing, holdings = result if result is not None else (None, None)
         # A failed read is unknown, never "not on key" and never "held".
         self.generation.lora.set_holdings(holdings if failure is None else None)
+        if failure is None and holdings is not None and holdings.discovered:
+            self.generation.lora.refresh_assets()  # receipts just recorded from this key's stored list
+        if failure is None and holdings is not None and holdings.owner is not None:
+            self._discover_other_keys(holdings.owner)
         label = self.form.dtFreeSpaceLabel
         if failure is not None or listing is None:
             label.setText("DT+ free space on this key: could not be read.")
@@ -3182,6 +3187,27 @@ class MainWindow:
             "app.dt_free_space_read",
             level=logging.INFO,
             data={"read": failure is None and listing is not None, "free_bytes": getattr(listing, "free_space", None)},
+        )
+
+    def _discover_other_keys(self, selected: str) -> None:
+        """Once per run, after the selected key's first read: the other saved keys' stored LoRAs (#614).
+
+        One background read per other saved key; nothing is uploaded or deleted and the selected key is unchanged."""
+        if self._other_keys_busy or self.runner.closed:
+            return
+        self._other_keys_read.add(selected)
+        self._other_keys_busy = True
+
+        def done(result, failure) -> None:
+            self._other_keys_busy = False
+            if failure is not None or not result:
+                return
+            self._other_keys_read.update(result)
+            if any(result.values()) and not self.runner.closed:
+                self.generation.lora.refresh_assets()
+
+        self.runner.submit(
+            discover_saved_keys(self.state_dir, self._saved, skip=frozenset(self._other_keys_read)), done
         )
 
     def open_dt_storage(self, *_, needed: int | None = None, protect: tuple[str, ...] = ()) -> None:
