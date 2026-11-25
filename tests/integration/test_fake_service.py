@@ -325,9 +325,10 @@ async def test_cancellation_during_save_waits_for_worker_and_preserves_remote_su
         with pytest.raises(asyncio.CancelledError):
             await task
         row = (await store.inspect())[0]
-        assert (row["state"], row["remote_outcome"]) == ("save_failed", "succeeded")
+        assert (row["state"], row["remote_outcome"]) == ("succeeded", "succeeded")
+        assert row["artifacts"] == ["fixture.png", "fixture.json"]
+        assert not row["failure"]
         assert service.budget.used == 0
-        assert not row["failure"]["cancellation"]["remote_confirmed"]
     finally:
         release.set()
         await backend.aclose()
