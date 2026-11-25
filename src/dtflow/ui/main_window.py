@@ -450,6 +450,7 @@ class MainWindow:
             backend_source=lambda: (form.backendCombo.currentText(), form.endpointEdit.text() or None),
             saved_source=lambda: self._optional_saved,
             state_dir=self.state_dir,
+            active_credential=self._active_credential_id,
             activity=self.activity,
             no_cache=no_cache,
             cache_changed=self.refresh_cache,

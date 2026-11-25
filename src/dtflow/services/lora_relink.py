@@ -18,7 +18,7 @@ from dataclasses import dataclass, replace
 from pathlib import PureWindowsPath
 
 from dtflow.core.models import LoRASelection, PreparedAsset, ResolvedGenerationRequest
-from dtflow.persistence.assets import AssetRegistry
+from dtflow.persistence.assets import AssetRegistry, newest_per_name
 from dtflow.services import session
 from dtflow.services.lora_store import LoraStore
 
@@ -35,6 +35,7 @@ class LoraMatch:
     status: str  # bound | matched | ambiguous | unprepared | listed (DT+ lists this exact name)
     identifier: str  # the name to use: the prepared one when bound or matched, else the requested one
     candidates: tuple[str, ...] = ()  # the prepared identifiers an ambiguous name could mean
+    receipt_id: str | None = None  # populated for matches scoped to the selected key
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,6 +44,7 @@ class RelinkEvidence:
     records: Mapping[tuple[str, int], Mapping] | None = None
     origins: Mapping[tuple[str, int], tuple[str, ...]] | None = None
     listed: frozenset[str] = frozenset()  # LoRA names the cached DT+ inventory lists itself
+    historical_names: Mapping[tuple[str, int], Iterable[str]] | None = None  # preset loads only
 
 
 def name_key(name: str) -> str:
@@ -101,8 +103,42 @@ def match_names(names: Iterable[str], evidence: RelinkEvidence, *, family: str |
         formats[content] = (str(record["format_code"]).upper() if record.get("format_code") else None) or name_format(
             label[content]
         )
+    history: dict[str, set[tuple[str, int]]] = {}
+    for content, previous_names in (evidence.historical_names or {}).items():
+        for name in previous_names:
+            history.setdefault(name.casefold(), set()).add(content)
+
+    def compatible(content, wanted_format):
+        return not (family and families[content] and families[content] != family) and not (
+            wanted_format and formats[content] and formats[content] != wanted_format
+        )
+
     result: dict[str, LoraMatch] = {}
     for name in dict.fromkeys(names):
+        wanted_format = name_format(name)
+        if evidence.historical_names is not None and name in evidence.listed:
+            result[name] = LoraMatch(name, LISTED, name)
+            continue
+        owners = history.get(name.casefold())
+        if owners:
+            if len(owners) == 1:
+                content = next(iter(owners))
+                target = label.get(content)
+                managed = (records.get(content) or {}).get("managed_identifier")
+                if (
+                    target
+                    and target != name
+                    and compatible(content, wanted_format)
+                    and (name not in exact or target == managed)
+                ):
+                    result[name] = LoraMatch(name, MATCHED, target)
+                    continue
+            # An old identifier with known ownership must never fall back to a name match on different bytes.
+            if name not in exact:
+                status = AMBIGUOUS if len(owners) > 1 else UNPREPARED
+                candidates = tuple(sorted(label[content] for content in owners if content in label))
+                result[name] = LoraMatch(name, status, name, candidates)
+                continue
         if name in exact:
             result[name] = LoraMatch(name, BOUND, name)
             continue
@@ -110,14 +146,12 @@ def match_names(names: Iterable[str], evidence: RelinkEvidence, *, family: str |
             result[name] = LoraMatch(name, LISTED, name)
             continue
         key = name_key(name)
-        wanted_format = name_format(name)
         hits = [
             content
             for content in contents
             if (key in aliases[content] or name.casefold() == shorts.get(content))
             # Tie-breakers only remove candidates: another architecture, or a format the name says it is not.
-            and not (family and families[content] and families[content] != family)
-            and not (wanted_format and formats[content] and formats[content] != wanted_format)
+            and compatible(content, wanted_format)
         ]
         if len(hits) == 1:
             result[name] = LoraMatch(name, MATCHED, label[hits[0]])
@@ -155,6 +189,51 @@ async def resolve_names(
     if not names or backend != "cloud":
         return {}  # nothing to say: only cloud has prepared receipts, and callers check that first
     return match_names(names, await load_evidence(state, backend, listed=listed), family=family)
+
+
+async def resolve_preset_names(
+    state, names: Iterable[str], *, credential_id: str | None, listed: Iterable[str], family: str | None
+) -> dict[str, LoraMatch]:
+    """Resolve recorded names using local history and prepared receipts for this exact DT+ key."""
+    if credential_id is None:
+        return match_names(names, RelinkEvidence(listed=frozenset(listed)), family=family)
+    registry = AssetRegistry(state)
+    await registry.open()
+    try:
+        records = await registry.lora_records()
+        choices = await registry.choices(include_missing=True)
+        confirmed = {
+            (receipt_id, identifier)
+            for receipt_id, identifier, _remote_id in await registry.confirmed_scope_references(credential_id)
+        }
+    finally:
+        await registry.aclose()
+    store = LoraStore(state)
+    current = await asyncio.to_thread(store.current_by_name)
+    historical_names: dict[tuple[str, int], set[str]] = {}
+    for item in choices:
+        historical_names.setdefault((item.sha256, item.size), {item.sha256}).add(item.identifier)
+
+    # Cloud dispatch requires each prepared LoRA's own exact architecture.
+    pool = tuple(
+        item
+        for item in newest_per_name(choices, current)
+        if (item.receipt_id, item.identifier) in confirmed
+        and current.get(item.identifier, (item.sha256, item.size)) == (item.sha256, item.size)
+        and item.family is not None
+    )
+    evidence = RelinkEvidence(
+        pool=pool,
+        records={(row["sha256"], row["size"]): row for row in records},
+        origins=await asyncio.to_thread(store.origin_names),
+        listed=frozenset(listed),
+        historical_names=historical_names,
+    )
+    receipts = {item.identifier: item.receipt_id for item in pool}
+    return {
+        name: replace(match, receipt_id=receipts[match.identifier]) if match.status in (BOUND, MATCHED) else match
+        for name, match in match_names(names, evidence, family=family).items()
+    }
 
 
 def relink_selection(

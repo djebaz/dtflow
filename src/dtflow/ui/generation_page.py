@@ -11,7 +11,7 @@ import logging
 import math
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -56,7 +56,7 @@ from dtflow.services.lora_naming import relabel_text
 from dtflow.services.preflight import checkpoint_exact_version, checkpoint_picker_versions
 from dtflow.services import lora_relink
 from dtflow.services.body_pose import fit_pose_map
-from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset
+from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset, update_preset_lora_names
 from dtflow.services.session import (
     InventoryDisplayMemory,
     generate_image_once,
@@ -269,6 +269,7 @@ class GenerationPage:
         backend_source: Callable[[], tuple[str, str | None]],
         saved_source: Callable[[], CredentialProvider | None],
         state_dir: Path,
+        active_credential: Callable[[], Awaitable[tuple[str, str | None] | None]] | None = None,
         activity: Activity | None = None,
         no_cache: bool = False,
         cache_changed: Callable[[], None] | None = None,
@@ -279,6 +280,7 @@ class GenerationPage:
         self._runner = runner
         self._backend = backend_source
         self._saved = saved_source
+        self._active_credential = active_credential
         self._state = Path(state_dir)
         self._activity = activity or Activity()
         self._no_cache = no_cache
@@ -306,6 +308,7 @@ class GenerationPage:
         self._catalogue_reading = False
         self._inventory_snapshot: InventorySnapshot | None = None
         self._relink_pending = False  # imported LoRA names are being matched; Generate waits for the result
+        self._relink_request = None
         self._relink_swaps: dict[str, str] = {}  # imported name -> prepared name, recorded on the next request
         self._updating_catalogue = False
         self._step_settle = QTimer(page)
@@ -1098,6 +1101,8 @@ class GenerationPage:
         A random seed (form seed 0) is drawn once and kept until a queue is created (``queue_created``) or a seed is
         chosen, so repeated previews and the creation use the seeds the dry-run table shows, even after a rejection.
         """
+        if self._relink_pending:
+            raise FormError("Imported LoRA names are still being matched. Try again.", None)
         if self.video.active:
             if reason := self.video.blocker():
                 raise FormError(reason, None)
@@ -1111,6 +1116,7 @@ class GenerationPage:
         try:
             request = build_request(self._values(), backend=name, config_name=self._config_name, random_seed=True)
             request = self._with_reuse_lineage(self._allow_local_bridge_model(request))
+            request = self._with_relink_evidence(request)
             if self.video.active:
                 request = self.video.apply(request)
         except FormError as exc:
@@ -2465,11 +2471,11 @@ class GenerationPage:
         if not data:
             return
         if isinstance(data, tuple) and data[0] == "preset":
-            self._load_preset(data[1])
+            self._load_preset(data[1], recorded=len(data) == 3 and data[2])
         else:
             self._load(Path(data))
 
-    def _load_preset(self, preset: dict) -> None:
+    def _load_preset(self, preset: dict, *, recorded: bool = False) -> None:
         application = apply_preset(preset)
         current = form_to_document(self._values())
         current.update(application.values)
@@ -2477,7 +2483,12 @@ class GenerationPage:
         self._apply(values)
         if "loras" in application.values:
             self.lora.set_loras(application.values["loras"], loaded=True)
-            self._relink_loaded(application.values["loras"], f"Preset {preset['name']}")
+            self._relink_loaded(
+                application.values["loras"], f"Preset {preset['name']}", preset=preset, recorded=recorded
+            )
+        else:
+            self._relink_request = None
+            self._relink_pending = False
         self._config_name = f"preset:{preset['name']}"
         self._reuse_source_identity = None
         # A native preset can carry dozens of unsupported fields; keep the status short and list them in the tooltip.
@@ -2503,39 +2514,84 @@ class GenerationPage:
             return request
         return replace(request, resolution_evidence=(*request.resolution_evidence, lora_relink.evidence_pair(swaps)))
 
-    def _relink_loaded(self, loras, source: str) -> None:
+    def _relink_loaded(self, loras, source: str, *, preset: dict | None = None, recorded: bool = False) -> None:
         """Match the LoRA names a loaded preset or configuration carries to what was prepared here, and say what is left.
 
         Names DT+ lists itself are left alone; a candidate prepared for another architecture than the selected
         checkpoint is not offered. Generate waits for the result so a run never starts with the unmatched names."""
         self._relink_swaps = {}
-        backend, _ = self._backend()
+        self._relink_request = request = object()
+        self._relink_pending = False
+        connection = self._backend()
+        backend, _ = connection
         if not loras or backend != "cloud":
             return
         names = tuple(item.identifier for item in loras)
         snapshot = self._inventory_snapshot
         listed = tuple(entry.identifier for entry in snapshot.entries if entry.kind == "lora") if snapshot else ()
-        family = checkpoint_exact_version(self.page.modelCombo.currentText().strip(), snapshot)
+        checkpoint = self.page.modelCombo.currentText().strip()
+        family = checkpoint_exact_version(checkpoint, snapshot)
+        revision = self._inventory_revision
         self._relink_pending = True
 
+        async def resolve():
+            if preset is None:
+                return await lora_relink.resolve_names(self._state, backend, names, listed=listed, family=family)
+            identity = await self._active_credential() if self._active_credential is not None else None
+            return await lora_relink.resolve_preset_names(
+                self._state, names, credential_id=identity[0] if identity else None, listed=listed, family=family
+            )
+
         def done(matches, failure) -> None:
+            if self._relink_request is not request:
+                return
             self._relink_pending = False
-            if failure is not None or tuple(item.identifier for item in self.lora.loras) != names:
-                return  # the selection changed meanwhile; never overwrite the user's newer choice
+            if (
+                failure is not None
+                or revision != self._inventory_revision
+                or connection != self._backend()
+                or checkpoint != self.page.modelCombo.currentText().strip()
+                or tuple(item.identifier for item in self.lora.loras) != names
+            ):
+                return
             relinked, swaps, dropped = lora_relink.relink_selection(self.lora.loras, matches)
-            if relinked != self.lora.loras:
-                self.lora.set_loras(relinked, loaded=True)
+            bindings = {
+                match.identifier: match.receipt_id for match in matches.values() if match.receipt_id is not None
+            }
+            if relinked != self.lora.loras or bindings:
+                self.lora.set_loras(relinked, loaded=True, receipts={**self.lora.receipts(), **bindings})
             self._relink_swaps = swaps
             text = lora_relink.summary(matches, dropped)
+            level = "warning" if lora_relink.problems(matches) or dropped else "ok"
             if text:
-                shown = Presentation(
-                    "warning" if lora_relink.problems(matches) or dropped else "ok",
-                    "LoRA names checked",
-                    f"{source}: {text}.",
-                )
-                self._status(shown)
+                self._status(Presentation(level, "LoRA names checked", f"{source}: {text}."))
+            if recorded and preset is not None and swaps and not dropped:
+                notice = Presentation(level, "Preset LoRA names updated", f"{source}: {text}.")
+                self._remember_preset_loras(preset, swaps, notice, request, revision)
 
-        self._runner.submit(lora_relink.resolve_names(self._state, backend, names, listed=listed, family=family), done)
+        self._runner.submit(resolve(), done)
+
+    def _remember_preset_loras(
+        self, preset: dict, swaps: dict[str, str], notice: Presentation, request, revision: int
+    ) -> None:
+        async def update():
+            return await asyncio.to_thread(update_preset_lora_names, self._state, preset, swaps)
+
+        def updated(replacement, failure) -> None:
+            if replacement is not None:
+                combo = self.page.configurationCombo
+                old = ("preset", preset, True)
+                for index in range(combo.count()):
+                    if combo.itemData(index) == old:
+                        combo.setItemData(index, ("preset", replacement, True))
+                        break
+            if self._relink_request is request and revision == self._inventory_revision:
+                if failure is not None or replacement is None:
+                    self._status(replace(notice, level="warning", headline="Preset update unavailable"))
+                else:
+                    self._status(notice)
+
+        self._runner.submit(update(), updated)
 
     def save_preset(self) -> None:
         def save(name):
@@ -2630,7 +2686,7 @@ class GenerationPage:
                 },
             )
         for preset in presets:
-            combo.addItem(f"Preset · {preset['name']}", ("preset", preset))
+            combo.addItem(f"Preset · {preset['name']}", ("preset", preset, True))
         own = {preset["name"] for preset in presets}
         for preset in builtin_presets():
             if preset["name"] not in own:
