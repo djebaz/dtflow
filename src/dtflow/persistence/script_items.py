@@ -133,6 +133,8 @@ def source_path(state: Path, sha256: str) -> Path:
 
 def store_source(state: Path, source: str) -> str:
     """Keep the script text under its SHA-256 (until the managed library exists); returns the SHA."""
+    from dtflow.services.artifacts import atomic_write
+
     data = source.encode("utf-8")
     if len(data) > MAX_SOURCE_BYTES:
         raise ValidationError("Script source is too large.")
@@ -140,9 +142,7 @@ def store_source(state: Path, source: str) -> str:
     path = source_path(state, sha)
     if not path.is_file():
         path.parent.mkdir(parents=True, exist_ok=True)
-        temporary = path.with_suffix(".tmp")
-        temporary.write_bytes(data)
-        temporary.replace(path)
+        atomic_write(path, data)
     return sha
 
 
