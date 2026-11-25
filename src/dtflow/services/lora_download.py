@@ -21,7 +21,9 @@ from pathlib import Path
 from typing import Literal
 
 from dtflow.core.models import ValidationError
+from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
+from dtflow.persistence.asset_leases import AssetsBusyError, resource_lease
 from dtflow.persistence.assets import AssetRegistry
 from dtflow.persistence.store import PersistenceError
 from dtflow.services import civitai
@@ -183,10 +185,11 @@ async def convert_downloaded(
     retained = prepared.retained
     warnings: list[str] = []
     try:
-        await asyncio.to_thread(LoraStore(state).verify, retained)
-        # Only now, with the .ckpt retained and verified, the source row is closed and the file permanently deleted.
-        deleted = await finish_conversion(state, downloaded.sha256, retained.sha256, retained.path)
-    except (ValidationError, OSError) as exc:
+        # Removal and rename share this lease. Keep the verified checkpoint in place until source cleanup finishes.
+        async with resource_lease(state, f"content:{retained.sha256}:{retained.size}"):
+            await settle(asyncio.to_thread(LoraStore(state).verify, retained))
+            deleted = await settle(finish_conversion(state, downloaded.sha256, retained.sha256, retained.path))
+    except (AssetsBusyError, ValidationError, OSError) as exc:
         deleted = False
         warnings.append(f"The downloaded .safetensors was kept: {exc}")
     if words:
