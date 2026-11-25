@@ -64,15 +64,25 @@ def read_usage_records(state: Path, now: datetime, *, days: int = 3) -> tuple[Us
     return tuple(records)
 
 
+def _read_preferences(path: Path) -> dict | None:
+    try:
+        with path.open("rb") as handle:
+            raw = handle.read(MAX_BYTES + 1)
+    except FileNotFoundError:
+        return None
+    if len(raw) > MAX_BYTES:
+        raise ValidationError("Usage preferences exceed the size limit.")
+    value = json.loads(raw)
+    version = value.get("schema_version") if isinstance(value, dict) else None
+    if type(version) is not int or version != SCHEMA_VERSION:
+        raise ValidationError("Unsupported usage preferences schema.")
+    return value
+
+
 def load_timezone(state: Path) -> str:
     try:
-        raw = (Path(state) / FILENAME).read_bytes()[: MAX_BYTES + 1]
-        value = json.loads(raw) if len(raw) <= MAX_BYTES else None
-    except FileNotFoundError:
-        return DEFAULT_TIMEZONE
-    except (OSError, ValueError):
-        return DEFAULT_TIMEZONE
-    if not isinstance(value, dict) or value.get("schema_version") != SCHEMA_VERSION:
+        value = _read_preferences(Path(state) / FILENAME) or {}
+    except (OSError, ValueError, RecursionError):
         return DEFAULT_TIMEZONE
     zone = value.get("timezone")
     try:
@@ -89,14 +99,7 @@ def save_timezone(state: Path, zone: str) -> None:
     except (ZoneInfoNotFoundError, ValueError, OSError, TypeError):
         raise ValidationError("Unknown timezone.") from None
     path = Path(state) / FILENAME
-    if path.exists():
-        try:
-            existing = json.loads(path.read_bytes()[: MAX_BYTES + 1])
-        except (OSError, ValueError):
-            existing = None
-        if isinstance(existing, dict) and type(existing.get("schema_version")) is int:
-            if existing["schema_version"] > SCHEMA_VERSION:
-                raise ValidationError("Newer usage preferences; file left unchanged.")
+    _read_preferences(path)
     Path(state).mkdir(parents=True, exist_ok=True)
     atomic_write(
         path, (json.dumps({"schema_version": SCHEMA_VERSION, "timezone": zone}, indent=2) + "\n").encode("utf-8")
