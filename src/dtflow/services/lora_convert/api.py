@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -70,6 +71,8 @@ def convert_lora(
 
 
 def _convert(request: ConversionRequest, ctx: ConversionContext) -> ConversionResult:
+    if not math.isfinite(request.scale):
+        raise ConversionError("The scale must be finite.")
     if request.scale <= 0:
         raise ConversionError("The scale must be greater than 0.")
     spec = lookup(request.family)
