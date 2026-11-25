@@ -8,6 +8,8 @@ HTTP and signed-URL handling; the registry owns durable receipts. Uncertain tran
 from __future__ import annotations
 
 import asyncio
+import base64
+import binascii
 import hashlib
 import logging
 import os
@@ -1503,27 +1505,66 @@ class AssetService:
         if not listing.files or not callable(lookup) or self.state is None:
             return 0
         known = await self.registry.choices(include_missing=True)
-        known_names = {item.identifier for item in known}
+        known_names = {item.identifier.casefold() for item in known}
         candidates = {}
         duplicates = set()
+        counts = {"listed": len(listing.files), "known": 0, "not_checkpoint": 0,
+                  "invalid_size": 0, "no_digest": 0, "ambiguous_digest": 0,
+                  "invalid_name": 0, "hex": 0, "base64": 0}
+        seen_names = set()
         for item in listing.files:
-            if item.name in known_names or item.size <= 0 or not item.name.lower().endswith(".ckpt"):
+            folded = item.name.casefold()
+            if folded in known_names:
+                counts["known"] += 1
                 continue
-            if item.name in candidates:
-                duplicates.add(item.name)
+            if not folded.endswith(".ckpt"):
+                counts["not_checkpoint"] += 1
                 continue
-            # A storage key may contain a digest. This is only a lookup hypothesis.
-            digests = set(re.findall(r"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])", item.key))
+            if item.size <= 0:
+                counts["invalid_size"] += 1
+                continue
+            if folded in seen_names:
+                duplicates.add(folded)
+                continue
+            seen_names.add(folded)
+            # Digest-shaped tokens in a delete key are hypotheses, never proof of content identity.
+            hex_digests = {
+                value.lower()
+                for value in re.findall(r"(?<![0-9a-fA-F])[0-9a-fA-F]{64}(?![0-9a-fA-F])", item.key)
+            }
+            encoded_digests = set()
+            for token in re.findall(r"(?<![A-Za-z0-9+/_-])[A-Za-z0-9+/_-]{43}=?"
+                                    r"(?![A-Za-z0-9+/_=-])", item.key):
+                try:
+                    raw = base64.b64decode(token.rstrip("=") + "=", altchars=b"-_", validate=True)
+                except (ValueError, binascii.Error):
+                    continue
+                if len(raw) == 32:
+                    canonical = base64.b64encode(raw).decode().rstrip("=")
+                    if token.rstrip("=").replace("-", "+").replace("_", "/") == canonical:
+                        encoded_digests.add(raw.hex())
+            digests = hex_digests | encoded_digests
+            if not digests:
+                counts["no_digest"] += 1
+                continue
             if len(digests) != 1:
+                counts["ambiguous_digest"] += 1
                 continue
-            digest = next(iter(digests)).lower()
+            digest = next(iter(digests))
             try:
                 content = AssetContent("lora", item.name, digest, item.size, provenance="cloud discovery")
             except ValidationError:
+                counts["invalid_name"] += 1
                 continue
-            candidates[item.name] = (item, content)
+            counts["hex" if digest in hex_digests else "base64"] += 1
+            candidates[folded] = (item, content)
         for name in duplicates:
             candidates.pop(name, None)
+        candidates = {item.name: (item, content) for item, content in candidates.values()}
+        counts["duplicate_names"] = len(duplicates)
+        counts["lookup_failed"] = 0
+        counts["not_reusable"] = 0
+        counts["reference_mismatch"] = 0
         verified = []
         names = list(candidates)
         for offset in range(0, len(names), 64):
@@ -1533,6 +1574,7 @@ class AssetService:
                     tuple(FileIdentity(name, True, candidates[name][1].sha256) for name in batch)
                 )
             except (BackendError, ValidationError, OSError) as exc:
+                counts["lookup_failed"] += len(batch)
                 diagnostic_event(log, "assets.cloud_discovery_failed", data={"reason": type(exc).__name__})
                 continue
             for name in batch:
@@ -1543,11 +1585,15 @@ class AssetService:
                     and answer.availability == "byom_reusable"
                     and answer.sha256 == content.sha256
                     and answer.reference
-                    and _receipt_matches(answer.reference, item.key)
                 ):
-                    verified.append((content, answer.reference, shortcode_family(name)))
+                    if _receipt_matches(answer.reference, item.key):
+                        verified.append((content, answer.reference, shortcode_family(name)))
+                    else:
+                        counts["reference_mismatch"] += 1
+                else:
+                    counts["not_reusable"] += 1
         if not verified:
-            diagnostic_event(log, "assets.cloud_discovery", data={"candidates": len(candidates), "verified": 0})
+            diagnostic_event(log, "assets.cloud_discovery", data={**counts, "candidates": len(candidates), "verified": 0})
             return 0
         registry = AssetRegistry(self.state, writer=True, recover=False)
         try:
@@ -1559,7 +1605,7 @@ class AssetService:
             await registry.aclose()
         diagnostic_event(
             log, "assets.cloud_discovery",
-            data={"candidates": len(candidates), "verified": len(verified), "added": added},
+            data={**counts, "candidates": len(candidates), "verified": len(verified), "added": added},
         )
         return added
 
