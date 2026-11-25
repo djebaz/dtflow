@@ -6,7 +6,7 @@ Changes through 6.5.5 are consolidated in [DTFlow 6.5.5](v6.5.5.md). The publish
 
 ## Added
 
-- Generate has a collapsed **Advanced** section for text-to-image: Hires Fix (Size stays the final output; the first pass is shown before you generate), seed mode and tiled decoding. The section also applies to Inpaint and image edits; seed mode and tiled decoding apply to the Controlnet pose (not Hires Fix), and seed mode to video. Chosen values are sent, saved with the result and restored by Reuse settings and configuration files. Nothing is sent unless you choose it, and DT+ may still ignore a setting for a checkpoint it does not suit.
+- Generate has a collapsed **Advanced** section for text-to-image: Hires Fix (Size stays the final output; the first pass is shown before you generate), seed mode and tiled decoding. The section also applies to Inpaint and image edits; seed mode and tiled decoding apply to the Controlnet pose (not Hires Fix), and seed mode to video. Chosen values are sent, saved with the result and restored by Reuse settings and configuration files. Nothing is sent unless you choose it, and DT+ may still ignore a setting for a checkpoint it does not suit. Draw Things presets do not store these values, and the Compute Units estimate does not include the Hires Fix second pass. Seed mode affects how the provider draws noise; DTFlow always sends one image per request.
 
 ## Changed
 
