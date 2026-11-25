@@ -688,23 +688,29 @@ class GenerationService:
                             )
                         return self.saver(self.output, attempt_id, request, result, identity(), caps.limits, **extra)
 
-                try:
-                    saved = await settle(asyncio.to_thread(commit_originals))
-                except Exception as exc:
-                    if request.num_frames is not None:
-                        diagnostic_event(
-                            log,
-                            "video.artifacts_save_failed",
-                            level=logging.WARNING,
-                            data={"attempt_id": attempt_id, "reason": type(exc).__name__},
-                        )
-                    raise
+                async def save_and_register():
+                    try:
+                        saved = await asyncio.to_thread(commit_originals)
+                    except Exception as exc:
+                        if request.num_frames is not None:
+                            diagnostic_event(
+                                log,
+                                "video.artifacts_save_failed",
+                                level=logging.WARNING,
+                                data={"attempt_id": attempt_id, "reason": type(exc).__name__},
+                            )
+                        raise
+                    paths, metadata = saved[:2]
+                    await self._attribute_credential(attempt_id)
+                    await self.store.transition(
+                        attempt_id, ("saving",), "succeeded", stage, outcome, artifacts=(*paths, metadata)
+                    )
+                    return saved
+
+                # Once the file write starts, cancellation must wait for its durable registration too.
+                saved = await settle(save_and_register())
                 paths, metadata = saved[:2]
                 display_image = saved[2] if image_operation else None
-            await self._attribute_credential(attempt_id)
-            await self.store.transition(
-                attempt_id, ("saving",), "succeeded", stage, outcome, artifacts=(*paths, metadata)
-            )
             diagnostic_event(
                 log,
                 "generation.attempt_succeeded",

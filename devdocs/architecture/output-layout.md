@@ -23,6 +23,8 @@ outputs/<run folder>/<prefix>-<attempt id>.json           the attempt's metadata
 
 ## Compatibility (nothing existing changes)
 
+Local cancellation waits for an already-started save to publish its artifact references before returning. Abrupt process exit still uses the attempt store's restart reconciliation.
+
 - **No stored record changes.** `attempts.artifacts_json` keeps the same shape: image paths, then the metadata path last. Gallery identity is still `attempt:ordinal`; only the recorded path text differs for new runs. No schema bump, no sidecar field added.
 - **Old runs keep working.** The legacy layout `outputs/<attempt id>/final-N.png`, `raw-1.png`, `metadata.json` is parsed by the same code (`core/output_layout.py`). No file is renamed or moved; there is no migration.
 - **Recycle / Delete and the Windows deletion helper** previously rebuilt the only eligible path from attempt id and ordinal. They now take the folder and file name from the recorded path and accept it only if the name is exactly this attempt's final of this ordinal (`companion_names`), the sidecar and raw names derive from that same prefix, and every existing check (state-relative location, no links or junctions, single link, sidecar proves the record, exactly one gallery reference, fingerprint, lease) still applies. A look-alike name never authorizes anything. The helper request gains a `rel` field; a request without it is treated as legacy.
