@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from tempfile import NamedTemporaryFile
@@ -18,6 +20,7 @@ from dtflow.core.models import LoRASelection, ValidationError
 PRESETS_DIR = "presets"
 PRESETS_FILE = "custom_configs.json"
 MAX_PRESET_BYTES = 4 * 1024 * 1024
+_PRESET_WRITES = threading.Lock()
 # Draw Things sampler enum order (drawthings-py generated SamplerType); index is the wire/preset value.
 SAMPLER_FROM_DRAW_THINGS = dict(
     enumerate(
@@ -75,7 +78,7 @@ def validate_native_presets(document: object) -> list[dict]:
     return result
 
 
-def _atomic_json(path: Path, document: object) -> None:
+def _atomic_json(path: Path, document: object, *, enforce_limit: bool = False) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
@@ -86,6 +89,8 @@ def _atomic_json(path: Path, document: object) -> None:
             json.dump(document, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
             handle.flush()
+            if enforce_limit and temporary.stat().st_size > MAX_PRESET_BYTES:
+                raise ValidationError("The updated preset library would exceed 4 MiB.")
             os.fsync(handle.fileno())
         os.replace(temporary, path)
     finally:
@@ -113,13 +118,15 @@ def load_presets(state: Path) -> tuple[dict, ...]:
 
 def import_presets(source: Path, state: Path) -> int:
     presets = validate_native_presets(_read_json(Path(source)))
-    _atomic_json(preset_path(state), presets)
+    with _PRESET_WRITES:
+        _atomic_json(preset_path(state), presets)
     return len(presets)
 
 
 def export_presets(state: Path, target: Path) -> int:
-    presets = list(load_presets(state))
-    _atomic_json(Path(target), presets)
+    with _PRESET_WRITES:
+        presets = list(load_presets(state))
+        _atomic_json(Path(target), presets)
     return len(presets)
 
 
@@ -142,21 +149,47 @@ def save_preset(state: Path, name: str, values: dict) -> None:
             {"file": item["identifier"], "mode": "all", "weight": item["weight"]} for item in values.get("loras", ())
         ],
     }
-    presets = list(load_presets(state))
-    replacement = {"name": name, "configuration": configuration}
-    for index, item in enumerate(presets):
-        if item["name"] == name:
-            # Editing supported DTFlow fields must not discard Draw Things fields DTFlow does not currently apply.
-            merged_configuration = dict(item["configuration"])
-            if "loras" in merged_configuration and "loras" not in apply_preset(item).applied:
-                configuration.pop("loras", None)
-            merged_configuration.update(configuration)
-            replacement = {**item, "name": name, "configuration": merged_configuration}
+    with _PRESET_WRITES:
+        presets = list(load_presets(state))
+        replacement = {"name": name, "configuration": configuration}
+        for index, item in enumerate(presets):
+            if item["name"] == name:
+                # Editing supported DTFlow fields must not discard Draw Things fields DTFlow does not currently apply.
+                merged_configuration = dict(item["configuration"])
+                if "loras" in merged_configuration and "loras" not in apply_preset(item).applied:
+                    configuration.pop("loras", None)
+                merged_configuration.update(configuration)
+                replacement = {**item, "name": name, "configuration": merged_configuration}
+                presets[index] = replacement
+                break
+        else:
+            presets.append(replacement)
+        _atomic_json(preset_path(state), presets)
+
+
+def update_preset_lora_names(state: Path, expected: dict, swaps: Mapping[str, str]) -> dict | None:
+    """Update only LoRA filenames in the library entry that was actually opened."""
+    if not swaps:
+        return None
+    configuration = expected["configuration"]
+    loras = configuration["loras"]
+    updated = [{**row, "file": swaps.get(row["file"], row["file"])} for row in loras]
+    if updated == loras or len({row["file"] for row in updated}) != len(updated):
+        return None
+    replacement = {**expected, "configuration": {**configuration, "loras": updated}}
+    with _PRESET_WRITES:
+        presets = list(load_presets(state))
+        for index, item in enumerate(presets):
+            if item["name"] != expected["name"]:
+                continue
+            if item == replacement:
+                return item  # a repeated load already saved this exact update
+            if item != expected:
+                return None
             presets[index] = replacement
-            break
-    else:
-        presets.append(replacement)
-    _atomic_json(preset_path(state), presets)
+            _atomic_json(preset_path(state), presets, enforce_limit=True)
+            return replacement
+    return None
 
 
 def apply_preset(preset: dict) -> PresetApplication:
