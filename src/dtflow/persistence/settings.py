@@ -16,6 +16,7 @@ from dtflow.persistence.runtime_environment import environment_key
 
 SCHEMA_VERSION = 1
 MAX_CLOUD_CONCURRENCY = MAX_QUEUE_CONCURRENCY
+_SETTINGS_LOCK = threading.Lock()  # All preference groups replace the same document.
 
 
 class SettingsError(ValidationError):
@@ -72,9 +73,6 @@ def _write(state: Path, document: dict) -> Path:
 
 # Downloads Auto-Prepare is a global opt-in for the selected DT+ Cloud account.
 # It authorizes uploads of newly converted downloads; it never changes backend or account.
-_AUTO_PREPARE_LOCK = threading.Lock()
-
-
 def load_downloads_auto_prepare(state: Path) -> bool:
     """Return the persisted Auto-prepare preference; missing is disabled."""
     return _read(state).get("downloads_auto_prepare") is True
@@ -84,7 +82,7 @@ def save_downloads_auto_prepare(state: Path, enabled: bool) -> None:
     """Save a boolean preference without clobbering other application settings."""
     if type(enabled) is not bool:
         raise SettingsError("Auto-prepare must be enabled or disabled.")
-    with _AUTO_PREPARE_LOCK:
+    with _SETTINGS_LOCK:
         document = _read(state)
         if document.get("downloads_auto_prepare") is enabled:
             return
@@ -94,9 +92,6 @@ def save_downloads_auto_prepare(state: Path, enabled: bool) -> None:
 
 # Civitai Browse inputs are lightweight user preferences, not a search result cache.
 # Preserve them across restarts, but let the user explicitly submit a search.
-_GALLERY_PREFERENCES_LOCK = threading.Lock()
-
-
 def _browse_preferences(raw: object) -> dict:
     """Read known, bounded Browse Civitai fields without trusting stale/invalid saved values."""
     if not isinstance(raw, dict):
@@ -151,7 +146,7 @@ def load_civitai_browse_preferences(state: Path) -> dict:
 def save_civitai_browse_preferences(state: Path, values: dict) -> None:
     """Persist Browse inputs atomically while preserving unrelated application settings."""
     cleaned = _browse_preferences(values)
-    with _GALLERY_PREFERENCES_LOCK:
+    with _SETTINGS_LOCK:
         document = _read(state)
         if document.get("civitai_browse") == cleaned:
             return
@@ -182,11 +177,12 @@ def load_dtplus_concurrency(state: Path) -> int:
 
 
 def save_workflow_defaults(state: Path, values: dict[str, int]) -> Path:
-    document = _read(state)
-    for name, key in WORKFLOW_DEFAULT_KEYS.items():
-        if name in values:
-            document[key] = validate_concurrency(values[name])
-    return _write(state, document)
+    with _SETTINGS_LOCK:
+        document = _read(state)
+        for name, key in WORKFLOW_DEFAULT_KEYS.items():
+            if name in values:
+                document[key] = validate_concurrency(values[name])
+        return _write(state, document)
 
 
 # Local video encoding (#550): how many FFmpeg encoders may run at once and how many codec threads each one uses.
@@ -218,16 +214,13 @@ def save_video_encoding(state: Path, encoders: int, threads: int) -> None:
         or not 0 <= threads <= MAX_VIDEO_THREADS
     ):
         raise SettingsError("Video encoding settings are out of range.")
-    with _VIDEO_ENCODING_LOCK:
+    with _SETTINGS_LOCK:
         document = _read(state)
         values = dict(zip(VIDEO_ENCODING_KEYS, (encoders, threads), strict=True))
         if all(document.get(key) == value for key, value in values.items()):
             return
         document.update(values)
         _write(state, document)
-
-
-_VIDEO_ENCODING_LOCK = threading.Lock()
 
 
 # Small, durable Logs view preferences.  The reader remains independent of these choices.
@@ -270,7 +263,7 @@ def load_logs_preferences(state: Path) -> dict:
 def save_logs_preferences(state: Path, preferences: dict) -> bool:
     """Atomically save one validated view state, preserving all other shared settings."""
     values = _logs_preferences({"logs_preferences": preferences})
-    with _DIALOG_LOCK:
+    with _SETTINGS_LOCK:
         document = _read(state)
         if document.get("logs_preferences") == values:
             return False
@@ -286,7 +279,6 @@ MAX_DIALOG_KEY = 128
 MAX_DIALOG_ENTRIES = 128
 MAX_DIALOG_TITLE = 200
 MAX_DIALOG_RUNTIMES = 8
-_DIALOG_LOCK = threading.Lock()
 
 
 def _dialog_entries(document: dict, runtime: str) -> dict[str, dict]:
@@ -321,7 +313,7 @@ def save_dialog_path(state: Path, key: str, path: str, title: str = "", *, runti
     runtime = runtime or environment_key()
     if not 0 < len(key) <= MAX_DIALOG_KEY or not 0 < len(path) <= MAX_DIALOG_PATH or "\x00" in path:
         raise SettingsError("Dialog folder cannot be remembered.")
-    with _DIALOG_LOCK:
+    with _SETTINGS_LOCK:
         document = _read(state)  # refuse to overwrite an unreadable or newer file
         entries = _dialog_entries(document, runtime)
         entry = {"path": path, "title": title[:MAX_DIALOG_TITLE]}
@@ -338,7 +330,7 @@ def save_dialog_path(state: Path, key: str, path: str, title: str = "", *, runti
 def forget_dialog_paths(state: Path, keys: list[str] | None = None, *, runtime: str | None = None) -> None:
     """Forget the given keys of this runtime, or every remembered folder of it when ``keys`` is None."""
     runtime = runtime or environment_key()
-    with _DIALOG_LOCK:
+    with _SETTINGS_LOCK:
         document = _read(state)
         entries = _dialog_entries(document, runtime)
         for key in list(entries) if keys is None else keys:
@@ -365,7 +357,6 @@ def _store_dialog_entries(state: Path, document: dict, runtime: str, entries: di
 # Use LoRA trigger prefixes (#373): one application default plus an independent saved choice per execution path.
 # A path without its own saved choice follows the default; changing the default never rewrites a saved choice.
 TRIGGER_PATHS = ("generate", "queues", "workflows", "scripts")
-_TRIGGER_LOCK = threading.Lock()  # two switches toggled quickly must not overwrite each other's read-modify-write
 
 
 def _trigger_document(document: dict) -> tuple[bool, dict[str, bool]]:
@@ -398,7 +389,7 @@ def save_trigger_prefix(state: Path, name: str, value: bool) -> Path:
     """Save the application default (``default``) or one execution path's own choice, leaving the others untouched."""
     if name not in ("default", *TRIGGER_PATHS) or type(value) is not bool:
         raise SettingsError("Unknown LoRA trigger prefix setting.")
-    with _TRIGGER_LOCK:
+    with _SETTINGS_LOCK:
         document = _read(state)  # refuse to overwrite an unreadable or newer file
         default, chosen = _trigger_document(document)
         if name == "default":
