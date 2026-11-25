@@ -727,7 +727,7 @@ class ScriptHost:
             while intake_open and not self.cancel.is_set() and next_job < len(requests):
                 while not asset_gate.is_set() and not self.cancel.is_set():
                     await asyncio.sleep(POLL_SECONDS)
-                if not intake_open or self.cancel.is_set():
+                if not intake_open or self.cancel.is_set() or next_job >= len(requests):
                     break
                 index = next_job
                 next_job += 1
