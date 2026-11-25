@@ -115,9 +115,9 @@ uv run dtflow gui -nc
 **Video decoder comparison (#562, experimental):** DTFlow retains three launch-time video decoding modes for practical Windows evaluation: `lut` (default, float16 lookup), `upstream` (original Draw Things decoder) and `fp32` (direct conversion after FPZIP). The mode applies for the entire application session; it is not a persisted setting or a Connection-panel control. From a Python source checkout, launch `uv run dtflow -x gui -vd upstream`, `uv run dtflow -x gui -vd lut` or `uv run dtflow -x gui -vd fp32`. The standalone **one-file Windows EXE** uses the same `-vd` argument without a `gui` subcommand:
 
 ```powershell
-& ".\dist\dtflow-<version>-g<sha>-windows-x64.exe" -vd upstream
-& ".\dist\dtflow-<version>-g<sha>-windows-x64.exe" -vd lut
-& ".\dist\dtflow-<version>-g<sha>-windows-x64.exe" -vd fp32
+& ".\dist\dtflow-<version>-<sha>-windows-x64.exe" -vd upstream
+& ".\dist\dtflow-<version>-<sha>-windows-x64.exe" -vd lut
+& ".\dist\dtflow-<version>-<sha>-windows-x64.exe" -vd fp32
 ```
 
 Replace the placeholder filename with the actual built artifact and close DTFlow between runs. Running the source GUI or packaged EXE **without `-vd` uses LUT**. The temporary alternatives remain available for comparison, with cleanup tracked in [#579](https://github.com/djebaz/dtflow/issues/579). The first `session.started` INFO object includes `data.video_decoder` even before generating a video. Owner Windows source measurements showed substantial improvements from LUT and FP32 compared with upstream, but different source videos/concurrency mean the ratios are not controlled benchmarks; FP32's pixel rounding can differ and its visual comparison remains open. The three modes are retained deliberately for short-term use, with a later cleanup decision rather than maintaining all three indefinitely. **Owner one-file EXE smoke:** a clean Windows 6.4.1 build at `c66a684` recorded `video_decoder=lut` on startup and successfully saved one 361-frame, 448×768, 25 fps video with audio; five later video attempts were intentionally interrupted by the owner. The session had no ERROR/CRITICAL records and closed normally. This validates packaged LUT execution, **not** separate EXE launches with `-vd upstream` or `-vd fp32`, and provides no decoder-specific elapsed benchmark.

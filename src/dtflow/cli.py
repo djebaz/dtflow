@@ -9,7 +9,7 @@ from dataclasses import asdict, replace
 from pathlib import Path
 
 from dtflow import startup
-from dtflow.build import display_identity, identity
+from dtflow.build import display_identity, identity, set_checkout_identity
 from dtflow.composition import BACKENDS, image_endpoint_label
 from dtflow.core.gallery import MAX_GALLERY_LIMIT, SORTS, GalleryQuery
 from dtflow.core.image_operations import ImageOperationPermit
@@ -1046,8 +1046,11 @@ def main(argv: list[str] | None = None) -> int:
 
     configure(no_cache=getattr(args, "no_cache", False))
     thumbnail_cache.configure(no_cache=getattr(args, "no_cache", False))
-    logging_session = None if args.command == "test" else start_logging(args)
+    logging_session = None
     try:
+        set_checkout_identity(args.dev and args.command != "test")
+        if args.command != "test":
+            logging_session = start_logging(args)
         if args.command == "gui":
             from dtflow.services import video_encode
 
@@ -1131,6 +1134,7 @@ def main(argv: list[str] | None = None) -> int:
     finally:
         if logging_session is not None:
             logging_session.close()
+        set_checkout_identity(False)
 
 
 def run_gui_command(
