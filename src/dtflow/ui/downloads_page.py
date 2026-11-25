@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
+from threading import Event
 
 from PySide6.QtCore import QObject, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QIcon
@@ -491,6 +492,7 @@ class DownloadsPage(QObject):
         manager = self._manager
         if item not in self._batch:
             self._batch.append(item)
+        item.cancel = Event()
         item.state, item.detail, item.done, item.total = engine.QUEUED, engine.QUEUED_DETAIL, 0, None
         self._timer.start()
         coroutine = engine.run_item(self._state, item, manager, self._read_token)
@@ -593,6 +595,7 @@ class DownloadsPage(QObject):
             self._start(item)
             self._render(force=True)
             return
+        item.cancel = Event()
         item.state, item.detail = engine.QUEUED, "Looking the file up again"
         read_token = self._read_token
 
@@ -609,6 +612,11 @@ class DownloadsPage(QObject):
             return await asyncio.to_thread(blocking)
 
         def done(entry, failure) -> None:
+            if item.cancel.is_set():
+                item.state, item.detail = engine.CANCELLED, "Stopped before download."
+                self._render(force=True)
+                self.changed.emit()
+                return
             if failure is not None or entry is None or not entry.downloadable:
                 item.state = engine.FAILED
                 item.detail = (entry.problem if entry is not None else None) or "Civitai could not be reached."

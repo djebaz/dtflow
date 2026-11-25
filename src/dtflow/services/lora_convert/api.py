@@ -2,14 +2,15 @@
 
 Callers decide the thread (the GUI uses ``asyncio.to_thread``, the CLI calls it directly).
 Thread-safe for independent requests; one request is not re-entrant; the only shared state is
-the ``functools.cache`` of the mapping JSON. Output is written to ``<destination>.<pid>.part``
-and renamed at the end, so a half converted file never carries the final name.
+the ``functools.cache`` of the mapping JSON. Output is written to a unique staging file
+and published exclusively once complete.
 """
 
 from __future__ import annotations
 
 import hashlib
 import logging
+import math
 import threading
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -70,6 +71,8 @@ def convert_lora(
 
 
 def _convert(request: ConversionRequest, ctx: ConversionContext) -> ConversionResult:
+    if not math.isfinite(request.scale):
+        raise ConversionError("The scale must be finite.")
     if request.scale <= 0:
         raise ConversionError("The scale must be greater than 0.")
     spec = lookup(request.family)
@@ -82,7 +85,7 @@ def _convert(request: ConversionRequest, ctx: ConversionContext) -> ConversionRe
         ctx.log(
             f"warning: {request.family} is experimental, some of its LoRAs still fail to convert (coverage is incomplete)."
         )
-    # Cheap checks before any work; write_ckpt checks the name again at the rename.
+    # Cheap checks before any work; write_ckpt also publishes exclusively.
     if request.destination.exists():
         raise DestinationError(f"{request.destination} already exists; refusing to overwrite.")
     # A missing folder is created at write time (after the conversion succeeded); here only make sure
@@ -100,7 +103,7 @@ def _convert(request: ConversionRequest, ctx: ConversionContext) -> ConversionRe
         tensors = spec.run(st, request, ctx)
     if not tensors:
         raise UnsupportedLoraFormatError("No LoRA tensors found in the file.")
-    # Everything cancellable happens before the rename: after write_ckpt returns, the output is final.
+    # Everything cancellable happens before publication: after write_ckpt returns, the output is final.
     source_sha256 = _sha256_source(request.source, ctx) if request.hash_source else None
     ctx.stage("writing", 0, len(tensors))
     destination_sha256, destination_size = write_ckpt(request.destination, tensors, ctx)

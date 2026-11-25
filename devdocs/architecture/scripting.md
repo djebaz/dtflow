@@ -105,6 +105,8 @@ Child lanes (`pipeline.runBatch`, shared with workflows) are the item's `lanes_j
 lane. Restart clears them under the owner lock. Scripts Setup keeps its run in memory until Run Script; the dispatcher
 writes it into the item when it adopts the Setup, before generation can be admitted. `dtflow script --run` also creates
 a script queue item; without `--queue` it starts that queue as the dispatch owner and reports from the item.
+If dispatch is cancelled during the handoff, it waits for adoption to finish before stopping and draining any
+adopted worker.
 
 The script request records an `interactive` input policy. Existing records default to interactive queued behavior; newly created immediate CLI runs explicitly disable interaction, preserving initial/default answers or supplied `--answers` instead of waiting for another process. CLI `--queue` and desktop runs retain interactive forms when no answer file is supplied; desktop Setup requires the interactive policy.
 

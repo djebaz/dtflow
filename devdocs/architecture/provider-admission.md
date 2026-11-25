@@ -96,6 +96,7 @@ text stays in `backend.api_failed`. Quota exhaustion is never inferred.
 
 ## Limits
 
+- A claim that raises before creating the item task releases its provider permit so surviving queues can use it.
 - The slot is taken at claim, so a short preparation (preflight, asset check) holds it; first-use asset uploads are
   resolved before the queue's first claim. The buffer budget is widened with the open-call cap, so DT+ text-to-image
   never waits on it; a larger image edit can wait for budget while holding its slot, which is accepted rather than

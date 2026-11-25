@@ -114,11 +114,9 @@ def save_template(state, name, recipe, *, identity=None, revision=None, validate
             identity, revision = str(uuid4()), 0
         else:
             _match(rows, identity, revision)
-        total = sum(
-            len(json.dumps(row["recipe"], ensure_ascii=False).encode("utf-8"))
-            for row in rows
-            if row["identity"] != identity
-        )
+        total = db.execute(
+            "SELECT coalesce(sum(length(CAST(recipe AS BLOB))), 0) FROM templates WHERE identity != ?", (identity,)
+        ).fetchone()[0]
         if total + len(raw.encode("utf-8")) > MAX_LIBRARY_BYTES:
             raise ValidationError("The template library exceeds 4 MiB.")
         db.execute(

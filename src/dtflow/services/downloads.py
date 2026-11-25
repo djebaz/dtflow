@@ -293,7 +293,6 @@ async def run_item(
     """Download, verify, convert and retain one item; the outcome lands on ``item`` (never raises for a failed file)."""
     version = item.version
     assert version is not None
-    item.cancel = threading.Event()
     item.handle = None
     item.state, item.done, item.total, item.detail = QUEUED, 0, None, QUEUED_DETAIL
 
@@ -318,10 +317,14 @@ async def run_item(
             item.detail = item.family
 
     try:
+        if item.cancel.is_set():
+            raise civitai.CivitaiCancelled("Cancelled.")
         try:
             token = await asyncio.to_thread(read_token)
         except Exception:  # no secure storage: try without a token, Civitai's answer explains the rest
             token = None
+        if item.cancel.is_set():
+            raise civitai.CivitaiCancelled("Cancelled.")
         handle = manager.submit(version, token, on_download)
         item.handle = handle
         if item.cancel.is_set():
