@@ -63,6 +63,7 @@ from PySide6.QtWidgets import (
 )
 
 from dtflow import gallery_limits
+from dtflow.core.advanced import AdvancedSettings, summary as advanced_summary
 from dtflow.core.gallery import GalleryItem, GalleryQuery
 from dtflow.core.gallery_selection import MAX_CHECKED_IMAGES, GallerySelection
 from dtflow.core.models import ValidationError
@@ -870,6 +871,7 @@ class GalleryPage(QObject):
         self.next_button.setEnabled(False)
         self.previous_button.clicked.connect(lambda: self.step(-1))
         self.next_button.clicked.connect(lambda: self.step(1))
+        self._add_advanced_row()
         self.use_settings_button = self._widget("galleryUseSettingsButton", QPushButton)
         self.regenerate_button = self._widget("galleryRegenerateButton", QPushButton)
         self.use_settings_button.clicked.connect(self._use_settings)
@@ -3483,6 +3485,7 @@ class GalleryPage(QObject):
             )
         )
         self._widget("galleryAdditionalStrengthValue", QLabel).setText(self._value(request.get("strength")))
+        self._show_advanced(item, request)
         filename = _filename(item.path)
         self._widget("galleryAdditionalFilenameValue", QLabel).setText(filename)
         self._widget("galleryAdditionalProviderValue", QLabel).setText(item.backend_id or "Not recorded")
@@ -3819,6 +3822,36 @@ class GalleryPage(QObject):
     @staticmethod
     def _dimensions(item: GalleryItem) -> str:
         return f"{item.width} × {item.height}" if item.width and item.height else "Unknown"
+
+    def _add_advanced_row(self) -> None:
+        """One line under the other details for the advanced values a result was made with; hidden when it had none."""
+        grid = self._widget("galleryAdditionalOperationValue", QLabel).parentWidget().layout()
+        self._advanced_label = QLabel("Advanced")
+        self._advanced_label.setProperty("role", "secondary")
+        self._advanced_label.setProperty("textRole", "caption")
+        self._advanced_value = QLabel()
+        self._advanced_value.setProperty("textRole", "value")
+        self._advanced_value.setWordWrap(True)
+        self._advanced_value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        row = grid.rowCount()
+        grid.addWidget(self._advanced_label, row, 0)
+        grid.addWidget(self._advanced_value, row, 1, 1, 3)
+        self._show_advanced(None, {})
+
+    def _show_advanced(self, item: GalleryItem | None, request: dict) -> None:
+        """The recorded advanced values in words; the full request and effective configuration stay in Raw metadata."""
+        recorded = request.get("advanced")
+        text = ""
+        if recorded:
+            try:
+                text = advanced_summary(
+                    int(request["width_px"]), int(request["height_px"]), AdvancedSettings.from_record(recorded)
+                )
+            except (KeyError, TypeError, ValueError):
+                text = "Recorded, but not readable by this version; see Raw metadata."
+        self._advanced_label.setVisible(bool(text))
+        self._advanced_value.setVisible(bool(text))
+        self._advanced_value.setText(text)
 
     def _use_settings(self) -> None:
         if self._snapshot_at:
@@ -4744,6 +4777,7 @@ class GalleryPage(QObject):
         ):
             self._widget(name, QLabel).setText("—")
         self._widget("galleryRawMetadata").setPlainText("{}")
+        self._show_advanced(None, {})
         self.use_settings_button.setEnabled(False)
         self.regenerate_button.setEnabled(False)
         self.edit_button.setEnabled(False)
