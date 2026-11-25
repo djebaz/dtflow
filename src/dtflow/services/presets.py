@@ -42,13 +42,17 @@ def preset_path(state: Path) -> Path:
     return Path(state) / PRESETS_DIR / PRESETS_FILE
 
 
-def _read_json(path: Path):
+def _read_json(path: Path, *, missing_ok: bool = False):
     try:
-        if path.stat().st_size > MAX_PRESET_BYTES:
+        with path.open("rb") as handle:
+            encoded = handle.read(MAX_PRESET_BYTES + 1)
+        if len(encoded) > MAX_PRESET_BYTES:
             raise ValidationError("Preset file is larger than 4 MiB.")
-        return json.loads(path.read_text(encoding="utf-8"))
-    except FileNotFoundError:
-        return []
+        return json.loads(encoded.decode("utf-8"))
+    except FileNotFoundError as exc:
+        if missing_ok:
+            return []
+        raise ValidationError("Preset file could not be found.") from exc
     except ValidationError:
         raise
     except (OSError, ValueError) as exc:
@@ -76,15 +80,17 @@ def validate_native_presets(document: object) -> list[dict]:
 
 
 def _atomic_json(path: Path, document: object) -> None:
+    encoded = (json.dumps(document, ensure_ascii=False, indent=2) + "\n").encode("utf-8")
+    if len(encoded) > MAX_PRESET_BYTES:
+        encoded = json.dumps(document, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+        if len(encoded) > MAX_PRESET_BYTES:
+            raise ValidationError("Preset file is larger than 4 MiB.")
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
-        with NamedTemporaryFile(
-            mode="w", encoding="utf-8", newline="\n", dir=path.parent, prefix=".presets-", suffix=".tmp", delete=False
-        ) as handle:
+        with NamedTemporaryFile(mode="wb", dir=path.parent, prefix=".presets-", suffix=".tmp", delete=False) as handle:
             temporary = Path(handle.name)
-            json.dump(document, handle, ensure_ascii=False, indent=2)
-            handle.write("\n")
+            handle.write(encoded)
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, path)
@@ -105,10 +111,7 @@ def builtin_presets() -> tuple[dict, ...]:
 
 
 def load_presets(state: Path) -> tuple[dict, ...]:
-    path = preset_path(state)
-    if not path.exists():
-        return ()
-    return tuple(validate_native_presets(_read_json(path)))
+    return tuple(validate_native_presets(_read_json(preset_path(state), missing_ok=True)))
 
 
 def import_presets(source: Path, state: Path) -> int:
