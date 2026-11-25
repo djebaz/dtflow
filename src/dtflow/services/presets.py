@@ -78,7 +78,7 @@ def validate_native_presets(document: object) -> list[dict]:
     return result
 
 
-def _atomic_json(path: Path, document: object, *, enforce_limit: bool = False) -> None:
+def _atomic_json(path: Path, document: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = None
     try:
@@ -89,8 +89,6 @@ def _atomic_json(path: Path, document: object, *, enforce_limit: bool = False) -
             json.dump(document, handle, ensure_ascii=False, indent=2)
             handle.write("\n")
             handle.flush()
-            if enforce_limit and temporary.stat().st_size > MAX_PRESET_BYTES:
-                raise ValidationError("The updated preset library would exceed 4 MiB.")
             os.fsync(handle.fileno())
         os.replace(temporary, path)
     finally:
@@ -169,6 +167,8 @@ def save_preset(state: Path, name: str, values: dict) -> None:
 
 def update_preset_lora_names(state: Path, expected: dict, swaps: Mapping[str, str]) -> dict | None:
     """Update only LoRA filenames in the library entry that was actually opened."""
+    from dtflow.services.artifacts import atomic_write
+
     if not swaps:
         return None
     configuration = expected["configuration"]
@@ -187,7 +187,10 @@ def update_preset_lora_names(state: Path, expected: dict, swaps: Mapping[str, st
             if item != expected:
                 return None
             presets[index] = replacement
-            _atomic_json(preset_path(state), presets, enforce_limit=True)
+            encoded = json.dumps(presets, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            if len(encoded) > MAX_PRESET_BYTES:
+                raise ValidationError("The updated preset library would exceed 4 MiB.")
+            atomic_write(preset_path(state), encoded)
             return replacement
     return None
 
