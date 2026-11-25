@@ -16,8 +16,8 @@ COMMIT = "8c4e78718f4984746e33b83707cb2bf2292dd1d0"
 
 
 def test_artifact_name_follows_the_identity_convention():
-    assert build_exe.artifact_name("0.1.0", COMMIT, "Windows", "AMD64") == "dtflow-0.1.0-g8c4e787-windows-x64.exe"
-    assert build_exe.artifact_name("0.1.0", COMMIT, "Linux", "aarch64") == "dtflow-0.1.0-g8c4e787-linux-arm64"
+    assert build_exe.artifact_name("0.1.0", COMMIT, "Windows", "AMD64") == "dtflow-0.1.0-8c4e787-windows-x64.exe"
+    assert build_exe.artifact_name("0.1.0", COMMIT, "Linux", "aarch64") == "dtflow-0.1.0-8c4e787-linux-arm64"
 
 
 def test_stamped_module_replaces_unknown_identity(monkeypatch, tmp_path):
@@ -33,7 +33,7 @@ def test_stamped_module_replaces_unknown_identity(monkeypatch, tmp_path):
     try:
         stamped = importlib.reload(build)
         assert stamped.identity()["source_commit"] == COMMIT
-        assert stamped.display_identity().endswith("| revision g8c4e787 | source: clean")
+        assert stamped.display_identity().endswith("| revision 8c4e787 | source: clean")
     finally:
         monkeypatch.delitem(sys.modules, "dtflow._buildinfo")
         importlib.reload(build)

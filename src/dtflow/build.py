@@ -9,11 +9,12 @@ from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 
 # A packaged build has a stamped identity: tools/packaging/build_exe.py generates the ignored dtflow/_buildinfo.py
-# module (full commit, clean/dirty), so a frozen executable needs no Git. A source run has no stamp; it is a "dev"
-# build whose revision is the newest modification time among the package's own files.
+# module (full commit, clean/dirty), so a frozen executable needs no Git. Source CLI development startup may
+# resolve the checkout identity explicitly; otherwise the newest package-file modification time is the fallback.
 SOURCE_COMMIT = "unknown"
 SOURCE_STATUS = "unknown"
 STAMPED = False
+_checkout_identity = ("unknown", "unknown")
 try:
     from dtflow._buildinfo import SOURCE_COMMIT, SOURCE_STATUS  # type: ignore[import-not-found]  # noqa: F811
 
@@ -40,13 +41,15 @@ def source_modified() -> str | None:
     return datetime.fromtimestamp(newest / 1e9, UTC).strftime("%Y-%m-%dT%H:%MZ")
 
 
-@cache
-def checkout_revision() -> tuple[str, str]:
+def _checkout_revision() -> tuple[str, str]:
     """Resolve a source checkout once, without making Git a runtime requirement."""
     if STAMPED or getattr(sys, "frozen", False):
         return "unknown", "unknown"
-    root = PACKAGE_DIR.resolve().parents[1]
-    if not (root / ".git").exists():
+    try:
+        root = PACKAGE_DIR.resolve().parents[1]
+        if not (root / ".git").exists():
+            return "unknown", "unknown"
+    except (OSError, IndexError):
         return "unknown", "unknown"
 
     def git(*args: str) -> str:
@@ -72,7 +75,13 @@ def checkout_revision() -> tuple[str, str]:
     return commit, status
 
 
-def identity(*, checkout: bool = False) -> dict[str, str]:
+def set_checkout_identity(enabled: bool) -> None:
+    """Resolve once at explicit CLI startup, or clear the session snapshot without Git."""
+    global _checkout_identity
+    _checkout_identity = _checkout_revision() if enabled else ("unknown", "unknown")
+
+
+def identity() -> dict[str, str]:
     try:
         application_version = version("dtflow")
     except PackageNotFoundError:
@@ -83,16 +92,16 @@ def identity(*, checkout: bool = False) -> dict[str, str]:
         build["source_status"] = "dev" if modified else SOURCE_STATUS
         if modified:
             build["source_modified"] = modified
-    if checkout and not STAMPED:
-        commit, status = checkout_revision()
+    if not STAMPED:
+        commit, status = _checkout_identity
         if commit != "unknown":
             build["source_commit"] = commit
             build["source_status"] = status
     return build
 
 
-def display_identity(*, checkout: bool = False) -> str:
-    build = identity(checkout=checkout)
+def display_identity() -> str:
+    build = identity()
     if build["source_commit"] != "unknown":
         revision = build["source_commit"][:7]
     elif "source_modified" in build:

@@ -567,7 +567,7 @@ class MainWindow:
         startup.mark("page wiring")
         self._restore_session()
         startup.mark("pages wired, session restored")
-        form.statusBar().showMessage(display_identity(checkout=development_mode()))
+        form.statusBar().showMessage(display_identity())
         # The former Help menu is a small status-bar icon so no menu bar takes vertical room.
         help_icon = ASSETS_CONTROLS / "help.svg"
         form.aboutAction.setIcon(QIcon(str(help_icon)))
@@ -3763,7 +3763,7 @@ class MainWindow:
         InlineNotice.about(
             self.form,
             "About DTFlow",
-            f"{display_identity(checkout=development_mode())}\n\nState folder: {self.state_dir}",
+            f"{display_identity()}\n\nState folder: {self.state_dir}",
         )
 
     def close(self) -> None:
