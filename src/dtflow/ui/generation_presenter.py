@@ -11,7 +11,14 @@ import secrets
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from dtflow.core.models import SEED_LIMIT, LoRASelection, ResolvedGenerationRequest, Sampler, ValidationError
+from dtflow.core.models import (
+    SEED_LIMIT,
+    LoRASelection,
+    ResolvedGenerationRequest,
+    Sampler,
+    ValidationError,
+    is_finite_number,
+)
 from dtflow.services.artifacts import atomic_write
 from dtflow.services.lora_naming import display_label
 from dtflow.services.config import export_config, load_config, resolve_request
@@ -160,15 +167,15 @@ def form_from_document(document: object) -> FormValues:
 
     def pick(name: str, kind: type, default):
         value = document.get(name, default)
-        if kind is float and type(value) is int:
-            value = float(value)
+        if kind is float:
+            return float(value) if is_finite_number(value) else default
         return value if type(value) is kind else default
 
     loras = []
     for item in document.get("loras", ()) if isinstance(document.get("loras"), list) else ():
         try:
             loras.append(LoRASelection(item["identifier"], float(item["weight"])))
-        except (KeyError, TypeError, ValueError, ValidationError):
+        except (KeyError, OverflowError, TypeError, ValueError):
             continue
     sampler = pick("sampler", str, base.sampler)
     return FormValues(
