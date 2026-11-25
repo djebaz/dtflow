@@ -62,6 +62,7 @@ REQUEST_FIELDS = (
     "batch_size",
     "batch_count",
     "allow_unlisted_model",
+    "advanced",
 )
 EFFECTIVE_FIELDS = frozenset(
     """
@@ -69,7 +70,7 @@ EFFECTIVE_FIELDS = frozenset(
     cfg_zero_init_steps cfg_zero_star clip_skip clip_weight compression_artifacts compression_artifacts_quality
     config_source crop_left crop_top decoding_tile_height decoding_tile_overlap decoding_tile_width
     diffusion_tile_height diffusion_tile_overlap diffusion_tile_width fps guidance guidance_embed
-    guiding_frame_guidance guiding_frame_noise height hires_fix hires_fix_height hires_fix_strength hires_fix_width
+    guiding_frame_guidance guiding_frame_noise height hires_fix hires_fix_factor hires_fix_height hires_fix_strength hires_fix_width
     image_guidance_scale image_prior_steps mask_blur mask_blur_outset model motion_scale negative_aesthetic_score
     negative_original_image_height negative_original_image_width negative_prompt_for_image_prior num_frames
     original_image_height original_image_width preserve_original_after_inpaint refiner_start resolution_dependent_shift

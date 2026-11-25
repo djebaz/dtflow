@@ -90,6 +90,7 @@ from dtflow.ui.generation_presenter import (
 from dtflow.ui.generation_grid import GenerationGrid
 from dtflow.ui.inline_feedback import InlineNotice, edit_text
 from dtflow.ui.progress_model import SOLO_QUEUE, ItemProgress, ProgressModel, ProgressSnapshot, QueueTotals
+from dtflow.ui.advanced_panel import FIELD_WIDGETS as ADVANCED_FIELD_WIDGETS, AdvancedPanel
 from dtflow.ui.video_panel import VideoPanel
 from dtflow.core import video as rules
 from dtflow.core.video import VIDEO_TOTAL_TIMEOUT
@@ -495,9 +496,15 @@ class GenerationPage:
         self.controlnet.attach(self)
         startup.mark("generate: controlnet editor")
         self.video = VideoPanel(page, self._state, runner, self._backend)
+        self.advanced = AdvancedPanel(page)
         self.video.state_changed.connect(self._sync_generate)
         page.modelCombo.currentTextChanged.connect(self._video_model_changed)
         self._video_model_changed(page.modelCombo.currentText())
+        for button in (page.textToImageModeButton, page.inpaintModeButton, page.controlnetModeButton):
+            button.toggled.connect(self._sync_advanced_scope)
+        self.video.state_changed.connect(self._sync_advanced_scope)
+        page.modelCombo.currentTextChanged.connect(self._sync_advanced_scope)
+        self._sync_advanced_scope()
         startup.mark("generate: video panel")
         page.textToImageModeButton.toggled.connect(self._sync_activity)
         page.inpaintModeButton.toggled.connect(self._sync_activity)
@@ -627,6 +634,7 @@ class GenerationPage:
             page.guidanceSpinBox.value(),
             page.samplerCombo.currentText(),
             self.lora.loras,
+            advanced.values() if (advanced := getattr(self, "advanced", None)) is not None else None,
         )
 
     def _apply(self, values: FormValues) -> None:
@@ -640,6 +648,12 @@ class GenerationPage:
         page.stepsSpinBox.setValue(values.steps)
         page.guidanceSpinBox.setValue(values.guidance)
         self._filter_samplers(keep=values.sampler)
+        if (advanced := getattr(self, "advanced", None)) is not None:
+            advanced.restore(values.advanced)
+
+    def _sync_advanced_scope(self, *_args) -> None:
+        """Advanced values are sent for text-to-image only so far; elsewhere they stay visible but are labelled unsent."""
+        self.advanced.set_applies(self.page.textToImageModeButton.isChecked() and not self.video.active)
 
     def _filter_samplers(self, keep: str | None = None) -> None:
         """Offer every sampler in every mode; the selected model's profile only steers the choice.
@@ -710,7 +724,7 @@ class GenerationPage:
             page.samplerCombo.setCurrentText(profile.sampler.value)
         self._update_suggestion()
 
-    PROVIDER_FIELDS = ("model", "seed", "width", "height", "steps", "guidance", "sampler", "loras")
+    PROVIDER_FIELDS = ("model", "seed", "width", "height", "steps", "guidance", "sampler", "loras", "advanced")
 
     def _provider_form(self) -> dict:
         """The fields that belong to the provider in use: everything but the prompts, plus bound receipts."""
@@ -871,6 +885,7 @@ class GenerationPage:
                 "guidance": float(document.get("guidance", 7.0)),
                 "sampler": document.get("sampler_id", "euler_a"),
                 "loras": document.get("loras", []),
+                "advanced": document.get("advanced"),
             }
         )
 
@@ -964,8 +979,10 @@ class GenerationPage:
         label.setToolTip("")
 
     def _mark(self, widget_name: str | None) -> None:
-        for name in FIELD_WIDGETS:
-            widget = getattr(self.page, name)
+        for name in (*FIELD_WIDGETS, *ADVANCED_FIELD_WIDGETS):
+            widget = getattr(self.page, name, None)
+            if widget is None:
+                continue
             widget.setProperty("invalid", name == widget_name)
             widget.style().unpolish(widget)
             widget.style().polish(widget)

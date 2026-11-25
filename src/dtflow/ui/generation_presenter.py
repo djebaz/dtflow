@@ -11,6 +11,7 @@ import secrets
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from dtflow.core.advanced import AdvancedSettings, summary as advanced_summary
 from dtflow.core.models import (
     SEED_LIMIT,
     LoRASelection,
@@ -41,6 +42,12 @@ ERROR_FIELDS = {
     "unsupported": "samplerCombo",  # "Unsupported sampler."
     "loras": "loraList",
     "lora": "loraList",
+    "hires_fix": "hiresFixCheck",
+    "hires_fix_width": "hiresFixWidthSpin",
+    "hires_fix_height": "hiresFixHeightSpin",
+    "seed_mode": "seedModeCombo",
+    "tiled_decoding": "tiledDecodingCheck",
+    "advanced": "hiresFixCheck",
 }
 
 
@@ -58,6 +65,7 @@ class FormValues:
     guidance: float = 7.0
     sampler: str = Sampler.EULER_A.value
     loras: tuple[LoRASelection, ...] = ()
+    advanced: AdvancedSettings | None = None
 
 
 def snap_dimension(value: int) -> int:
@@ -109,6 +117,7 @@ def build_request(
         "guidance": values.guidance,
         "sampler": values.sampler,
         "loras": values.loras,
+        "advanced": values.advanced,
     }
     try:
         request = resolve_request(
@@ -140,6 +149,7 @@ def values_from_request(request: ResolvedGenerationRequest) -> FormValues:
         request.guidance,
         request.sampler_id.value,
         request.loras,
+        request.advanced,
     )
 
 
@@ -156,7 +166,19 @@ def form_to_document(values: FormValues) -> dict:
         "guidance": values.guidance,
         "sampler": values.sampler,
         "loras": [{"identifier": item.identifier, "weight": item.weight} for item in values.loras],
+        "advanced": values.advanced.to_record() if values.advanced is not None else None,
     }
+
+
+def advanced_from_document(value: object) -> AdvancedSettings | None:
+    """Tolerant read of remembered advanced values: anything malformed is dropped as "not chosen", never raised."""
+    if not isinstance(value, (dict, AdvancedSettings)):
+        return None
+    try:
+        settings = AdvancedSettings.from_record(value)
+    except ValidationError:
+        return None
+    return None if settings.is_default else settings
 
 
 def form_from_document(document: object) -> FormValues:
@@ -189,6 +211,7 @@ def form_from_document(document: object) -> FormValues:
         pick("guidance", float, base.guidance),
         sampler if sampler in SAMPLERS else base.sampler,
         tuple(loras),
+        advanced_from_document(document.get("advanced")),
     )
 
 
@@ -206,6 +229,10 @@ def describe_request(request: ResolvedGenerationRequest, backend: str, endpoint:
             f"video: {request.num_frames} frames, {duration_text(seconds)} at {playback_fps(request.model_id)} fps"
             + (", one start image" if request.start_image else ", text to video")
         )
+    if request.advanced is not None and (
+        chosen := advanced_summary(request.width_px, request.height_px, request.advanced)
+    ):
+        lines.append(f"advanced: {chosen}")
     receipts = {item.identifier: item.receipt_id[:8] for item in request.prepared_assets}
     lines += [
         f"lora: {item.identifier}"

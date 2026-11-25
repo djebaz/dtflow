@@ -10,6 +10,7 @@ from sys import float_info
 from typing import TYPE_CHECKING, Callable, Protocol
 
 if TYPE_CHECKING:
+    from dtflow.core.advanced import AdvancedSettings
     from dtflow.core.image_inputs import ImageInputSnapshot
 
 
@@ -306,6 +307,8 @@ class ResolvedGenerationRequest:
     num_frames: int | None = None
     start_image: str | None = None
     start_image_sha256: str | None = None
+    # Optional advanced Draw Things values (#539); None keeps the profile and library defaults untouched.
+    advanced: AdvancedSettings | None = None
 
     def __post_init__(self) -> None:
         if self.num_frames is not None:
@@ -398,6 +401,19 @@ class ResolvedGenerationRequest:
             not isinstance(x, PreparedAsset) for x in self.prepared_assets
         ):
             raise ValidationError("Prepared assets must be an immutable tuple.")
+        if self.advanced is not None:
+            from dtflow.core.advanced import AdvancedSettings, check_first_pass
+
+            if not isinstance(self.advanced, AdvancedSettings):
+                raise ValidationError("advanced settings are malformed.")
+            if (
+                self.operation != "txt2img"
+                or self.num_frames is not None
+                or self.pose_control is not None
+                or self.image_inputs is not None
+            ):
+                raise ValidationError("advanced settings are available for text-to-image only so far.")
+            check_first_pass(self.width_px, self.height_px, self.advanced)
         selected = {item.identifier for item in self.loras}
         if len({x.identifier for x in self.prepared_assets}) != len(self.prepared_assets) or any(
             x.identifier not in selected for x in self.prepared_assets

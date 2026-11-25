@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from dtflow.core.advanced import AdvancedSettings
 from dtflow.core.models import LoRASelection, ResolvedGenerationRequest, Sampler, ValidationError
 
 SCHEMA = "dtflow.generation-config"
@@ -26,7 +27,9 @@ DEFAULTS: dict[str, Any] = {
     "sampler": Sampler.EULER_A.value,
     "loras": (),
 }
-FIELDS = ("prompt", "model", *DEFAULTS)
+# Optional extras are carried only when chosen, so a basic configuration (and its resolution evidence) is unchanged.
+OPTIONAL_FIELDS = ("advanced",)
+FIELDS = ("prompt", "model", *DEFAULTS, *OPTIONAL_FIELDS)
 # Metadata written by an earlier run maps onto the same generation fields.
 METADATA_FIELDS = {
     "prompt": "prompt",
@@ -39,6 +42,7 @@ METADATA_FIELDS = {
     "guidance": "guidance",
     "sampler_id": "sampler",
     "loras": "loras",
+    "advanced": "advanced",
 }
 CREDENTIAL_WORDS = ("key", "token", "secret", "auth", "password", "credential")
 
@@ -143,6 +147,8 @@ def resolve_request(
     values: dict[str, Any] = {}
     evidence: list[tuple[str, str]] = []
     for name in FIELDS:
+        if name in OPTIONAL_FIELDS:
+            continue
         if overrides.get(name) is not None:
             values[name], origin = overrides[name], "override"
         elif name in config:
@@ -160,6 +166,15 @@ def resolve_request(
         sampler = Sampler(values["sampler"])
     except ValueError as exc:
         raise ConfigError("Unsupported sampler.") from exc
+    advanced = None
+    for supplied, origin in ((overrides, "override"), (config, "config")):
+        if supplied.get("advanced") is not None:
+            advanced = AdvancedSettings.from_record(supplied["advanced"])
+            if not advanced.is_default:
+                evidence.append(("field.advanced", origin))
+            else:
+                advanced = None
+            break
     return ResolvedGenerationRequest(
         uuid4().hex,
         values["prompt"],
@@ -173,6 +188,7 @@ def resolve_request(
         sampler_id=sampler,
         loras=_loras(values["loras"]),
         resolution_evidence=tuple(evidence),
+        advanced=advanced,
     )
 
 
@@ -180,7 +196,7 @@ def export_config(request: ResolvedGenerationRequest) -> dict[str, Any]:
     """The reusable, credential-free generation settings of a resolved request (no ids, evidence or backend)."""
     if request.operation != "txt2img" or request.pose_control is not None:
         raise ConfigError("Image-operation requests require managed inputs and cannot be exported as txt2img settings.")
-    return {
+    document = {
         "schema": SCHEMA,
         "version": VERSION,
         "generation": {
@@ -196,3 +212,6 @@ def export_config(request: ResolvedGenerationRequest) -> dict[str, Any]:
             "loras": [{"identifier": item.identifier, "weight": item.weight} for item in request.loras],
         },
     }
+    if request.advanced is not None:
+        document["generation"]["advanced"] = request.advanced.to_record()
+    return document
