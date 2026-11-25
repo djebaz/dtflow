@@ -81,7 +81,7 @@ The active provider inventory is the authority for current availability.
 
 Catalogue membership never means installed/available. Inventory presence never means compatibility is known.
 
-The effective selectable set combines provider-listed LoRAs with classification metadata and known custom receipts. As of PR #614, provider-listed LoRAs do not require a bundled catalogue definition or local file. Conventional LoRA CKPT names in unclassified cloud Echo are discovery hints, not proof of architecture; unlisted files remain unconfirmed.
+The effective selectable set combines provider-listed LoRAs with classification metadata and known custom receipts. As of PR #614, provider-listed LoRAs do not require a bundled catalogue definition or local file. Conventional LoRA CKPT names in unclassified cloud Echo are discovery hints, not proof of architecture; bundled LoRAs omitted by cloud Echo remain selectable with availability unconfirmed. User-only definitions omitted by Echo still require existing custom asset evidence or explicit identifier entry. Catalogue candidates do not count as provider observations.
 
 ## 4. Provider-scoped persistence is required
 

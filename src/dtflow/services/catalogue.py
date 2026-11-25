@@ -378,6 +378,13 @@ class Catalogue:
             return set()
         return {entry.identifier for entry in self._inventory.entries}
 
+    def unconfirmed_cloud_lora_ids(self) -> frozenset[str]:
+        """Bundled candidates omitted by cloud Echo; never evidence of availability."""
+        if self._inventory is None or not self._inventory.backend_id.endswith("cloud"):
+            return frozenset()
+        observed = self._available_ids()
+        return frozenset(entry.identifier for entry in self._bundled_loras if entry.identifier not in observed)
+
     def lora_definitions(self) -> tuple[CatalogueEntry, ...]:
         """Known classification, including unlisted LoRAs; never availability evidence."""
         return self._merged_loras(self.user_loras())
@@ -410,7 +417,10 @@ class Catalogue:
             if entry.identifier in available:
                 checkpoints_by_id[entry.identifier] = entry
         checkpoints = tuple(checkpoints_by_id.values())
-        loras_by_id = {entry.identifier: entry for entry in self._merged_loras(user_loras) if entry.identifier in available}
+        candidates = available | self.unconfirmed_cloud_lora_ids()
+        loras_by_id = {
+            entry.identifier: entry for entry in self._merged_loras(user_loras) if entry.identifier in candidates
+        }
         for observed in listed_loras(self._inventory):
             loras_by_id.setdefault(
                 observed.identifier,

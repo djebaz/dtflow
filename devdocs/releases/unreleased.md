@@ -15,7 +15,7 @@ Changes through 6.5.1 are consolidated in [DTFlow 6.5.1](v6.5.1.md). The publish
 
 ## Fixed
 
-- Discover provider-listed LoRAs in Generate, Queues, Workflows and Scripts even without local files or catalogue definitions, including conventional LoRA checkpoint names from metadata-less DT+ Echo. Unknown compatibility remains unverified; custom asset preparation and account safeguards are unchanged.
+- Discover provider-listed LoRAs in Generate, Queues, Workflows and Scripts even without local files or catalogue definitions, including conventional LoRA checkpoint names from metadata-less DT+ Echo. Compatible bundled LoRAs omitted by DT+ Echo remain selectable with availability unconfirmed. Unknown compatibility remains unverified; custom asset preparation and account safeguards are unchanged.
 
 - Script analysis applies its deadline to parser startup and waits for the parser to be ready before sending the source.
 - Preset imports preserve the existing library if the selected file disappears. Import and save keep the library within the 4 MiB read limit.

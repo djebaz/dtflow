@@ -2302,7 +2302,8 @@ class GenerationPage:
             # can prove instead of calling every file a model.
             view = self._catalogue.view()
             models = len({entry.identifier for entry in view.checkpoints} | set(view.unclassified_checkpoints))
-            loras = len(view.loras)
+            unconfirmed = self._catalogue.unconfirmed_cloud_lora_ids()
+            loras = sum(entry.identifier not in unconfirmed for entry in view.loras)
             other = len(snapshot.entries) - models - loras
         try:
             observed = datetime.fromisoformat(snapshot.observed_at_utc).astimezone(UTC).strftime("%d %b %H:%M UTC")

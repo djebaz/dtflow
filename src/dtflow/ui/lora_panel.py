@@ -401,6 +401,11 @@ class LoraAssetPanel:
             for entry in self._catalogue.lora_definitions()
             if entry.base_model
         }
+        for name in self._catalogue.unconfirmed_cloud_lora_ids():
+            if name in family:
+                family[name] = family[name].removesuffix(" (catalogue)") + " (cloud unconfirmed)"
+            else:
+                family[name] = "Unknown (cloud unconfirmed)"
         for name, value in self._inventory_families.items():
             family.setdefault(name, f"{FAMILY_LABELS.get(value, value)} (provider)")
         for name, _ in self.all_choices():  # includes custom LoRAs known only from receipts
