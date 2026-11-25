@@ -34,6 +34,11 @@ def request_from_record(record: dict[str, Any]) -> ResolvedGenerationRequest:
             pose = dict(values["pose_control"])
             pose["evidence"] = tuple(tuple(pair) for pair in pose["evidence"])
             values["pose_control"] = PoseControl(**pose)
+        if values.get("advanced") is not None:
+            from dtflow.core.advanced import AdvancedSettings
+
+            settings = AdvancedSettings.from_record(values["advanced"])
+            values["advanced"] = None if settings.is_default else settings  # nothing chosen is stored as absent
         values["sampler_id"] = Sampler(values["sampler_id"])
         values["loras"] = tuple(LoRASelection(**item) for item in values["loras"])
         values["resolution_evidence"] = tuple(tuple(pair) for pair in values["resolution_evidence"])

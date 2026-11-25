@@ -24,6 +24,7 @@ from drawthings_py.generated.dt_grpc.config_generated import (
 from dtflow.backends.drawthings.errors import error
 from dtflow.backends.drawthings.image_inputs import encode_image_inputs
 from dtflow.backends.drawthings.video_wire import start_image_tensor, with_num_frames
+from dtflow.core.advanced import wire_fields as advanced_wire_fields
 from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.image_operations import ImageOperationPermit
 from dtflow.core.model_profiles import exact_model_description_digest, exact_model_spec, profile_for
@@ -195,6 +196,8 @@ def build_generation_message(
         # A video model never borrows another family's values: its own entry or nothing.
         own = video_profile(request.model_id)
         extras = dict(own.extras) if own else {}
+    # Chosen advanced values are explicit overrides; a profile never sets these fields, so nothing is replaced silently.
+    extras.update(advanced_wire_fields(request.width_px, request.height_px, request.advanced))
     if image_operation:
         extras.update(mask_blur=0.0, mask_blur_outset=0, preserve_original_after_inpaint=False)
     config = GenConfig(
@@ -290,7 +293,7 @@ def build_generation_message(
 
 
 def verify_wire_configuration(
-    request: ResolvedGenerationRequest, configuration: bytes, extras: dict[str, float | bool] | None = None
+    request: ResolvedGenerationRequest, configuration: bytes, extras: dict[str, float | bool | int | str] | None = None
 ) -> Metadata:
     """Decode what will be sent and assert it equals the resolved request; return the effective configuration."""
     decoded = dict(GenConfig.from_fbs(configuration).items())
@@ -343,6 +346,8 @@ def verify_wire_configuration(
         sent_value = decoded.get(key)
         if isinstance(wanted_value, bool):
             same = sent_value is wanted_value
+        elif isinstance(wanted_value, str):
+            same = sent_value == wanted_value
         else:
             same = _same_float32(sent_value, wanted_value)
         if not same:
@@ -359,5 +364,7 @@ def verify_wire_configuration(
     pairs = {key: str(value) for key, value in decoded.items() if value is not None}
     pairs["sampler_wire_value"] = str(raw.Sampler())
     pairs["loras"] = ",".join(f"{wire_lora_name(request, item.identifier)}@{item.weight}" for item in request.loras)
+    if request.advanced is not None and request.advanced.hires_fix_active:
+        pairs["hires_fix_factor"] = f"{request.advanced.hires_fix_factor:g}"  # the user's factor behind the first pass
     pairs["config_source"] = "drawthings-py " + version("drawthings-py")
     return tuple(sorted(pairs.items()))

@@ -78,6 +78,7 @@ from dtflow.ui.generation_presenter import (
     FormError,
     FormValues,
     build_request,
+    field_for,
     describe_failure,
     describe_request,
     form_from_document,
@@ -90,6 +91,7 @@ from dtflow.ui.generation_presenter import (
 from dtflow.ui.generation_grid import GenerationGrid
 from dtflow.ui.inline_feedback import InlineNotice, edit_text
 from dtflow.ui.progress_model import SOLO_QUEUE, ItemProgress, ProgressModel, ProgressSnapshot, QueueTotals
+from dtflow.ui.advanced_panel import FIELD_WIDGETS as ADVANCED_FIELD_WIDGETS, AdvancedPanel
 from dtflow.ui.video_panel import VideoPanel
 from dtflow.core import video as rules
 from dtflow.core.video import VIDEO_TOTAL_TIMEOUT
@@ -495,9 +497,16 @@ class GenerationPage:
         self.controlnet.attach(self)
         startup.mark("generate: controlnet editor")
         self.video = VideoPanel(page, self._state, runner, self._backend)
+        self.advanced = AdvancedPanel(page)
+        self.advanced.changed.connect(self._update_compute_units)
         self.video.state_changed.connect(self._sync_generate)
         page.modelCombo.currentTextChanged.connect(self._video_model_changed)
         self._video_model_changed(page.modelCombo.currentText())
+        for button in (page.textToImageModeButton, page.inpaintModeButton, page.controlnetModeButton):
+            button.toggled.connect(self._sync_advanced_scope)
+        self.video.state_changed.connect(self._sync_advanced_scope)
+        page.modelCombo.currentTextChanged.connect(self._sync_advanced_scope)
+        self._sync_advanced_scope()
         startup.mark("generate: video panel")
         page.textToImageModeButton.toggled.connect(self._sync_activity)
         page.inpaintModeButton.toggled.connect(self._sync_activity)
@@ -627,7 +636,20 @@ class GenerationPage:
             page.guidanceSpinBox.value(),
             page.samplerCombo.currentText(),
             self.lora.loras,
+            self._advanced_values(),
         )
+
+    def _advanced_values(self):
+        """The panel's values; an unusable combination is a form error on its widget, like any other bad field."""
+        panel = getattr(self, "advanced", None)
+        if panel is None:
+            return None
+        try:
+            return panel.values()
+        except FormError:
+            raise
+        except ValidationError as exc:
+            raise FormError(str(exc), field_for(str(exc))) from exc
 
     def _apply(self, values: FormValues) -> None:
         page = self.page
@@ -640,6 +662,12 @@ class GenerationPage:
         page.stepsSpinBox.setValue(values.steps)
         page.guidanceSpinBox.setValue(values.guidance)
         self._filter_samplers(keep=values.sampler)
+        if (advanced := getattr(self, "advanced", None)) is not None:
+            advanced.restore(values.advanced)
+
+    def _sync_advanced_scope(self, *_args) -> None:
+        """Advanced values are sent for text-to-image only so far; elsewhere they stay visible but are labelled unsent."""
+        self.advanced.set_applies(self.page.textToImageModeButton.isChecked() and not self.video.active)
 
     def _filter_samplers(self, keep: str | None = None) -> None:
         """Offer every sampler in every mode; the selected model's profile only steers the choice.
@@ -710,7 +738,7 @@ class GenerationPage:
             page.samplerCombo.setCurrentText(profile.sampler.value)
         self._update_suggestion()
 
-    PROVIDER_FIELDS = ("model", "seed", "width", "height", "steps", "guidance", "sampler", "loras")
+    PROVIDER_FIELDS = ("model", "seed", "width", "height", "steps", "guidance", "sampler", "loras", "advanced")
 
     def _provider_form(self) -> dict:
         """The fields that belong to the provider in use: everything but the prompts, plus bound receipts."""
@@ -840,8 +868,8 @@ class GenerationPage:
         """A request for LoRA preflight only: a blank prompt gets a placeholder because nothing is dispatched."""
         self._mark(None)
         name, _ = self._backend()
-        values = self._values()
         try:
+            values = self._values()
             request = build_request(replace(values, prompt=values.prompt or "preflight check"), backend=name)
             return self._allow_local_bridge_model(request)
         except FormError as exc:
@@ -871,6 +899,7 @@ class GenerationPage:
                 "guidance": float(document.get("guidance", 7.0)),
                 "sampler": document.get("sampler_id", "euler_a"),
                 "loras": document.get("loras", []),
+                "advanced": document.get("advanced"),
             }
         )
 
@@ -964,8 +993,10 @@ class GenerationPage:
         label.setToolTip("")
 
     def _mark(self, widget_name: str | None) -> None:
-        for name in FIELD_WIDGETS:
-            widget = getattr(self.page, name)
+        for name in (*FIELD_WIDGETS, *ADVANCED_FIELD_WIDGETS):
+            widget = getattr(self.page, name, None)
+            if widget is None:
+                continue
             widget.setProperty("invalid", name == widget_name)
             widget.style().unpolish(widget)
             widget.style().polish(widget)
@@ -2185,6 +2216,15 @@ class GenerationPage:
             operation="inpaint" if page.inpaintModeButton.isChecked() else "txt2img",
         )
 
+    def _hires_fix_chosen(self) -> bool:
+        """True when the form will send Hires Fix, whose second pass the offline estimate does not include."""
+        try:
+            panel = getattr(self, "advanced", None)
+            chosen = panel.values() if panel is not None else None
+        except ValidationError:
+            return False
+        return chosen is not None and chosen.hires_fix_active
+
     def _update_compute_units(self, *_args) -> None:
         """Show an offline, non-authoritative DT+ complexity estimate for one T2I image.
 
@@ -2218,6 +2258,7 @@ class GenerationPage:
         # No hover overlay: the reason is exposed to assistive technology only.
         meter.setAccessibleDescription(
             f"{estimate.reason} Offline estimate; not a balance, entitlement check or billing quote."
+            + (" Excludes the Hires Fix second pass." if self._hires_fix_chosen() else "")
         )
 
     def show_checkpoint_details(self) -> None:
@@ -2234,6 +2275,8 @@ class GenerationPage:
         if self._backend()[0] in ("local", "cloud"):
             estimate = self._compute_units_estimate()
             result = "unavailable" if estimate.units is None else f"{estimate.units:,}".replace(",", "\u202f") + " CU"
+            if estimate.units is not None and self._hires_fix_chosen():
+                result += " (excludes the Hires Fix second pass)"
             text += (
                 f"\n\nCompute Units: {result}\n"
                 "Supported models: SD 1.x/2.x, SDXL/SSD, SD3, FLUX.1/2/3, "
@@ -2479,7 +2522,11 @@ class GenerationPage:
 
     def _load_preset(self, preset: dict, *, recorded: bool = False) -> None:
         application = apply_preset(preset)
-        current = form_to_document(self._values())
+        try:
+            current = form_to_document(self._values())
+        except ValidationError as exc:
+            self._status(Presentation("error", "Preset not loaded", str(exc)))
+            return
         current.update(application.values)
         values = form_from_document(current)
         self._apply(values)
@@ -2502,7 +2549,8 @@ class GenerationPage:
             Presentation(
                 "ok",
                 "Preset loaded",
-                f"{preset['name']} applied without dispatch; {kept}. Prompts were unchanged.",
+                f"{preset['name']} applied without dispatch; {kept}. Prompts were unchanged."
+                + (" Advanced settings stay as chosen on this page." if values.advanced is not None else ""),
             )
         )
         if count:
@@ -2597,15 +2645,16 @@ class GenerationPage:
 
     def save_preset(self) -> None:
         def save(name):
-            document = form_to_document(self._values())
             try:
-                save_preset(self._state, name, document)
+                values = self._values()
+                save_preset(self._state, name, form_to_document(values))
             except (ValidationError, OSError, ValueError) as exc:
                 self._status(Presentation("error", "Preset not saved", str(exc)))
                 return
-            self._status(
-                Presentation("ok", "Preset saved", f"{name.strip()} is available in the Draw Things preset library.")
-            )
+            detail = f"{name.strip()} is available in the Draw Things preset library."
+            if values.advanced is not None:
+                detail += " Advanced settings are not stored in presets; the preset keeps its own."
+            self._status(Presentation("ok", "Preset saved", detail))
             self._scan_configs()
 
         edit_text(self.page, "Save preset", "Preset name", save)
