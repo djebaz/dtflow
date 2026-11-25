@@ -6,7 +6,7 @@ Changes through 6.5.1 are consolidated in [DTFlow 6.5.1](v6.5.1.md). The publish
 
 ## Added
 
-- Development-mode source logs record the Git commit and tracked-worktree status when available; the desktop footer and About dialog show the corresponding short revision.
+- Development-mode source logs record the Git commit and tracked-worktree status when available; the desktop footer and About dialog show the corresponding short revision without a `g` prefix. New executable filenames also use the bare short revision.
 
 - Loading a saved preset can select and remember renamed LoRAs that are already prepared for the selected DT+ key.
 

@@ -94,7 +94,7 @@ def identity(*, checkout: bool = False) -> dict[str, str]:
 def display_identity(*, checkout: bool = False) -> str:
     build = identity(checkout=checkout)
     if build["source_commit"] != "unknown":
-        revision = "g" + build["source_commit"][:7]
+        revision = build["source_commit"][:7]
     elif "source_modified" in build:
         local = datetime.fromisoformat(build["source_modified"].replace("Z", "+00:00")).astimezone()
         revision = local.strftime("%Y-%m-%d %H:%M")

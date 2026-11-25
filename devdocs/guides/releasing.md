@@ -49,7 +49,7 @@ Record actual results and check documentation links. Source version output estab
 Use the [build guide](building.md), including its pinned PyInstaller recipe and focused acceptance checklist. Build from the merged release commit, not the PR head or a dirty checkout. Identify the exact artifact:
 
 ```text
-dist/dtflow-<version>-g<short-sha>-windows-x64.exe
+dist/dtflow-<version>-<short-sha>-windows-x64.exe
 ```
 
 Match filename, Qt/version display, full bundled commit and clean source status. Record SHA256, size and owner smoke results. Reuse applicable existing live evidence without claiming it was rerun or repeating credit-consuming workloads merely because the version changed. A dirty development smoke is separate from acceptance of the final clean artifact.
