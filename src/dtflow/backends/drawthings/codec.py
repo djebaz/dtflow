@@ -21,6 +21,9 @@ from dtflow.diagnostics import event as diagnostic_event
 log = logging.getLogger(__name__)
 HEADER_BYTES = 68
 FINAL_CHANNELS = (3, 4)
+# Draw Things version strings the SDK preview decoder does not recognise, mapped to the SDK version whose coefficients
+# Draw Things' own preview code uses for them (ImageConverter.swift groups .krea2 with Wan 2.1 and Qwen Image).
+PREVIEW_VERSIONS = {"krea_2": "wan2.1"}
 
 
 class TensorRejected(ValueError):
@@ -98,15 +101,19 @@ def decode_final(tensor: bytes, width: int, height: int, channels: int, index: i
     )
 
 
-def decode_preview_artifact(data: bytes, index: int, limits: ResourceLimits) -> ImageArtifact | None:
-    """Best-effort preview through the private drawthings-py decoder; any problem drops the preview silently."""
+def decode_preview_artifact(
+    data: bytes, index: int, limits: ResourceLimits, version: str | None = None
+) -> ImageArtifact | None:
+    """Best-effort preview through the private drawthings-py decoder; any problem drops the preview silently.
+
+    ``version`` is the Draw Things model version; without a match the SDK guesses from the latent channel count."""
     try:
         if len(data) > limits.transport_bytes:
             return None
         width, height, channels = header(data)
         if width * height * channels * 2 > limits.tensor_bytes:
             return None
-        buffer = decode_preview(data)
+        buffer = decode_preview(data, PREVIEW_VERSIONS.get(version or "", version))
         if buffer is None:
             return None
         encoded = encode_png(buffer.data, buffer.width, buffer.height, buffer.channels)
