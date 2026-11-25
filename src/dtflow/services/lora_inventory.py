@@ -14,9 +14,9 @@ from dtflow.core.models import (
     LoRABackendAvailability,
     LoRAInventoryEntry,
     LoRAInventorySnapshot,
+    listed_loras,
 )
 from dtflow.persistence.inventory_cache import save_lora_inventory
-from dtflow.services.catalogue import listed_loras
 
 
 class LocalLoRABackend(Protocol):
@@ -85,7 +85,7 @@ async def resolve_lora_inventory(
             )
         )
 
-    local_ids = {entry.identifier for entry in local_snapshot.entries}
+    local_ids = {entry.identifier for entry in local_snapshot.entries if entry.kind in ("lora", "unknown")}
     resolved_ids = {entry.identifier for entry in entries}
     for entry in listed_loras(cloud_snapshot):
         if entry.identifier in resolved_ids:

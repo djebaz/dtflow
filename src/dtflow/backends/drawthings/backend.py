@@ -53,6 +53,7 @@ from dtflow.core.models import (
     TimeoutPolicy,
     ValidationError,
     eligible_model_ids,
+    listed_loras,
 )
 from dtflow.core import provider_phase
 from dtflow.core.tasks import settle
@@ -532,11 +533,7 @@ class DrawThingsBackend:
                     )
                 if request.loras:
                     prepared_names = {item.identifier for item in request.prepared_assets}
-                    listed = (
-                        {e.identifier for e in self._inventory.entries if e.kind == "lora"}
-                        if self._inventory
-                        else set()
-                    )
+                    listed = {e.identifier for e in listed_loras(self._inventory)}
                     unprepared = [item.identifier for item in request.loras if item.identifier not in prepared_names]
                     sent = bool(wire.message.override.loras) if wire.message.override else False
                     diagnostic_event(
@@ -547,8 +544,8 @@ class DrawThingsBackend:
                             "lora_count": len(request.loras),
                             "base_version": base_version,
                             "prepared_count": len(request.prepared_assets),
-                            # Listed by the server (official): nothing to send. Not listed and no receipt: a custom
-                            # LoRA that goes out without its override, which is what an operator must be able to spot.
+                            # Listed files need no custom override. Unlisted names without a receipt remain
+                            # unconfirmed; the historical diagnostic field name does not prove custom origin.
                             "unprepared_listed": sum(name in listed for name in unprepared),
                             "unprepared_custom": sum(name not in listed for name in unprepared),
                             # Short content hashes name the LoRA files the request carries without logging file names.

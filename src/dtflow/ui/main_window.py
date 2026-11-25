@@ -39,7 +39,7 @@ from dtflow import startup
 from dtflow.build import display_identity
 from dtflow.composition import BACKENDS, BackendSelection
 from dtflow.core.gallery import GalleryQuery
-from dtflow.core.models import BackendError, ValidationError, eligible_model_ids
+from dtflow.core.models import BackendError, ValidationError, eligible_model_ids, listed_loras
 from dtflow.diagnostics import cloud_key_data, event as diagnostic_event
 from dtflow.logging_setup import configured_directory, development_mode
 from dtflow.paths import application_state_dir
@@ -55,7 +55,7 @@ from dtflow.persistence.original_io import (
     require_originals_ready,
 )
 from dtflow.services.cache_management import CATEGORIES, cache_usage, purge_cache
-from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, import_user_loras, listed_loras
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, import_user_loras
 from dtflow.services.lora_family import retained_families
 from dtflow.services.lora_auto_naming import normalize_previous_retained
 from dtflow.services.lora_metadata_edit import read_lora_rows, read_unretained_loras, remove_unretained_lora

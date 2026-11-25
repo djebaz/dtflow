@@ -29,8 +29,8 @@ from dtflow.core.models import (
 from dtflow.diagnostics import asset_ref_data, event as diagnostic_event
 from dtflow.logging_setup import development_mode
 from dtflow.persistence.asset_leases import AssetsBusyError
-from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version, listed_loras, single_family_version
-from dtflow.core.models import KeyHoldings
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, bundled_exact_version, single_family_version
+from dtflow.core.models import KeyHoldings, listed_loras
 from dtflow.services.dt_storage import reported_free_space, storage_refusal, storage_size
 from dtflow.services.storage_probe import probe_content
 from dtflow.services.connection import (
@@ -255,9 +255,7 @@ class LoraAssetPanel:
         self._inventory_checkpoints = (
             tuple(entry.identifier for entry in snapshot.entries if entry.kind == "model") if snapshot else ()
         )
-        self._inventory_candidates = (
-            [(e.identifier, e.default_weight) for e in listed_loras(snapshot)]
-        )
+        self._inventory_candidates = [(e.identifier, e.default_weight) for e in listed_loras(snapshot)]
         self._candidates = list(self._inventory_candidates)
 
     def eligible_architectures(self) -> tuple[str, ...]:
@@ -538,7 +536,6 @@ class LoraAssetPanel:
             if entry.identifier not in known:
                 listed.append((entry.identifier, None))
                 known.add(entry.identifier)
-        known = {name for name, _ in listed}
         for name, weight in self._candidates:
             if name not in known:
                 listed.append((name, weight))

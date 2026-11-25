@@ -6,8 +6,8 @@ Prepared means a historical confirmed local receipt, not fresh server validation
 
 from pathlib import Path
 
-from dtflow.core.models import InventorySnapshot, PreparedAsset, ValidationError
-from dtflow.services.catalogue import Catalogue, listed_loras
+from dtflow.core.models import InventorySnapshot, PreparedAsset, ValidationError, listed_loras
+from dtflow.services.catalogue import Catalogue
 
 
 def _symbolic(value: str) -> bool:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -575,6 +576,22 @@ class InventorySnapshot:
         validate_metadata(self.diagnostics)
         if not isinstance(self.entries, tuple) or any(not isinstance(x, InventoryEntry) for x in self.entries):
             raise ValidationError("Inventory entries must be immutable typed values.")
+
+
+def listed_loras(snapshot: InventorySnapshot | None) -> tuple[InventoryEntry, ...]:
+    """Recognize provider LoRAs, including conventional names in metadata-less cloud Echo."""
+    if snapshot is None:
+        return ()
+    return tuple(
+        entry
+        for entry in snapshot.entries
+        if entry.kind == "lora"
+        or (
+            snapshot.backend_id.endswith("cloud")
+            and entry.kind == "unknown"
+            and re.search(r"_lora(?:_[a-z0-9]+)?\.ckpt$", entry.identifier, re.IGNORECASE)
+        )
+    )
 
 
 def eligible_model_ids(snapshot: InventorySnapshot) -> tuple[str, ...]:

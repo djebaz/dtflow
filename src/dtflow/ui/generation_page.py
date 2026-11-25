@@ -38,10 +38,11 @@ from dtflow.core.models import (
     TimeoutPolicy,
     ValidationError,
     eligible_model_ids,
+    listed_loras,
 )
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import dev_enabled
-from dtflow.services.catalogue import Catalogue, FAMILY_LABELS, listed_loras
+from dtflow.services.catalogue import Catalogue, FAMILY_LABELS
 from dtflow.services.catalogue_setup import family_picker_versions, lora_candidates, read_choices
 from dtflow.services.checkpoint_metadata import resolve_checkpoint_metadata
 from dtflow.services.connection import (
@@ -2294,7 +2295,7 @@ class GenerationPage:
             label.setToolTip(self._inventory_error)
             return
         models = len(eligible_model_ids(snapshot))
-        loras = sum(entry.kind == "lora" for entry in snapshot.entries)
+        loras = len(listed_loras(snapshot))
         other = 0
         if dict(snapshot.diagnostics).get("model_metadata") != "present":
             # Metadata-less inventories (direct DT+ cloud) list every file as unknown: count what the catalogue

@@ -33,7 +33,7 @@ def lora_candidates(catalogue, inventory, *, checkpoint, family, domain, include
     entries = (
         catalogue.compatible_loras(checkpoint, domain=domain, include_unavailable=include_cloud)
         if versions and model is not None and model.base_model is not None
-        else None
+        else catalogue.view().loras
     )
     return entries, versions
 
