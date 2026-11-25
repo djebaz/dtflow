@@ -63,6 +63,9 @@ class AdvancedPanel(QObject):
         self.seed_mode.addItems(rules.SEED_MODES)
         self.tiled.setCheckState(Qt.CheckState.PartiallyChecked)
         self._applies = True
+        self._first_pass_seen = {self.first_width: 0, self.first_height: 0}
+        for spin in self._first_pass_seen:
+            spin.valueChanged.connect(lambda value, spin=spin: self._snap_first_pass(spin, value))
         self.toggle.toggled.connect(self._show)
         self.hires.toggled.connect(self._hires_toggled)
         for signal in (
@@ -85,6 +88,21 @@ class AdvancedPanel(QObject):
         self.contents.setVisible(shown)
         self.toggle.setText("Hide" if shown else "Show")
         self.toggle.setAccessibleName("Hide advanced settings" if shown else "Show advanced settings")
+
+    def _snap_first_pass(self, spin: QSpinBox, value: int) -> None:
+        """Auto (0), then 128 and up in 64 steps: a click or typed value in between lands on a size the provider accepts."""
+        previous = self._first_pass_seen[spin]
+        snapped = value
+        if value:
+            snapped = max(
+                rules.FIRST_PASS_MIN,
+                min(2048, (value + rules.DIMENSION_STEP // 2) // rules.DIMENSION_STEP * rules.DIMENSION_STEP),
+            )
+            if value < rules.FIRST_PASS_MIN and previous >= rules.FIRST_PASS_MIN:
+                snapped = 0  # stepping down from the smallest size returns to Auto
+        self._first_pass_seen[spin] = snapped
+        if snapped != value:
+            spin.setValue(snapped)
 
     def _hires_toggled(self, on: bool) -> None:
         if on and self.factor.value() <= rules.HIRES_MIN_FACTOR:
