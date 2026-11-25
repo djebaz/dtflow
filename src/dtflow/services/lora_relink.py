@@ -214,11 +214,13 @@ async def resolve_preset_names(
     for item in choices:
         historical_names.setdefault((item.sha256, item.size), {item.sha256}).add(item.identifier)
 
+    # Cloud dispatch requires each prepared LoRA's own exact architecture.
     pool = tuple(
         item
         for item in newest_per_name(choices, current)
         if (item.receipt_id, item.identifier) in confirmed
         and current.get(item.identifier, (item.sha256, item.size)) == (item.sha256, item.size)
+        and item.family is not None
     )
     evidence = RelinkEvidence(
         pool=pool,
