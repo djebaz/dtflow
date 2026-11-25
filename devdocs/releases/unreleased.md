@@ -6,13 +6,14 @@ Changes through 6.5.5 are consolidated in [DTFlow 6.5.5](v6.5.5.md). The publish
 
 ## Added
 
+- Queues carry the chosen advanced settings: queue templates and queued items keep them, and the queue draft summary and the item panel show them. Templates saved before the settings existed load as before.
+
 - Generate has a collapsed **Advanced** section for text-to-image: Hires Fix (Size stays the final output; the first pass is shown before you generate), seed mode and tiled decoding. The section also applies to Inpaint and image edits; seed mode and tiled decoding apply to the Controlnet pose (not Hires Fix), and seed mode to video. Chosen values are sent, saved with the result and restored by Reuse settings and configuration files. Nothing is sent unless you choose it, and DT+ may still ignore a setting for a checkpoint it does not suit.
 
 ## Changed
 
 ## Fixed
 
-- Queue templates saved by earlier versions keep loading after advanced settings were added; new templates, queue items and the item panel carry and show the chosen advanced values.
 
 ## Upgrade and compatibility
 
