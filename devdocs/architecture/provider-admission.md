@@ -26,6 +26,8 @@ queues, Scripts and Workflows.
 - Script and Workflow child generations, automatic retries and a video returning from its local-resource wait **wait in
   rank order** (`acquire`). Queues rank by start order (older first); a manual class (`PRIORITY_MANUAL`) sorts before
   them (see below).
+  At the open-call cap, only already-admitted calls can take freed slots. Returning calls keep their rank order
+  so they can finish and release capacity for new calls.
 - Up next queues stay reorderable until they start. The next one starts early when every live queue is open, the newest
   one is still running and the pool has capacity nobody wants (`spare`: a free slot, no waiting call, no ready queue). A
   queue that has work but cannot use a slot (repairing assets, a Script/Workflow at its child limit) does not count as
@@ -94,6 +96,7 @@ text stays in `backend.api_failed`. Quota exhaustion is never inferred.
 
 ## Limits
 
+- A claim that raises before creating the item task releases its provider permit so surviving queues can use it.
 - The slot is taken at claim, so a short preparation (preflight, asset check) holds it; first-use asset uploads are
   resolved before the queue's first claim. The buffer budget is widened with the open-call cap, so DT+ text-to-image
   never waits on it; a larger image edit can wait for budget while holding its slot, which is accepted rather than

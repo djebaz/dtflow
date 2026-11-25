@@ -169,15 +169,26 @@ class ProviderPool:
         return granted
 
     def _grant(self) -> None:
-        while self._waiters:
+        while self._waiters and self._free(new=False):
             rank, _, future, permit = self._waiters[0]
             if future.done():
                 heapq.heappop(self._waiters)
                 continue
-            hungry = min(self._hungry, default=None)
-            if not self._free(new=permit is None) or (hungry is not None and hungry < rank):
-                break
-            heapq.heappop(self._waiters)
+            if self.open >= self.limit * OVERLAP:
+                # Only admitted calls can use the slot until an open call closes. Keep their rank order
+                # even when a higher-ranked new call is at the head of the heap.
+                returning = min(
+                    (entry for entry in self._waiters if entry[3] is not None and not entry[2].done()),
+                    default=None,
+                )
+                if returning is None:
+                    break
+                _, _, future, permit = returning
+            else:
+                hungry = min(self._hungry, default=None)
+                if hungry is not None and hungry < rank:
+                    break
+                heapq.heappop(self._waiters)
             self.active += 1
             if permit is None:
                 self.open += 1

@@ -126,25 +126,24 @@ class LoraStore:
     def _read_recovering(self) -> list[dict]:
         """Read the index under the store lock, first restoring a file a killed case-only rename left half-moved.
 
-        ``.<id>.rename`` is the temporary name of an in-place rename; when the index still names a file that is
-        missing, the temporary one is that file, so it goes back under its indexed name (nothing is lost).
+        ``.<id>.rename`` is the temporary name of an in-place rename. Restore it to a missing indexed path
+        only when the recorded size and checksum match.
         """
         files = self._read()
         try:
-            leftovers = [p for p in self.directory.glob(".*.rename") if p.is_file()]
+            leftovers = [p for p in self.directory.glob(".*.rename") if not p.is_symlink() and p.is_file()]
         except OSError:
             return files
         for temporary in leftovers:
             try:
                 size = temporary.stat().st_size
-                owner = next(
-                    (
-                        item
-                        for item in files
-                        if item.get("size") == size and not self._path(item).exists() and item.get("name")
-                    ),
-                    None,
-                )
+                candidates = [item for item in files if item.get("size") == size and not self._path(item).exists()]
+                if not candidates:
+                    continue
+                digest, measured_size = _hash(temporary)
+                if measured_size != size:
+                    continue
+                owner = next((item for item in candidates if item.get("sha256") == digest), None)
                 if owner is not None:
                     os.replace(temporary, self._path(owner))
                     diagnostic_event(log, "assets.retained_rename_recovered", level=logging.WARNING, data={})

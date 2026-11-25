@@ -1188,14 +1188,16 @@ def _reconcile_script_item(db: sqlite3.Connection, item, record: dict, now: str)
 
 
 def _reconcile_workflow_item(db: sqlite3.Connection, item, record: dict, now: str) -> None:
-    """A reserved workflow item is never resumed or replayed: ``unknown`` if a step was running (it may have been
-    submitted) or already unknown, otherwise ``failed``; its run state records the same."""
+    """Settle a reserved workflow item from its saved result or record the interruption of an unfinished run."""
     try:
-        record["run"] = interrupted_run(record["run"])
-        state, failure_json = workflow_outcome(record["run"])
-        if state != "unknown":
+        run = record["run"]
+        finished = run.get("state") in ("succeeded", "partial", "failed", "cancelled", "unknown")
+        if not finished:
+            run = record["run"] = interrupted_run(run)
+        state, failure_json = workflow_outcome(run)
+        if not finished and state != "unknown":
             state = "failed"
-            failure_json = json.dumps({"code": "workflow_interrupted", "message": record["run"]["message"]})
+            failure_json = json.dumps({"code": "workflow_interrupted", "message": run["message"]})
         stored = json.dumps(record, allow_nan=False)
     except Exception:
         state, failure_json, stored = (

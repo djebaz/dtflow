@@ -8,6 +8,7 @@ closed ``.part`` file before it is renamed (so the caller needs no second hashin
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 import sqlite3
 import struct
@@ -18,6 +19,8 @@ import numpy as np
 
 from dtflow.services.lora_convert.context import ConversionContext
 from dtflow.services.lora_convert.errors import ConversionCancelled, DestinationError
+
+log = logging.getLogger(__name__)
 
 # ccv flags as stored in the tensors table (see inspect_ckpt.py for the datatype list).
 DATATYPE_F16 = 0x20000
@@ -81,17 +84,25 @@ def write_ckpt(path: Path, tensors: dict[str, np.ndarray], ctx: ConversionContex
         if ctx is not None:
             ctx.check_cancel()
         sha256, size = _sha256_file(tmp), tmp.stat().st_size
-        if path.exists():  # appeared while we were writing: never overwrite
-            raise DestinationError(f"{path} already exists; refusing to overwrite.")
-        tmp.rename(path)  # fails on Windows if the target exists; on POSIX it was checked above
+        if os.name == "nt":
+            tmp.rename(path)  # Windows rename fails if the destination exists.
+        else:
+            os.link(tmp, path)  # Publish the completed file atomically and exclusively.
         done = True
         return sha256, size
     except ConversionCancelled:
         raise
+    except FileExistsError as error:
+        raise DestinationError(f"{path} already exists; refusing to overwrite.") from error
     except OSError as error:
         raise DestinationError(f"Cannot write {path}: {error}") from error
     except sqlite3.Error as error:
         raise DestinationError(f"Cannot write {path}: {error}") from error
     finally:
-        if not done and tmp is not None:
-            tmp.unlink(missing_ok=True)
+        if tmp is not None:
+            try:
+                tmp.unlink(missing_ok=True)
+            except OSError:
+                if not done:
+                    raise
+                log.warning("Could not remove the temporary name after publishing a LoRA checkpoint.")

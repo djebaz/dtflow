@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import sys
 import tempfile
@@ -431,6 +432,8 @@ def main(argv: list[str] | None = None) -> int:
             return 2
     elif args.destination is None:
         ap.error("the following arguments are required: destination")
+    elif not math.isfinite(args.scale):
+        ap.error("--scale must be finite")
     try:
         files, batch = _sources(args.source)
     except (OSError, ValueError) as error:
