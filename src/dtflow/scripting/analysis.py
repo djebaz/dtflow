@@ -13,8 +13,9 @@ from functools import cache
 from pathlib import Path
 
 
-from dtflow.scripting.engine import MAX_SOURCE_BYTES, api_version, engine_versions, shared_script
+from dtflow.scripting.engine import api_version, engine_versions, shared_script
 from dtflow.scripting.hooks import HOOKS, IMPLEMENTED, PLANNED, UNSUPPORTED
+from dtflow.scripting.source import MAX_SOURCE_BYTES, read_source_bytes
 
 _SCOPE = re.compile(r"^(?:const|class|function)\s+([A-Za-z_]\w*)")
 _MEMBER = re.compile(
@@ -121,8 +122,8 @@ def parse_syntax_error(text: str) -> tuple[int, int, str]:
 
 
 def analyze_script(path: Path) -> dict:
-    data = Path(path).read_bytes()
-    return analyze_bytes(data, Path(path).name)
+    path = Path(path)
+    return analyze_bytes(read_source_bytes(path), path.name)
 
 
 def analyze_bytes(data: bytes, name: str) -> dict:

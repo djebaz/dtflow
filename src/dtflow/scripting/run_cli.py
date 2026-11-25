@@ -19,8 +19,8 @@ from pathlib import Path
 from dtflow.core.output_layout import is_metadata_name
 from dtflow.core.models import TimeoutPolicy, ValidationError
 from dtflow.persistence.store import StateBusyError
-from dtflow.scripting.engine import MAX_SOURCE_BYTES
 from dtflow.scripting.runner import check_syntax
+from dtflow.scripting.source import read_source_bytes
 
 
 def read_answers(path: Path | None) -> list[list] | None:
@@ -39,11 +39,11 @@ async def run_script_file(args: argparse.Namespace, *, exit_ok: int, exit_failed
         print("Invalid request: --run needs a script file and an explicit --backend.", file=sys.stderr)
         return exit_invalid
     try:
-        data = Path(args.file).read_bytes()
+        data = read_source_bytes(Path(args.file))
     except OSError as exc:
         print(f"Invalid script file: {type(exc).__name__}: {exc}", file=sys.stderr)
         return exit_invalid
-    if len(data) > MAX_SOURCE_BYTES:
+    except ValueError:
         print("Invalid request: script source is too large.", file=sys.stderr)
         return exit_invalid
     if not 1 <= args.max_generations <= 32:
