@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-import math
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
+from sys import float_info
 from typing import TYPE_CHECKING, Callable, Protocol
 
 if TYPE_CHECKING:
@@ -106,6 +106,11 @@ def integer(value: int, low: int, high: int, field_name: str) -> None:
         raise ValidationError(f"{field_name} must be an integer in {low}..{high}.")
 
 
+def is_finite_number(value: object) -> bool:
+    """Check int and float values without overflowing when converting a large int."""
+    return type(value) in (int, float) and -float_info.max <= value <= float_info.max
+
+
 @dataclass(frozen=True, slots=True)
 class LoRASelection:
     identifier: str
@@ -114,7 +119,7 @@ class LoRASelection:
     def __post_init__(self) -> None:
         if not isinstance(self.identifier, str) or not self.identifier.strip():
             raise ValidationError("LoRA identifier is required.")
-        if type(self.weight) not in (int, float) or not math.isfinite(self.weight):
+        if not is_finite_number(self.weight):
             raise ValidationError("LoRA weight must be finite.")
 
 
@@ -349,7 +354,7 @@ class ResolvedGenerationRequest:
             raise ValidationError("Request v3 requires pose control evidence.")
         if self.operation not in ("txt2img", "img2img", "inpaint"):
             raise ValidationError("Unsupported image generation operation.")
-        if type(self.strength) not in (int, float) or not math.isfinite(self.strength) or not 0 <= self.strength <= 1:
+        if not is_finite_number(self.strength) or not 0 <= self.strength <= 1:
             raise ValidationError("strength must be finite in 0..1.")
         if self.operation == "txt2img":
             if (self.image_inputs is not None and self.pose_control is None) or self.strength != 1:
@@ -376,7 +381,7 @@ class ResolvedGenerationRequest:
             if value % 64:
                 raise ValidationError(f"{name} must be a multiple of 64.")
         integer(self.steps, 1, 150, "steps")
-        if type(self.guidance) not in (int, float) or not math.isfinite(self.guidance) or not 0 <= self.guidance <= 50:
+        if not is_finite_number(self.guidance) or not 0 <= self.guidance <= 50:
             raise ValidationError("guidance must be finite in 0..50.")
         if not isinstance(self.sampler_id, Sampler):
             raise ValidationError("Unsupported sampler.")
@@ -427,7 +432,7 @@ class TimeoutPolicy:
             value = getattr(self, name)
             if value is None and name == "idle":
                 continue
-            if type(value) not in (int, float) or not math.isfinite(value) or value <= 0:
+            if not is_finite_number(value) or value <= 0:
                 raise ValidationError(f"{name} timeout must be positive and finite.")
 
 
@@ -654,9 +659,7 @@ class GenerationResult:
         if not isinstance(self.warnings, tuple) or any(not isinstance(x, str) for x in self.warnings):
             raise ValidationError("Warnings must be immutable strings.")
         if self.backend_elapsed_seconds is not None and (
-            type(self.backend_elapsed_seconds) not in (int, float)
-            or not math.isfinite(self.backend_elapsed_seconds)
-            or self.backend_elapsed_seconds < 0
+            not is_finite_number(self.backend_elapsed_seconds) or self.backend_elapsed_seconds < 0
         ):
             raise ValidationError("Backend elapsed time must be finite and nonnegative.")
 

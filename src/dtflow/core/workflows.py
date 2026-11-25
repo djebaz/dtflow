@@ -20,14 +20,20 @@ Rules (audit 10.7/10.8, owner decisions D1-D8):
 
 from __future__ import annotations
 
-import sys
 from collections.abc import Mapping
 import uuid
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import uuid4
 
-from dtflow.core.models import SEED_LIMIT, LoRASelection, ResolvedGenerationRequest, Sampler, ValidationError
+from dtflow.core.models import (
+    SEED_LIMIT,
+    LoRASelection,
+    ResolvedGenerationRequest,
+    Sampler,
+    ValidationError,
+    is_finite_number,
+)
 
 SCHEMA = "dtflow-workflow"
 CONTRACT_VERSION = 1
@@ -381,11 +387,6 @@ class Graph:
         return notes
 
 
-def _finite_number(value: object) -> bool:
-    # Comparing an int with these bounds avoids an overflowing conversion to float.
-    return type(value) in (int, float) and -sys.float_info.max <= value <= sys.float_info.max
-
-
 def check_param(param: Param, value: object, where: str = "", *, draft: bool = False) -> object:
     """Return the value when it fits ``param`` exactly; raise WorkflowError otherwise. Never clamps or coerces.
 
@@ -429,7 +430,7 @@ def check_param(param: Param, value: object, where: str = "", *, draft: bool = F
             raise WorkflowError(f"{label} must be a multiple of {param.step:g}; got {value}.")
         return value
     if param.kind == "float":
-        if not _finite_number(value):
+        if not is_finite_number(value):
             raise WorkflowError(f"{label} must be a number.")
         if not param.minimum <= value <= param.maximum:
             raise WorkflowError(f"{label} must be between {param.minimum:g} and {param.maximum:g}; got {value}.")
@@ -447,7 +448,7 @@ def check_param(param: Param, value: object, where: str = "", *, draft: bool = F
             if name in seen:
                 raise WorkflowError(f"{label}: {name} is listed twice.")
             seen.add(name)
-            if not _finite_number(weight):
+            if not is_finite_number(weight):
                 raise WorkflowError(f"{label}[{index}] weight must be a number.")
             if not param.minimum <= weight <= param.maximum:
                 raise WorkflowError(
@@ -483,7 +484,7 @@ def _concurrency(value: object, label: str) -> int | None:
 
 def validate_face_expansion(value: object, label: str) -> float:
     """Validate the source-box width/height scale, stored in tenths."""
-    if not _finite_number(value):
+    if not is_finite_number(value):
         raise WorkflowError(f"{label} must be a number.")
     if not FACE_EXPANSION_MIN <= value <= FACE_EXPANSION_MAX or abs(value * 10 - round(value * 10)) > 1e-6:
         raise WorkflowError(f"{label} must be from 1.0 to 2.5 in steps of 0.1.")
@@ -592,7 +593,7 @@ def node_limit(graph: Graph, node: GraphNode, backend: str, defaults: dict[str, 
 
 
 def _pair(value: object, label: str) -> tuple[float, float]:
-    if not (isinstance(value, list) and len(value) == 2 and all(_finite_number(v) for v in value)):
+    if not (isinstance(value, list) and len(value) == 2 and all(is_finite_number(v) for v in value)):
         raise WorkflowError(f"{label} must be a [x, y] number pair.")
     return float(value[0]), float(value[1])
 
