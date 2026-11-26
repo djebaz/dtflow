@@ -600,9 +600,11 @@ def pose_request(
 
 
 def _require_pose_family(state: Path, model_id: str, *, control_checkpoint: str | None = None) -> None:
-    """Check production pose families, or the explicitly selected CLI-only SDXL Base 1.0 probe."""
+    """Check production pose families or explicitly selected CLI-only SDXL and SD 1.5 probes."""
     from dtflow.core.pose import (
         POSE_FAMILY_LABEL,
+        SD15_POSE_PROBE_CONTROL,
+        SD15_POSE_PROBE_MODEL,
         SDXL_CANNY_PROBE_CONTROL,
         SDXL_POSE_PROBE_CONTROL,
         SDXL_POSE_PROBE_MODELS,
@@ -610,6 +612,10 @@ def _require_pose_family(state: Path, model_id: str, *, control_checkpoint: str 
     )
     from dtflow.services.catalogue import Catalogue
 
+    if control_checkpoint == SD15_POSE_PROBE_CONTROL:
+        if model_id != SD15_POSE_PROBE_MODEL:
+            raise ValidationError("The SD 1.5 pose probe requires Stable Diffusion v1.5 F16.")
+        return
     if control_checkpoint in (SDXL_POSE_PROBE_CONTROL, SDXL_CANNY_PROBE_CONTROL):
         if model_id not in SDXL_POSE_PROBE_MODELS:
             raise ValidationError("The SDXL control probe requires an SDXL Base 1.0 F16 or Q6P/Q8P checkpoint.")
