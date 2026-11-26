@@ -481,7 +481,9 @@ def fit_control_map(content, evidence: dict, input_type: str, width: int, height
     if input_type == "canny":
         fitted = image.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.LANCZOS)
         canvas = Image.new("RGB", (width, height), "black")
-        if evidence.get("origin") == "canny_photo":
+        # A photo until edges are found once; a recorded map (map_sha256 present, from records before the origin
+        # was rewritten) already holds the edges and is fitted as a map.
+        if evidence.get("origin") == "canny_photo" and "map_sha256" not in evidence:
             try:
                 import cv2
             except ImportError as exc:
@@ -494,6 +496,8 @@ def fit_control_map(content, evidence: dict, input_type: str, width: int, height
             edges = cv2.Canny(gray, 100, 200)
             canvas.paste(Image.fromarray(edges).convert("RGB"), (fit.left, fit.top))
             evidence.update({"canny_low": "100", "canny_high": "200", "opencv_version": cv2.__version__})
+            # The returned (recorded) evidence describes the extracted map, so no later fit extracts edges again.
+            evidence.update({"origin": "prepared_canny_map", "source_origin": "canny_photo"})
             preparation = "aspect_fit_canny_before_black_padding"
         else:
             canvas.paste(fitted.convert("RGB"), (fit.left, fit.top))

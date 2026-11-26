@@ -26,6 +26,7 @@ from PySide6.QtGui import QDesktopServices, QIcon, QStandardItem, QStandardItemM
 from PySide6.QtWidgets import QApplication, QFormLayout, QListWidgetItem, QMenu, QPlainTextEdit, QWidget
 
 from dtflow.core.models import BackendEvent, Designation, LoRASelection, ValidationError
+from dtflow.core.pose import INPUT_LABELS
 from dtflow.core.advanced import scope_for, summary as advanced_summary
 from dtflow.core.request_records import request_from_record
 from dtflow.diagnostics import event as diagnostic_event
@@ -2284,7 +2285,7 @@ class QueuePage:
         pose = self._draft_job.control if isinstance(self._draft_job, PoseJob) else request.pose_control
         if pose is not None:
             parts.append(
-                f"Pose · {pose.checkpoint} · strength {pose.strength:g} · {pose.control_mode} "
+                f"{INPUT_LABELS.get(pose.input_type, pose.input_type)} · {pose.checkpoint} · strength {pose.strength:g} · {pose.control_mode} "
                 f"· {pose.guidance_start:g}–{pose.guidance_end:g}"
             )
         elif self._draft_job is not None:

@@ -16,10 +16,12 @@ from dtflow.core.image_inputs import ImageContent, ImageInputSnapshot
 from dtflow.core.pose import (
     INPUT_LABELS,
     POSE_FAMILY_LABEL,
+    RETIRED_CONTROL_NOTE,
     PoseControl,
     desktop_admits,
     desktop_control,
     desktop_controls,
+    desktop_offer_problem,
     retired_controls,
 )
 from dtflow.core.tasks import settle
@@ -48,9 +50,7 @@ NO_BACKEND = "Controlnet needs DT+ Cloud. Choose DT+ Cloud under Provider."
 NO_CHECKPOINT = (
     f"Controlnet needs a {POSE_FAMILY_LABEL} checkpoint that a desktop control supports; the selected one is not."
 )
-UNVERIFIED_CHECKPOINT = "Not verified with this checkpoint: the owner runs used {models}."
 IMAGE_FILTER = "Images (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.bmp)"
-RETIRED_CONTROL_NOTE = "The saved control, Union Pro 1.0, is retired. Choose Union Pro 2.0 to continue."
 # What a prepared map of each type looks like; a pose map is drawn as OpenPose limbs on black.
 MAP_HINTS = {
     "pose": "An OpenPose body map: black background, coloured limbs. Used as it is; nothing is detected.",
@@ -74,28 +74,12 @@ def control_choices(
         return ()
     listed = {entry.identifier for entry in snapshot.entries}
     return tuple(
-        PoseControlChoice(c.label, c.verified, c.checkpoint, c.inputs, c.evidence, c.verified_models)
+        PoseControlChoice(c.label, c.checkpoint, c.inputs)
         for c in desktop_controls()
         if c.checkpoint in listed
         and desktop_admits(c, model, base_model, modes)
         and (input_type is None or input_type in c.inputs)
     )
-
-
-def control_problem(checkpoint: str, input_type: str, model_id: str, base_model=None, modes=None) -> str:
-    """Why the desktop table does not admit this control and type with this checkpoint; empty when it does. The one
-    check shared by Generate and the queue composer; retired controls get their own note."""
-    if checkpoint in retired_controls():
-        return RETIRED_CONTROL_NOTE
-    control = desktop_control(checkpoint)
-    label = INPUT_LABELS.get(input_type, input_type)
-    if control is None:
-        return "This control is not offered in the desktop. Choose another control."
-    if input_type not in control.inputs:
-        return f"{control.label} does not offer {label}. Choose another control or control type."
-    if not desktop_admits(control, model_id, base_model, modes):
-        return f"{control.label} is not offered with this checkpoint. Choose another control or checkpoint."
-    return ""
 
 
 def input_choices(model, base_model=None, modes=None) -> tuple[str, ...]:
@@ -116,11 +100,8 @@ class PoseJob:
 @dataclass(frozen=True, slots=True)
 class PoseControlChoice:
     label: str
-    verified: bool
     checkpoint: str = ""
     inputs: tuple[str, ...] = ("pose",)
-    evidence: str = ""
-    verified_models: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -147,8 +128,8 @@ class PoseView:
     map_note: str = ""
     extraction_error: str = ""
     controls: tuple[PoseControlChoice, ...] = (
-        PoseControlChoice("Union Pro 2.0 q5p", True),
-        PoseControlChoice("Union Pro 2.0 q8p", False),
+        PoseControlChoice("Union Pro 2.0 q5p"),
+        PoseControlChoice("Union Pro 2.0 q8p"),
     )
     control_index: int = 0
     input_type: str = "pose"
@@ -194,6 +175,9 @@ class ControlnetEditor(QObject):
         self._generate_visible = False  # the legacy generationPage stays hidden in the workspace shell
         self._pending_person = None
         self._strength = 0.7
+        # The (control, type) the strength, force and range belong to: a new pick or an explicit switch to another
+        # control or type starts from that pair's defaults; restored or saved values set it without defaults.
+        self._settings_key = "fresh"
         self._notice = ""
         file = QFile(str(Path(__file__).with_name("forms") / "controlnet_editor.ui"))
         if not file.open(QIODevice.OpenModeFlag.ReadOnly):
@@ -434,7 +418,7 @@ class ControlnetEditor(QObject):
         form.poseControlCombo.blockSignals(True)
         form.poseControlCombo.clear()
         for choice in view.controls:
-            form.poseControlCombo.addItem(f"{choice.label} · {'verified' if choice.verified else 'not verified'}")
+            form.poseControlCombo.addItem(choice.label)
         form.poseControlCombo.setCurrentIndex(view.control_index if view.controls else -1)
         form.poseControlCombo.blockSignals(False)
         form.poseControlCombo.setEnabled(bool(view.controls))
@@ -447,7 +431,7 @@ class ControlnetEditor(QObject):
                 "without one."
             )
         else:
-            note = chosen.evidence
+            note = f"{chosen.checkpoint}. Tested combinations are listed in the desktop guide."
         form.poseControlCombo.setToolTip(note)
         form.poseStrengthSpin.blockSignals(True)
         form.poseStrengthSpin.setValue(view.strength)
@@ -580,15 +564,7 @@ class ControlnetEditor(QObject):
         return ""
 
     def _notice_text(self):
-        choice = self._choice()
-        model = self._checkpoint()[0]
-        unverified = ""
-        if choice is not None and choice.verified_models and model not in choice.verified_models:
-            names = ", ".join(name.removesuffix(".ckpt") for name in choice.verified_models)
-            unverified = UNVERIFIED_CHECKPOINT.format(models=names)
-        elif choice is not None and not choice.verified:
-            unverified = choice.evidence
-        return " ".join(text for text in (CONSENT if self._backend() == "cloud" else "", unverified) if text)
+        return CONSENT if self._backend() == "cloud" else ""
 
     def refresh(self, *_):
         """Rebuild the presentation from the editor's state; the single place the widgets are driven from."""
@@ -638,15 +614,15 @@ class ControlnetEditor(QObject):
             input_type,
         )
 
-    def queue_control_problem(self, model_id: str, checkpoint: str, input_type: str) -> str:
-        """Why a queue draft or template may not use this control with this checkpoint and type; empty when it may.
-        Uses the bundled desktop table and the catalogue only, never the inventory (#636 review S2)."""
+    def offer_problem(self, model_id: str, checkpoint: str, input_type: str) -> str:
+        """The desktop table check (``desktop_offer_problem``) with this checkpoint's catalogue family: Gallery restore,
+        queue drafts and template save. The bundled table and catalogue only, never the inventory."""
         entry = (
             self.controller._catalogue.checkpoint(model_id, include_unavailable=True)
             if self.controller is not None and model_id
             else None
         )
-        return control_problem(
+        return desktop_offer_problem(
             checkpoint, input_type, model_id, entry.base_model if entry else None, entry.modes if entry else None
         )
 
@@ -660,16 +636,13 @@ class ControlnetEditor(QObject):
         ):
             self._wanted_control = None  # a malformed remembered value never blocks Generate
         model, base_model, modes = self._checkpoint()
-        wanted = desktop_control(self._wanted_control) if self._wanted_control else None
-        known = base_model is not None or (wanted is not None and wanted.models is not None)  # catalogue loaded
         if (
-            wanted is not None
-            and model
-            and known
-            and control_problem(wanted.checkpoint, self._input_type, model, base_model, modes)
+            desktop_control(self._wanted_control)
+            and base_model is not None  # judged once the catalogue knows the checkpoint
+            and desktop_offer_problem(self._wanted_control, self._input_type, model, base_model, modes)
         ):
-            # The hold keeps a recorded control the inventory does not list; it is not for a control the user's own
-            # change of checkpoint or type made inapplicable (#636 review S1). Retired controls keep their hold.
+            # The hold keeps a saved control the inventory does not list. A change of checkpoint or type that the
+            # control does not offer releases it, and the first offered control with its defaults follows (S1).
             self._wanted_control = None
         chosen = self._wanted_control or (self._controls[self._control_index].checkpoint if self._controls else None)
         self._inputs = input_choices(model, base_model, modes)
@@ -677,7 +650,27 @@ class ControlnetEditor(QObject):
             self.controller._inventory_snapshot, model, base_model, modes, self._input_type
         )
         self._control_index = next((i for i, c in enumerate(self._controls) if c.checkpoint == chosen), 0)
+        self._follow_defaults()
         self.refresh()
+
+    def _follow_defaults(self):
+        """Start a new (control, type) pair from its table defaults; the pair restored values belong to keeps them."""
+        choice = self._choice()
+        if choice is None:
+            return
+        key = (choice.checkpoint, self._input_type)
+        if key == self._settings_key:
+            return
+        self._settings_key = key
+        control = desktop_control(choice.checkpoint)
+        info = control.defaults(self._input_type) if control is not None else None
+        if info is None:
+            return
+        self._strength = info.strength
+        self.form.poseStrengthSpin.blockSignals(True)
+        self.form.poseStrengthSpin.setValue(info.strength)
+        self.form.poseStrengthSpin.blockSignals(False)
+        self._set_range(info.control_mode, info.guidance_start, info.guidance_end)
 
     def _input_changed(self, index):
         """A new control type needs a map of that type: a photo is prepared again, a map of another type is cleared."""
@@ -702,6 +695,7 @@ class ControlnetEditor(QObject):
         if 0 <= index < len(self._controls):
             self._control_index = index
             self._wanted_control = self._controls[index].checkpoint  # the user's last pick wins over a restored one
+            self._follow_defaults()
             self.refresh()
 
     def _set_range(self, mode, start, end):
@@ -1118,6 +1112,8 @@ class ControlnetEditor(QObject):
         input_type = document.get("input_type")
         if input_type in INPUT_LABELS:
             self._input_type = input_type
+        if isinstance(control, str):
+            self._settings_key = (control, self._input_type)  # the saved values belong to the saved control
         person = document.get("person")
         self._pending_person = person if type(person) is int and person >= 0 else None
         # Restore preferences now, but postpone source I/O and ONNX detection until ControlNet is visible.
@@ -1127,21 +1123,18 @@ class ControlnetEditor(QObject):
             self.page.controlnetModeButton.setChecked(True)
 
     def restore_problem(self, document):
-        """Refuse controls and types the desktop does not offer before modifying the form. Checked against the
-        bundled control table, never the live inventory, so a record restores offline or with Local selected. A
-        retired Union Pro 1.0 pose record restores as recorded and Generate waits for an explicit replacement."""
+        """Refuse what desktop Controlnet does not offer before modifying the form, with the same table check as the
+        lists and queues; never the live inventory, so a record restores offline or with Local selected. A retired
+        Union Pro 1.0 pose record restores as recorded and Generate waits for an explicit replacement."""
         pose = document.get("pose_control")
         if not isinstance(pose, dict):
             return "This saved control type is not supported in desktop Controlnet."
         checkpoint, input_type = pose.get("checkpoint"), pose.get("input_type", "pose")
-        control = desktop_control(checkpoint)
         if checkpoint in retired_controls():
             if input_type != "pose":
                 return "This saved control type is not supported in desktop Controlnet."
-        elif control is None:
-            return "The saved control checkpoint is not supported in desktop Controlnet."
-        elif input_type not in control.inputs:
-            return f"The saved control type ({input_type}) is not offered with this control in desktop Controlnet."
+        elif problem := self.offer_problem(str(document.get("model_id") or ""), checkpoint, input_type):
+            return f"These settings cannot be loaded: {problem}"
         if not document.get("image_inputs"):
             return "The saved control map is missing."
         return ""
@@ -1187,15 +1180,13 @@ class ControlnetEditor(QObject):
             self._source_pixmap = self._pixmap(content)
             self._filename = f"Retained map\n{content.width} × {content.height} · restored from the saved image"
             self._map_evidence = {str(k): str(v) for k, v in pose.get("evidence", ())}
-            if self._input_type == "canny" and self._map_evidence.get("origin") == "canny_photo":
-                # The retained map already holds the edges; fitting must not detect edges in it again.
-                self._map_evidence["origin"] = "retained_canny_map"
             self._strength = float(pose["strength"])
             start, end = pose.get("guidance_start"), pose.get("guidance_end")
             self._set_range(
                 pose.get("control_mode") or "Balanced", 0.0 if start is None else start, 1.0 if end is None else end
             )
             self._wanted_control = pose["checkpoint"]
+            self._settings_key = (pose["checkpoint"], self._input_type)  # recorded values, never table defaults
             self.refresh_controls()
             self._schedule_refit()
 

@@ -495,7 +495,7 @@ class MainWindow:
             generate_hook=self._show_generation,
             reuse_hook=self._reuse_queue_request,
             pose_controls_source=lambda model, kind: self.generation.controlnet.queue_control_choices(model, kind),
-            pose_control_problem=lambda model, checkpoint, kind: self.generation.controlnet.queue_control_problem(
+            pose_control_problem=lambda model, checkpoint, kind: self.generation.controlnet.offer_problem(
                 model, checkpoint, kind
             ),
             activity=self.activity,

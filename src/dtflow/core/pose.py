@@ -73,20 +73,34 @@ INPUT_LABELS = {"pose": "Pose", "canny": "Canny", "depth": "Depth", "seg": "Segm
 
 
 @dataclass(frozen=True, slots=True)
-class DesktopControl:
-    """One control the desktop offers (#635), read from ``controlnet_desktop.json``: family, input types, evidence.
+class ControlDefaults:
+    """The settings a new pick of a control and input type starts from; never applied to restored or saved values."""
 
-    ``inputs`` lists only the input types with owner-observed DT+ results; ``models`` narrows the family to exact
-    checkpoints when only those were observed; ``verified_models`` are the checkpoints the owner saw work with it."""
+    strength: float
+    guidance_start: float
+    guidance_end: float
+    control_mode: str
+
+
+@dataclass(frozen=True, slots=True)
+class DesktopControl:
+    """One control desktop Controlnet offers (#635), read from ``controlnet_desktop.json``.
+
+    ``types`` are the offered input types with their defaults; ``models`` narrows the family only where a concrete
+    result justifies it (Xinsir: Turbo only). Tested checkpoints are documented, not listed here."""
 
     checkpoint: str
     label: str
     family: str
-    inputs: tuple[str, ...]
-    verified: bool
-    verified_models: tuple[str, ...]
-    evidence: str
+    types: tuple[tuple[str, ControlDefaults], ...]
     models: tuple[str, ...] | None = None
+
+    @property
+    def inputs(self) -> tuple[str, ...]:
+        return tuple(kind for kind, _ in self.types)
+
+    def defaults(self, input_type: str) -> ControlDefaults | None:
+        return next((values for kind, values in self.types if kind == input_type), None)
 
 
 _DESKTOP_DATASET = Path(__file__).parents[1] / "resources" / "catalogue" / "controlnet_desktop.json"
@@ -110,10 +124,10 @@ def _load_desktop_controls() -> tuple[tuple[DesktopControl, ...], frozenset[str]
             checkpoint=item["checkpoint"],
             label=item["label"],
             family=item["family"],
-            inputs=tuple(item["inputs"]),
-            verified=bool(item["verified"]),
-            verified_models=tuple(item.get("verified_models", ())),
-            evidence=item.get("evidence", ""),
+            types=tuple(
+                (kind, ControlDefaults(float(v[0]), float(v[1]), float(v[2]), v[3]))
+                for kind, v in item["types"].items()
+            ),
             models=tuple(item["models"]) if item.get("models") is not None else None,
         )
         families = {family for family, _ in POSE_FAMILIES}
@@ -121,6 +135,12 @@ def _load_desktop_controls() -> tuple[tuple[DesktopControl, ...], frozenset[str]
             control.family not in families
             or not control.inputs
             or any(kind not in INPUT_LABELS or not _encodable(control.checkpoint, kind) for kind in control.inputs)
+            or any(
+                values.control_mode not in CONTROL_MODES
+                or not 0 < values.strength <= 2
+                or not 0 <= values.guidance_start < values.guidance_end <= 1
+                for _, values in control.types
+            )
         ):
             raise ValueError(f"controlnet_desktop.json: {control.checkpoint} has no supported family or encoding.")
         controls.append(control)
@@ -145,13 +165,36 @@ def desktop_control(checkpoint: str | None) -> DesktopControl | None:
 
 
 def desktop_admits(control: DesktopControl, model_id: str, base_model: str | None, modes=None) -> bool:
-    """Whether the desktop offers ``control`` with this checkpoint: its exact models, or its catalogue family (SD 1.x
-    text-to-image checkpoints only, as the session requires)."""
-    if control.models is not None:
-        return model_id in control.models
+    """Whether the desktop offers ``control`` with this checkpoint: its catalogue family (SD 1.x text-to-image only),
+    narrowed by the table's ``models`` and by the checkpoints the request encoding accepts (``probe_models``)."""
+    for allowed in (control.models, probe_models(control.checkpoint)):
+        if allowed is not None and model_id not in allowed:
+            return False
     if control.family == "sd_1" and modes is not None and "t2i" not in modes:
         return False
     return supports_pose(model_id, base_model, families=(control.family,))
+
+
+RETIRED_CONTROL_NOTE = "The saved control, Union Pro 1.0, is retired. Choose Union Pro 2.0 to continue."
+
+
+def desktop_offer_problem(checkpoint, input_type: str, model_id: str, base_model=None, modes=None) -> str:
+    """Why the desktop table does not offer this control and type with this checkpoint; empty when it does.
+
+    The one check behind the editor lists, Gallery restore, queue drafts (every model of the plan) and template save.
+    The CLI and existing durable queues keep the probe rules (``session._require_pose_family``)."""
+    if checkpoint in retired_controls():
+        return RETIRED_CONTROL_NOTE
+    control = desktop_control(checkpoint)
+    label = INPUT_LABELS.get(input_type, str(input_type))
+    if control is None:
+        return "This control is not offered in desktop Controlnet. Choose another control."
+    if input_type not in control.inputs:
+        return f"{control.label} does not offer {label}. Choose another control or control type."
+    if not desktop_admits(control, model_id, base_model, modes):
+        name = model_id.removesuffix(".ckpt") or "this checkpoint"
+        return f"{control.label} is not offered with {name}. Choose another control or checkpoint."
+    return ""
 
 
 def supports_pose(model_id: str, base_model: str | None = None, *, families: tuple[str, ...] | None = None) -> bool:

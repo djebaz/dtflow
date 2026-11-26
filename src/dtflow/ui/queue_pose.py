@@ -11,7 +11,7 @@ from PySide6.QtUiTools import QUiLoader
 from dtflow.core.models import ValidationError
 from dtflow.core.pose import CONTROL_MODES, INPUT_LABELS, retired_controls
 from dtflow.core.tasks import settle
-from dtflow.ui.controlnet_editor import IMAGE_FILTER, RETIRED_CONTROL_NOTE, PoseJob
+from dtflow.ui.controlnet_editor import IMAGE_FILTER, PoseJob
 from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.ui.generation_presenter import FormError
 from dtflow.ui.inline_feedback import feedback
@@ -115,7 +115,8 @@ class QueuePoseEditor(QObject):
             combo.setCurrentIndex(combo.findData(control.checkpoint))
             del blocker
         form.setEnabled(not self._busy and not q._runner.closed)
-        form.replaceQueuePoseButton.setText("Preparing map…" if self._busy else "Replace pose map…")
+        form.queuePoseTitle.setText(f"Controlnet · {INPUT_LABELS.get(control.input_type, control.input_type)}")
+        form.replaceQueuePoseButton.setText("Preparing map…" if self._busy else "Replace map…")
         form.queuePoseError.setText(self._error)
         form.queuePoseError.setVisible(bool(self._error))
         if not form.isVisible() or q._runner.closed:
@@ -161,13 +162,17 @@ class QueuePoseEditor(QObject):
         if self._busy:
             raise FormError("Wait for the replacement pose map to finish preparing.", None)
         control = self._read_control()  # Invalid in-progress text must never queue/save the previous valid settings.
-        if control is not None and control.checkpoint in retired_controls():
-            # Existing queues keep their exact request; a new queue or template needs an explicit replacement (#635).
-            raise FormError(RETIRED_CONTROL_NOTE, None)
-        if control is not None:
-            # A new queue or template uses only what the desktop table admits for the draft's checkpoint (#636 S2).
-            problem = self._control_problem(self.queue._draft[0].model_id, control.checkpoint, control.input_type)
-            if problem:
+        if control is None:
+            return
+        # A new queue or template uses what desktop Controlnet offers for every model it would run: the draft's and
+        # each one listed in the plan (S2, S3). A retired control needs an explicit replacement (#635). Existing
+        # queues and Retry keep their exact request.
+        form = self.queue._plan_form()
+        models = [self.queue._draft[0].model_id]
+        if form.mode != "Repeat":
+            models += [name.strip() for name in form.models.split(";") if name.strip()]
+        for model in dict.fromkeys(models):
+            if problem := self._control_problem(model, control.checkpoint, control.input_type):
                 raise FormError(problem, None)
 
     def _changed(self, *_):
