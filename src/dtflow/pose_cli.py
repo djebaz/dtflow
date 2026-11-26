@@ -128,19 +128,26 @@ def prepare_canny_probe(path: Path, width: int, height: int, *, photo: bool):
             ) from exc
         import numpy as np
 
+        # Replicate the source boundary before extracting edges; black photo padding
+        # would introduce a synthetic rectangular contour.
         gray = cv2.cvtColor(np.asarray(fitted.convert("RGB")), cv2.COLOR_RGB2GRAY)
+        gray = cv2.copyMakeBorder(
+            gray, fit.top, height - fit.top - fit.fitted_height,
+            fit.left, width - fit.left - fit.fitted_width, cv2.BORDER_REPLICATE,
+        )
         edges = cv2.Canny(gray, 100, 200)
-        fitted = Image.fromarray(edges).convert("RGB")
+        canvas = Image.fromarray(edges).convert("RGB")
         evidence.update({"canny_low": "100", "canny_high": "200", "opencv_version": cv2.__version__})
     else:
-        fitted = fitted.convert("RGB")
-    canvas = Image.new("RGB", (width, height), "black")
-    canvas.paste(fitted, (fit.left, fit.top))
+        canvas = Image.new("RGB", (width, height), "black")
+        canvas.paste(fitted.convert("RGB"), (fit.left, fit.top))
     if canvas.getbbox() is None:
         raise ValidationError("Canny map is empty; no guidance was submitted.")
     map_content = pixels._content(canvas)
     evidence["map_sha256"] = map_content.sha256
-    evidence["preparation"] = "aspect_fit_black_padding_no_crop"
+    evidence["preparation"] = (
+        "aspect_fit_edge_replicated_photo_before_canny" if photo else "aspect_fit_black_padding_no_crop"
+    )
     return pixels.prepare_image_bytes(map_content.encoded, width, height), tuple(sorted(evidence.items()))
 
 
@@ -207,10 +214,21 @@ def prepare_spatial_probe(path: Path, width: int, height: int, *, input_type: st
                 "seg_method": seg_method,
             })
         fitted = image.convert("RGB").resize((fit.fitted_width, fit.fitted_height), Image.Resampling.NEAREST)
-    canvas = Image.new("RGB", (width, height), "black")
-    canvas.paste(fitted, (fit.left, fit.top))
+    if input_type == "depth":
+        # Continue the depth field outside the fitted photo without a false depth discontinuity.
+        canvas = Image.fromarray(np.pad(
+            np.asarray(fitted),
+            ((fit.top, height - fit.top - fit.fitted_height),
+             (fit.left, width - fit.left - fit.fitted_width), (0, 0)),
+            mode="edge",
+        ))
+        preparation = "aspect_fit_edge_replicated_depth_no_crop"
+    else:
+        canvas = Image.new("RGB", (width, height), "black")
+        canvas.paste(fitted, (fit.left, fit.top))
+        preparation = "aspect_fit_black_padding_no_crop"
     map_content = pixels._content(canvas)
-    evidence.update({"map_sha256": map_content.sha256, "preparation": "aspect_fit_black_padding_no_crop"})
+    evidence.update({"map_sha256": map_content.sha256, "preparation": preparation})
     return pixels.prepare_image_bytes(map_content.encoded, width, height), tuple(sorted(evidence.items()))
 
 
