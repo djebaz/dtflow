@@ -171,7 +171,7 @@ class AdvancedPanel(QObject):
         self._scope = scope
         allowed = rules.SCOPE_FIELDS.get(scope, ())
         notes = {
-            "pose": "HiRes is not sent with a Controlnet pose; the other settings are.",
+            "pose": "Advanced settings are sent as chosen; provider compatibility may vary.",
             "video": "Only seed mode is sent for video; HiRes and tiled decoding are image settings.",
             None: "Advanced settings are not sent in this mode.",
         }
