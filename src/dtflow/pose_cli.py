@@ -10,6 +10,8 @@ from dtflow.core.models import TimeoutPolicy, ValidationError
 from dtflow.core.pose import (
     CONTROL_MODES,
     CONTROLS,
+    SD15_POSE_PROBE_CONTROL,
+    SD15_POSE_PROBE_MODEL,
     SDXL_CANNY_PROBE_CONTROL,
     SDXL_POSE_PROBE_CONTROL,
     SDXL_POSE_PROBE_MODELS,
@@ -18,7 +20,7 @@ from dtflow.core.pose import (
 
 
 def add_commands(commands, add_request_options):
-    pose = commands.add_parser("pose", help="Body pose on DT+ Cloud, including an unverified SDXL Base 1.0 probe.")
+    pose = commands.add_parser("pose", help="Body pose on DT+ Cloud, including unverified SDXL and SD 1.5 probes.")
     actions = pose.add_subparsers(dest="pose_action", required=True)
     catalogue = actions.add_parser("catalogue", help="Show pinned detector/licence and control identifiers offline.")
     catalogue.set_defaults(state=Path(".dtflow"))
@@ -64,9 +66,9 @@ def add_commands(commands, add_request_options):
             child.add_argument(
                 "-co",
                 "--control",
-                choices=(*CONTROLS, SDXL_POSE_PROBE_CONTROL, SDXL_CANNY_PROBE_CONTROL),
+                choices=(*CONTROLS, SDXL_POSE_PROBE_CONTROL, SDXL_CANNY_PROBE_CONTROL, SD15_POSE_PROBE_CONTROL),
                 required=True,
-                help="Exact control checkpoint; SDXL Xinsir and official Canny are CLI-only probes.",
+                help="Exact control checkpoint; SDXL Xinsir/Canny and SD 1.5 Pose are CLI-only probes.",
             )
             child.add_argument(
                 "-cm",
@@ -143,6 +145,11 @@ async def run(args):
                         "cloud_application": "unverified; CLI-only feasibility probe",
                     },
                     "sdxl_canny_probe": {"control": SDXL_CANNY_PROBE_CONTROL, "models": SDXL_POSE_PROBE_MODELS},
+                    "sd15_pose_probe": {
+                        "control": SD15_POSE_PROBE_CONTROL,
+                        "models": (SD15_POSE_PROBE_MODEL,),
+                        "cloud_application": "unverified in DTFlow; CLI-only feasibility probe",
+                    },
                     "detector": asdict(DETECTOR),
                     "cloud_application": "unverified; requires Echo-listed control and owner smoke",
                     "selection": "one body (exactly one found, or --person); incomplete torso refused; missing joints omitted",
