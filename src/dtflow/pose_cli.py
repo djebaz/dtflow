@@ -14,7 +14,7 @@ from dtflow.core.pose import (
     OFFICIAL_PROBE_CONTROLS,
     XINSIR_PROBE_INPUTS,
     SD15_POSE_PROBE_CONTROL,
-    SD15_POSE_PROBE_MODEL,
+    SD1_PROBE_CONTROLS,
     SDXL_CANNY_PROBE_CONTROL,
     SDXL_POSE_PROBE_CONTROL,
     SDXL_POSE_PROBE_MODELS,
@@ -105,7 +105,7 @@ def add_commands(commands, add_request_options):
                 "-cs",
                 "--strength",
                 type=float,
-                help="Control weight (0,2]; defaults to 0.9 for fast-model Pose, 1 for official SD 1.5 Pose, otherwise required.",
+                help="Control weight (0,2]; defaults to 0.9 for fast-model Pose, 0.77 for official SD 1.x Pose, otherwise required.",
             )
 
 
@@ -262,10 +262,12 @@ async def run(args):
                     "sdxl_canny_probe": {"control": SDXL_CANNY_PROBE_CONTROL, "models": OFFICIAL_PROBE_CONTROLS[SDXL_CANNY_PROBE_CONTROL][1]},
                     "sd15_pose_probe": {
                         "control": SD15_POSE_PROBE_CONTROL,
-                        "models": (SD15_POSE_PROBE_MODEL,),
+                        "family": "sd_1",
+                        "models": "catalogue text-to-image checkpoints",
                         "cloud_application": "unverified in DTFlow; CLI-only feasibility probe",
                     },
                     "official_probes": OFFICIAL_PROBE_CONTROLS,
+                    "sd1_family_controls": SD1_PROBE_CONTROLS,
                     "xinsir_inputs": XINSIR_PROBE_INPUTS,
                     "detector": asdict(DETECTOR),
                     "cloud_application": "unverified; requires Echo-listed control and owner smoke",
@@ -305,11 +307,11 @@ async def run(args):
                 and args.control in CONTROLS and "_2.0_" in args.control)
         )
         sd15_pose = input_type == "pose" and (
-            request.model_id == SD15_POSE_PROBE_MODEL and args.control == SD15_POSE_PROBE_CONTROL
+            args.control == SD15_POSE_PROBE_CONTROL
         )
-        default_strength = 0.9 if fast_pose else (1.0 if sd15_pose else None)
+        default_strength = 0.9 if fast_pose else (0.77 if sd15_pose else None)
         if args.strength is None and default_strength is None:
-            raise ValidationError("--strength is required outside the fast-model and official SD 1.5 Pose presets.")
+            raise ValidationError("--strength is required outside the fast-model and official SD 1.x Pose presets.")
         control = PoseControl(
             args.control,
             args.strength if args.strength is not None else default_strength,
