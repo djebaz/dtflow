@@ -63,9 +63,10 @@ def profile_for(model_id: str, family: str | None = None) -> ModelProfile | None
     models, families = _load()
     key = model_key(model_id)
     # PixelWave Schnell 04 shares the Schnell architecture, not Dev's schedule.
-    if key == "pixelwave_flux_1_schnell_04":
-        return models.get(key) or models.get("flux_1_schnell") or (families.get(family) if family else None)
-    return models.get(key) or (families.get(family) if family else None)
+    own = models.get(key)
+    if own is None and key == "pixelwave_flux_1_schnell_04":
+        own = models.get("flux_1_schnell")
+    return own or (families.get(family) if family else None)
 
 
 _SPECS = Path(__file__).parents[1] / "resources" / "catalogue" / "community_model_specs.json"
