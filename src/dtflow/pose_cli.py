@@ -13,6 +13,7 @@ from dtflow.core.pose import (
     SD15_POSE_PROBE_CONTROL,
     SD15_POSE_PROBE_MODEL,
     SDXL_CANNY_PROBE_CONTROL,
+    SDXL_CANNY_PROBE_MODELS,
     SDXL_POSE_PROBE_CONTROL,
     SDXL_POSE_PROBE_MODELS,
     PoseControl,
@@ -157,7 +158,7 @@ async def run(args):
                         "models": SDXL_POSE_PROBE_MODELS,
                         "cloud_application": "unverified; CLI-only feasibility probe",
                     },
-                    "sdxl_canny_probe": {"control": SDXL_CANNY_PROBE_CONTROL, "models": SDXL_POSE_PROBE_MODELS},
+                    "sdxl_canny_probe": {"control": SDXL_CANNY_PROBE_CONTROL, "models": SDXL_CANNY_PROBE_MODELS},
                     "sd15_pose_probe": {
                         "control": SD15_POSE_PROBE_CONTROL,
                         "models": (SD15_POSE_PROBE_MODEL,),
