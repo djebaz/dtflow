@@ -22,6 +22,7 @@ class AsyncRunner(QObject):
         self._unstarted: dict[object, Coroutine] = {}
         self._unstarted_lock = threading.Lock()
         self._stop = asyncio.Event()
+        self._shutdown_callbacks: list[Callable] = []
         self._closed = False
         self._thread = threading.Thread(target=self._serve, name="dtflow-qt-async", daemon=True)
         self._done.connect(self._deliver, Qt.ConnectionType.QueuedConnection)
@@ -39,6 +40,12 @@ class AsyncRunner(QObject):
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        for close in self._shutdown_callbacks:
+            await close()
+
+    def on_shutdown(self, close: Callable) -> None:
+        """Register an async resource cleanup after owned work has settled."""
+        self._shutdown_callbacks.append(close)
 
     @property
     def closed(self) -> bool:

@@ -143,6 +143,7 @@ from dtflow.ui.prompt_tags import PROMPT_RUNS_ROLE, TagCellDelegate, style_promp
 from dtflow.ui.submit_shortcut import SubmitShortcut
 from dtflow.ui.queue_widgets import ENTRY_ROLE, HEADING_ROLE, QueueListDelegate
 from dtflow.ui.runner import AsyncRunner, EventRelay
+from dtflow.composition import OwnerCloudAuth
 
 log = logging.getLogger(__name__)
 POLL_MS = 1000  # read interval while anything runs; the dispatch owner applies posted controls every 0.5 s
@@ -318,6 +319,8 @@ class QueuePage:
     ):
         self.page = page
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
+        self._dispatch_auth = OwnerCloudAuth()
+        runner.on_shutdown(self._dispatch_auth.aclose)
         self._state, self._request_source, self._activity = Path(state_dir), request_source, activity
         self._simulation, self._created_hook = simulation_source, created_hook
         self._live_choices, self._generate_hook = choices_source, generate_hook
@@ -3555,6 +3558,7 @@ class QueuePage:
                 self._state,
                 queue_id,
                 saved=saved,
+                owner_auth=self._dispatch_auth,
                 waiting=waiting,
                 preview_gate=self._grid.gate if self._grid is not None else None,
                 on_event=lambda queue, item_id, event: self._event_relay(_QueueBackendEvent(queue, item_id, event)),

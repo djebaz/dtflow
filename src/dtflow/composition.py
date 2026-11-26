@@ -52,7 +52,7 @@ class _CloudCredentials:
 
 
 class OwnerCloudAuth:
-    """Reuse short tokens and HTTP connections only within one dispatch owner and selected credential."""
+    """Reuse short tokens, inventory and HTTP connections within the desktop runner or CLI dispatch lifetime."""
 
     def __init__(self):
         self._clients: dict[tuple[str, bytes, str | None], CloudAuth] = {}

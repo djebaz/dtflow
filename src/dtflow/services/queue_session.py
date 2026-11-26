@@ -536,6 +536,7 @@ async def dispatch_queue(
     waiting: tuple[str, ...] = (),
     auto_play: bool = True,
     preview_gate: PreviewGate | None = None,
+    owner_auth: OwnerCloudAuth | None = None,
 ) -> dict[str, Any]:
     """Make this process the dispatch owner and run the queue until it finishes or is cancelled, then auto-play.
 
@@ -563,7 +564,9 @@ async def dispatch_queue(
     backends: dict[str, str] = {}  # each open queue's provider pool key, known once its backend is open
     admission = ProviderAdmission()  # one pool per backend, shared by every queue this owner dispatches
     overlap_open = True
-    owner_auth = OwnerCloudAuth()
+    owns_auth = owner_auth is None
+    if owner_auth is None:
+        owner_auth = OwnerCloudAuth()
 
     def start(next_id: str) -> None:
         task = asyncio.create_task(
@@ -717,7 +720,8 @@ async def dispatch_queue(
                     )
         finally:
             try:
-                await owner_auth.aclose()
+                if owns_auth:
+                    await owner_auth.aclose()
             finally:
                 await store.aclose()
                 schedule_publish(state, reason="queue_session_end")
