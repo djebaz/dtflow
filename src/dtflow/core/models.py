@@ -412,7 +412,13 @@ class ResolvedGenerationRequest:
 
             if not isinstance(self.advanced, AdvancedSettings):
                 raise ValidationError("advanced settings are malformed.")
-            scope = scope_for(video=self.num_frames is not None, pose=self.pose_control is not None)
+            # CLI-only official SD 1.x Pose HiRes probe; desktop scope remains unchanged.
+            from dtflow.core.pose import SD15_POSE_PROBE_CONTROL
+
+            sd1_pose_probe = (
+                self.pose_control is not None and self.pose_control.checkpoint == SD15_POSE_PROBE_CONTROL
+            )
+            scope = scope_for(video=self.num_frames is not None, pose=self.pose_control is not None and not sd1_pose_probe)
             if unsupported := unsupported_fields(self.advanced, scope):
                 raise ValidationError(
                     f"{unsupported[0]} is not available for {SCOPE_NAMES[scope]} requests; "
