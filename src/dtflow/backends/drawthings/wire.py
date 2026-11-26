@@ -320,16 +320,28 @@ def build_generation_message(
 
 
 def _unit_control_rgb(request: ResolvedGenerationRequest) -> bool:
-    """Direct SD 1.5 pose hints bypass the upstream RGB range conversion."""
-    return request.pose_control is not None and request.pose_control.checkpoint == SD15_POSE_PROBE_CONTROL
+    """Direct SD 1.x Pose hints bypass upstream RGB conversion; custom hints do not."""
+    return (
+        request.pose_control is not None
+        and request.pose_control.checkpoint == SD15_POSE_PROBE_CONTROL
+        and _control_hint_type(request) == "pose"
+    )
 
 
 def _control_hint_type(request: ResolvedGenerationRequest) -> str:
-    """For SDXL probes use the upstream custom RGB conversion and fitting path."""
+    """Choose the native hint or upstream custom RGB conversion and fitting path."""
     control = request.pose_control
     assert control is not None
     if control.input_type == "depth":
         return "depth"
+    # The upstream customRGB(true) path resizes and normalizes the hint for
+    # each sampling pass; direct Pose passes the tensor through unchanged.
+    if (
+        control.checkpoint == SD15_POSE_PROBE_CONTROL
+        and request.advanced is not None
+        and request.advanced.hires_fix_active
+    ):
+        return "custom"
     if control.input_type in ("canny", "seg") or control.checkpoint == SDXL_POSE_PROBE_CONTROL:
         return "custom"
     return control.input_type
