@@ -419,7 +419,8 @@ class ResolvedGenerationRequest:
             sd1_pose_probe = self.pose_control is not None and self.pose_control.checkpoint == SD15_POSE_PROBE_CONTROL
             scope = scope_for(video=self.num_frames is not None, pose=self.pose_control is not None)
             unsupported = tuple(
-                name for name in unsupported_fields(self.advanced, scope)
+                name
+                for name in unsupported_fields(self.advanced, scope)
                 if not (sd1_pose_probe and name in HIRES_FIELDS)
             )
             if unsupported:

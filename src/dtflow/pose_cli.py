@@ -135,8 +135,13 @@ async def run(args):
     from dtflow.cli import resolve_generation
     from dtflow.core.request_records import request_from_record
     from dtflow.services.body_pose import (
-        DETECTOR, extract_body, install_detector, prepare_pose, save_extraction,
-        prepare_canny_probe, prepare_spatial_probe,
+        DETECTOR,
+        extract_body,
+        install_detector,
+        prepare_pose,
+        save_extraction,
+        prepare_canny_probe,
+        prepare_spatial_probe,
     )
     from dtflow.services.config import read_json_file
     from dtflow.services.session import (
@@ -341,8 +346,12 @@ async def compare_models(args, request, prepared, policy):
         )
     )
     queue_id = await queue_session.create_saved_pose_queue(
-        args.state, {"name": "cloud"}, selection, replace(request, schema_version=3, image_inputs=staged),
-        plan=plan, origin="pose-comparison",
+        args.state,
+        {"name": "cloud"},
+        selection,
+        replace(request, schema_version=3, image_inputs=staged),
+        plan=plan,
+        origin="pose-comparison",
     )
     print(f"Comparison queue: {queue_id}", file=sys.stderr)
 
@@ -357,5 +366,3 @@ async def compare_models(args, request, prepared, policy):
     from dtflow.cli import queue_exit_code
 
     return queue_exit_code(final)
-
-
