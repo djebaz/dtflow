@@ -39,12 +39,15 @@ VERIFIED_CONTROL = "controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt"
 IMAGE_FILTER = "Images (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.bmp)"
 
 
+DESKTOP_CONTROLS = frozenset(name for name in CONTROLS if "_1.0_" in name)
+
+
 def control_choices(snapshot) -> tuple["PoseControlChoice", ...]:
     """Union Pro 1.0 controls the DT+ inventory lists, q5p first; Union Pro 2 stays hidden (unverified in #502)."""
     if snapshot is None:
         return ()
     listed = {entry.identifier for entry in snapshot.entries}
-    names = sorted((name for name in CONTROLS if "_1.0_" in name and name in listed), key=lambda n: ("q5p" not in n, n))
+    names = sorted(DESKTOP_CONTROLS & listed, key=lambda n: ("q5p" not in n, n))
     return tuple(PoseControlChoice(_control_label(name), name == VERIFIED_CONTROL, name) for name in names)
 
 
@@ -355,7 +358,7 @@ class ControlnetEditor(QObject):
         form.poseControlCombo.setCurrentIndex(view.control_index if view.controls else -1)
         form.poseControlCombo.blockSignals(False)
         form.poseControlCombo.setEnabled(bool(view.controls))
-        chosen = view.controls[view.control_index] if view.controls else None
+        chosen = view.controls[view.control_index] if view.controls and view.control_index >= 0 else None
         if chosen is None:
             note = "No Union Pro 1.0 control is in your DT+ inventory. Generate cannot start without one."
         elif chosen.verified:
@@ -441,6 +444,8 @@ class ControlnetEditor(QObject):
             return "Preparing the map for this size…"
         if not self._controls:
             return "No Union Pro 1.0 control is in your DT+ inventory. Refresh the models."
+        if self._wanted_control and self._controls[self._control_index].checkpoint != self._wanted_control:
+            return "The saved control is not in your DT+ inventory. Refresh models or choose another control."
         return ""
 
     def refresh(self, *_):
@@ -468,7 +473,11 @@ class ControlnetEditor(QObject):
             map_note=self._map_note(),
             extraction_error=self._extraction_error,
             controls=self._controls,
-            control_index=self._control_index,
+            control_index=(
+                -1
+                if self._wanted_control and not any(c.checkpoint == self._wanted_control for c in self._controls)
+                else self._control_index
+            ),
             strength=self._strength,
             blocker=self.blocker(),
             notice=" ".join(
@@ -489,7 +498,7 @@ class ControlnetEditor(QObject):
         """The Union Pro 1.0 controls the active DT+ inventory lists."""
         if self.controller is None:
             return
-        chosen = self._controls[self._control_index].checkpoint if self._controls else self._wanted_control
+        chosen = self._wanted_control or (self._controls[self._control_index].checkpoint if self._controls else None)
         self._controls = control_choices(self.controller._inventory_snapshot)
         self._control_index = next((i for i, c in enumerate(self._controls) if c.checkpoint == chosen), 0)
         self.refresh()
@@ -864,8 +873,8 @@ class ControlnetEditor(QObject):
         pose = document.get("pose_control")
         if not isinstance(pose, dict) or pose.get("input_type", "pose") != "pose":
             return "This saved control type is not supported in desktop Controlnet."
-        if not any(choice.checkpoint == pose.get("checkpoint") for choice in self._controls):
-            return "The saved control checkpoint is not available in desktop Controlnet."
+        if pose.get("checkpoint") not in DESKTOP_CONTROLS:
+            return "The saved control checkpoint is not supported in desktop Controlnet."
         if not document.get("image_inputs"):
             return "The saved control map is missing."
         return ""
@@ -916,9 +925,10 @@ class ControlnetEditor(QObject):
             self._set_range(
                 pose.get("control_mode") or "Balanced", 0.0 if start is None else start, 1.0 if end is None else end
             )
-            for index, choice in enumerate(self._controls):
-                if choice.checkpoint == pose.get("checkpoint"):
-                    self._control_index = index
+            self._wanted_control = pose["checkpoint"]
+            self._control_index = next(
+                (i for i, choice in enumerate(self._controls) if choice.checkpoint == self._wanted_control), 0
+            )
             self._schedule_refit()
 
         self.runner.submit(work(), done)
