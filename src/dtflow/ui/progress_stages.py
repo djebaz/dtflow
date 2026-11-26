@@ -12,6 +12,7 @@ def event_stage(event: BackendEvent) -> str:
             "session_ready": "Connection ready",
             "validating_image_inputs": "Validating image inputs",
             "validating_request": "Validating generation request",
+            "resolving_selected_assets": "Resolving LoRA selections",
             "validating_assets": "Validating prepared assets",
             "restoring_assets": "Restoring LoRA on DT+",
             "checking_loras": "Checking LoRA compatibility",
