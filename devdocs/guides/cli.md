@@ -297,6 +297,27 @@ uv run dtflow generate -b cloud -m $Model -p $Prompt -s 1580038928 -w 640 -y 102
 
 Use `-im` instead of `-ph` for an already extracted pose map. Each generation is an explicit cloud submission and may consume credits. Compare the actual pose against the retained map and baseline; a final image alone is not evidence of conditioning. No automatic retry or provider substitution is added. This separate diagnostic does not satisfy the SDXL acceptance criteria of #632.
 
+### Additional SD 1.5 and SDXL Turbo spatial control probes
+
+CLI-only; production UI and queue choices are unchanged. The official SD 1.5 Canny, Depth and Segmentation checkpoints and official SDXL Depth/Canny checkpoints are admitted; Xinsir Union also accepts explicit `-ct depth`, `-ct seg` or `-ct canny` with SDXL Turbo or the previously admitted Base checkpoints. Official controls infer their native input; do not select a mismatching mode. Depth uses a single-channel float16 hint in −1–1, which the upstream generator converts to RGB 0–1. Segmentation and Canny use custom RGB in −1–1. Segmentation requires a prepared model-compatible semantic palette map, not a photograph or binary person mask. Palette colours are preserved with nearest-neighbour resizing. No new model is automatically downloaded.
+
+```powershell
+$Prompt = "a girl in a bikini at the beach"
+$Model = "sd_xl_turbo_f16.ckpt"
+$Union = "controlnet_xinsir_union_promax_sdxl_1.0_f16.ckpt"
+# Verified Turbo pose settings (owner attempt 7080ba2002994f53a4510dca95da06ca).
+uv run dtflow pose generate -b cloud -m $Model -co $Union -ph .\tmp\pose.png -p $Prompt -s 1234455 -w 640 -y 960 -i 8 -g 0.7 -a euler_a -cs 1 -o .\tmp\turbo-pose
+# Prepared grayscale relative inverse depth (near = bright).
+uv run dtflow pose generate -b cloud -m $Model -co controlnet_depth_sdxl_v1.0_mid_f16.ckpt -im .\tmp\depth.png -p $Prompt -s 1234455 -w 640 -y 960 -i 8 -g 0.7 -a euler_a -cs 1 -o .\tmp\turbo-depth
+# Or extract locally from a photo using the pinned Depth Anything V2 Small ONNX already used by tools/images.
+uv run dtflow pose generate -b cloud -m $Model -co $Union -ct depth -ph .\tmp\pose.png -dm .\tmp\models\depth-anything-v2-small.onnx -p $Prompt -s 1234455 -w 640 -y 960 -i 8 -g 0.7 -a euler_a -cs 1 -o .\tmp\turbo-union-depth
+uv run --with opencv-python-headless==4.11.0.86 dtflow pose generate -b cloud -m $Model -co $Union -ct canny -ph .\tmp\pose.png -p $Prompt -s 1234455 -w 640 -y 960 -i 8 -g 0.7 -a euler_a -cs 1 -o .\tmp\turbo-union-canny
+uv run dtflow pose generate -b cloud -m $Model -co $Union -ct seg -im .\tmp\seg.png -p $Prompt -s 1234455 -w 640 -y 960 -i 8 -g 0.7 -a euler_a -cs 1 -o .\tmp\turbo-union-seg
+uv run dtflow pose generate -b cloud -m sd_v1.5_f16.ckpt -co controlnet_seg_1.x_v1.1_f16.ckpt -im .\tmp\seg.png -p $Prompt -s 722970881 -w 640 -y 1024 -i 16 -g 5 -a dpmpp_2m_ays -cs 1 -o .\tmp\sd15-seg
+```
+
+For official SD 1.5 Depth/Canny, use `controlnet_depth_1.x_v1.1_f16.ckpt` or `controlnet_canny_1.x_v1.1_f16.ckpt` with the SD 1.5 model and settings above. For official Turbo Canny use `controlnet_canny_sdxl_v1.0_mid_f16.ckpt`. The pinned depth model is available at https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/4472b7362082ad9968fee890ca0f1e5aca36b93d/onnx/model.onnx (SHA-256 `afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c`); obtain it explicitly if needed. These new combinations have not been run. The owner confirmed SDXL Turbo Xinsir Pose, SD 1.5 Pose, and SDXL Base official Canny; SDXL Base Xinsir Pose returned noise even with the successful Turbo settings. Compare against an uncontrolled same-seed baseline before claiming acceptance.
+
 ## Single-shot image-operation owner probe
 
 `edit` is the explicit acceptance harness for PR #64, not general image-operation support. Without `-r/--probe` it refuses before backend selection, file preparation or authentication. Each invocation requests one real generation, with no queue, plan, batch or retry. Generic `generate`, configuration reuse and `queue add` remain txt2img-only.
