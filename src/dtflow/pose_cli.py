@@ -69,7 +69,10 @@ def add_commands(commands, add_request_options):
                 help="Compare checkpoints in one durable queue; overrides --model only when it is omitted.",
             )
             child.add_argument(
-                "-hf", "--hires-factor", type=float, help="Experimental ControlNet HiRes factor; provider compatibility may vary."
+                "-hf",
+                "--hires-factor",
+                type=float,
+                help="Experimental ControlNet HiRes factor; provider compatibility may vary.",
             )
             child.add_argument("-hs", "--hires-strength", type=float, help="HiRes second-pass strength, 0..1.")
             source = child.add_mutually_exclusive_group(required=True)
