@@ -3551,7 +3551,11 @@ class MainWindow:
                 if status["selected"] == "none":
                     return None
         saved = saved if await asyncio.to_thread(saved.available) else None
-        return await check_connection(selection, saved=saved)
+        try:
+            return await check_connection(selection, saved=saved)
+        finally:
+            if selection.name == "cloud" and not automatic:
+                await self.queue.invalidate_cloud_inventory()
 
     def _checked(self, status, failure, revision=None, credential_context=None, token=None) -> None:
         if self.runner.closed:
