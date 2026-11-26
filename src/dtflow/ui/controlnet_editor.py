@@ -360,7 +360,11 @@ class ControlnetEditor(QObject):
         form.poseControlCombo.setEnabled(bool(view.controls))
         chosen = view.controls[view.control_index] if view.controls and view.control_index >= 0 else None
         if chosen is None:
-            note = "No Union Pro 1.0 control is in your DT+ inventory. Generate cannot start without one."
+            note = (
+                "Choose an available control, or refresh the inventory to restore the saved control."
+                if view.controls
+                else "No Union Pro 1.0 control is in your DT+ inventory. Generate cannot start without one."
+            )
         elif chosen.verified:
             note = "Verified together with FLUX.1 Dev q5p on DT+ Cloud."
         else:
