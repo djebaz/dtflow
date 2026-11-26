@@ -112,6 +112,7 @@ class ControlnetEditor(QObject):
         self._revision = 0
         self._busy = False
         self._kind = "photo"
+        self._input_type = "pose"
         self._content = None  # the chosen photo or body map
         self._filename = ""
         self._source_pixmap = None
@@ -416,6 +417,8 @@ class ControlnetEditor(QObject):
     def blocker(self) -> str:
         """Why Generate cannot start now; empty when it can. Backend and checkpoint come first, as they are the
         mode's own requirement."""
+        if self._input_type != "pose":
+            return "This experimental control type is not supported in the desktop."
         if self._backend() != "cloud":
             return NO_BACKEND
         if not self._pose_family():
@@ -534,6 +537,7 @@ class ControlnetEditor(QObject):
 
     def _clear_source(self):
         self._restore_source_pending = False
+        self._input_type = "pose"
         self._revision += 1
         self._extracting = False
         self._content, self._filename, self._source_pixmap = None, "", None
@@ -797,6 +801,7 @@ class ControlnetEditor(QObject):
         control = PoseControl(
             choice.checkpoint,
             self._strength,
+            input_type=self._input_type,
             control_mode=form.poseModeCombo.currentText(),
             guidance_start=round(form.poseStartSpin.value(), 2),
             guidance_end=round(form.poseEndSpin.value(), 2),
@@ -854,6 +859,17 @@ class ControlnetEditor(QObject):
         if document.get("mode") == "controlnet":
             self.page.controlnetModeButton.setChecked(True)
 
+    def restore_problem(self, document):
+        """Refuse experimental controls before modifying the desktop form."""
+        pose = document.get("pose_control")
+        if not isinstance(pose, dict) or pose.get("input_type", "pose") != "pose":
+            return "This saved control type is not supported in desktop Controlnet."
+        if not any(choice.checkpoint == pose.get("checkpoint") for choice in self._controls):
+            return "The saved control checkpoint is not available in desktop Controlnet."
+        if not document.get("image_inputs"):
+            return "The saved control map is missing."
+        return ""
+
     def restore_record(self, document):
         """Gallery Reuse of a pose image: bring its control, strength and retained map back into this mode. The map is
         read from the managed inputs, not from the original file, and nothing is submitted."""
@@ -861,9 +877,15 @@ class ControlnetEditor(QObject):
         record = document.get("image_inputs")
         if self.controller is None or not pose or not record or self.runner.closed:
             return
+        if problem := self.restore_problem(document):
+            self._clear_source()
+            self._source_error = problem
+            self.refresh()
+            return
         state = self.controller._state
         self.page.controlnetModeButton.setChecked(True)
         self._clear_source()
+        self._input_type = pose.get("input_type", "pose")
         self._revision += 1
         revision = self._revision
         self._kind = "map"
