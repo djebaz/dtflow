@@ -598,7 +598,15 @@ def _class_instances(session, image: Image.Image, threshold: float, *, mask_thre
         raise ValidationError("Segmentation model returned non-finite values.")
     rows = detections[0]
     people = rows[np.isin(rows[:, 5], class_ids) & (rows[:, 4] >= threshold)]
-    people = people[np.argsort(-people[:, 4])][:MAX_PEOPLE]
+    people = people[np.argsort(-people[:, 4])]
+    counts = {}
+    selected = []
+    for row in people:
+        cls = int(row[5])
+        if counts.get(cls, 0) < MAX_PEOPLE:
+            selected.append(row)
+            counts[cls] = counts.get(cls, 0) + 1
+    people = selected
     proto = prototypes[0].reshape(32, -1)
     yy, xx = np.ogrid[:SIDE, :SIDE]
     width, height = image.size
