@@ -287,7 +287,7 @@ def test_backend_selection_reaches_the_intended_adapter(monkeypatch):
         (BackendSelection("local", "no-port"), {}, "HOST:PORT"),
         (BackendSelection("local", "host:abc"), {}, "HOST:PORT"),
         (BackendSelection("cloud"), {}, "DRAWTHINGS_API_KEY"),
-        (BackendSelection("cloud", cloud_concurrency=11), {"DRAWTHINGS_API_KEY": "k"}, "concurrency"),
+        (BackendSelection("cloud", cloud_concurrency=101), {"DRAWTHINGS_API_KEY": "k"}, "concurrency"),
         (BackendSelection("other"), {}, "Unknown backend"),
     ],
 )
