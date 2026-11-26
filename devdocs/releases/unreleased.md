@@ -14,7 +14,7 @@ Changes through 6.5.5 are consolidated in [DTFlow 6.5.5](v6.5.5.md). The publish
 
 ## Changed
 
-- Controlnet offers **Union Pro 2.0** (q5p first) instead of Union Pro 1.0 for FLUX.1. Settings, queues or templates that name Union Pro 1.0 are kept as they are but show a notice and need you to choose Union 2.0 yourself; nothing is replaced silently.
+- Controlnet offers **Union Pro 2.0** (q5p first) instead of Union Pro 1.0 for FLUX.1. Saved settings and templates that name Union Pro 1.0 retain their values but require an explicit replacement for new desktop submissions. Existing durable queues and Retry keep and can submit their exact recorded requests; nothing is replaced silently.
 - In the Queues composer the Fixed LoRAs row is now called **Constant LoRAs**, and LoRA sets add to the Constant LoRAs instead of replacing them (a LoRA in both takes the set's weight). Queues and templates saved before keep their items, and plan files keep the old behavior unless they set `"constant_loras": true`.
 
 ## Fixed
