@@ -12,10 +12,10 @@ from dtflow.core.pose import (
     CONTROL_MODES,
     CONTROLS,
     OFFICIAL_PROBE_CONTROLS,
-    XINSIR_PROBE_INPUTS,
     SD15_POSE_PROBE_CONTROL,
     SDXL_CANNY_PROBE_CONTROL,
     SDXL_POSE_PROBE_CONTROL,
+    XINSIR_PROBE_INPUTS,
     PoseControl,
 )
 
@@ -328,8 +328,6 @@ async def compare_models(args, request, prepared, policy):
     from dtflow.services.body_pose import write_comparison_collage
     from dtflow.services.planning import Plan
 
-    if request.pose_control.checkpoint not in SD1_PROBE_CONTROLS:
-        raise ValidationError("Model comparison currently requires one official SD 1.x control.")
     if getattr(args, "asset", None):
         raise ValidationError("Model comparison does not yet accept explicit asset receipts.")
     plan = Plan("cross", dimensions=(("model", tuple(args.models)),), seed_policy="fixed")

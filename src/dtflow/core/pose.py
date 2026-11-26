@@ -52,8 +52,7 @@ MODELS = ("flux_1_dev_f16.ckpt", "flux_1_dev_q5p.ckpt", "flux_1_dev_q8p.ckpt")
 CONTROL_MODES = ("Balanced", "Prompt", "Control")
 
 
-# The checkpoint families pose guidance is offered for: catalogue ``base_model`` key and its display label. Add a family
-# here (with its control in CONTROLS) and every check, message and default below follows; nothing else names FLUX.1.
+# Supported catalogue model families and their display labels.
 POSE_FAMILIES = (("flux_1", "FLUX.1"), ("sd_1", "SD 1.x"), ("sdxl", "SDXL"))
 DEFAULT_POSE_FAMILY = POSE_FAMILIES[0][0]
 POSE_FAMILY_LABEL = ", ".join(label for _, label in POSE_FAMILIES[:-1]) + " or " + POSE_FAMILIES[-1][1]
@@ -150,9 +149,7 @@ def desktop_control(checkpoint: str | None) -> DesktopControl | None:
 
 def desktop_admits(control: DesktopControl, model_id: str, base_model: str | None, modes=None) -> bool:
     """Offer a control for its model family and text-to-image checkpoints."""
-    return (modes is None or "t2i" in modes) and supports_pose(
-        model_id, base_model, families=(control.family,)
-    )
+    return (modes is None or "t2i" in modes) and supports_pose(model_id, base_model, families=(control.family,))
 
 
 RETIRED_CONTROL_NOTE = "The saved control, Union Pro 1.0, is retired. Choose Union Pro 2.0 to continue."
