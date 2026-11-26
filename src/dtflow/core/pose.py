@@ -21,15 +21,23 @@ VERIFIED_MODELS = ("flux_1_dev_q5p.ckpt",)
 CONTROL_MODES = ("Balanced", "Prompt", "Control")
 
 
-def is_flux1(model_id: str, base_model: str | None = None) -> bool:
-    """Any FLUX.1 family checkpoint (dev, schnell, krea, depth, de_distill, ...); other families are not.
+# The checkpoint families pose guidance is offered for: catalogue ``base_model`` key and its display label. Add a family
+# here (with its control in CONTROLS) and every check, message and default below follows; nothing else names FLUX.1.
+POSE_FAMILIES = (("flux_1", "FLUX.1"),)
+DEFAULT_POSE_FAMILY = POSE_FAMILIES[0][0]
+POSE_FAMILY_LABEL = " or ".join(label for _, label in POSE_FAMILIES)
+
+
+def supports_pose(model_id: str, base_model: str | None = None) -> bool:
+    """Whether the checkpoint belongs to a pose family (for FLUX.1: dev, schnell, krea, depth, de_distill, ...).
 
     The catalogue's family of the checkpoint (``base_model``) decides when it is known; only an unclassified checkpoint
-    falls back to the ``flux_1_`` file-name prefix."""
+    falls back to the family key as a file-name prefix (``flux_1_``)."""
+    families = tuple(family for family, _ in POSE_FAMILIES)
     if base_model:
-        return base_model == "flux_1"
+        return base_model in families
     name = model_id.strip().lower()
-    return name.startswith("flux_1_") and name.endswith(".ckpt")
+    return name.endswith(".ckpt") and any(name.startswith(f"{family}_") for family in families)
 
 
 # community-models controlnets/union-pro-flux-1-dev-{1.0,2.0}/metadata.json (same revision as above). Draw Things builds

@@ -51,7 +51,7 @@ from dtflow.services.assets import possible_missing_asset
 from dtflow.services.generation import GenerationService, SubmissionHeld
 from dtflow.services.provider_admission import Permit, ProviderAdmission, QueueAdmission
 from dtflow.services.image_inputs import restore_image_inputs
-from dtflow.services.session import _require_flux1
+from dtflow.services.session import _require_pose_family
 
 log = logging.getLogger(__name__)
 
@@ -472,7 +472,9 @@ class QueueDispatcher:
                             asyncio.to_thread(restore_image_inputs, self.service.input_state, request.image_inputs)
                         )
                         if request.pose_control is not None:
-                            await settle(asyncio.to_thread(_require_flux1, self.service.input_state, request.model_id))
+                            await settle(
+                                asyncio.to_thread(_require_pose_family, self.service.input_state, request.model_id)
+                            )
                             inventory = await self.service.get_inventory()
                             if not any(
                                 entry.identifier == request.pose_control.checkpoint

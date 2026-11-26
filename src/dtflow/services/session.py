@@ -599,15 +599,15 @@ def pose_request(
     )
 
 
-def _require_flux1(state: Path, model_id: str) -> None:
-    """Pose guidance is restricted to the FLUX.1 family; every path that submits a pose (desktop, CLI generate and
+def _require_pose_family(state: Path, model_id: str) -> None:
+    """Pose guidance is restricted to the pose families (core.pose.POSE_FAMILIES); every path that submits a pose (desktop, CLI generate and
     retry) passes through here, so none can skip the check."""
-    from dtflow.core.pose import is_flux1
+    from dtflow.core.pose import POSE_FAMILY_LABEL, supports_pose
     from dtflow.services.catalogue import Catalogue
 
     entry = Catalogue(state).checkpoint(model_id, include_unavailable=True)
-    if not is_flux1(model_id, entry.base_model if entry else None):
-        raise ValidationError("Pose is restricted to FLUX.1 checkpoints.")
+    if not supports_pose(model_id, entry.base_model if entry else None):
+        raise ValidationError(f"Pose is restricted to {POSE_FAMILY_LABEL} checkpoints.")
 
 
 async def generate_pose_once(
@@ -629,7 +629,7 @@ async def generate_pose_once(
         raise ValidationError("Pose generation requires a pose request with its prepared map.")
     if selection.name != "cloud":
         raise ValidationError("Pose experiments require explicit DT+ Cloud selection.")
-    await settle(asyncio.to_thread(_require_flux1, state, request.model_id))
+    await settle(asyncio.to_thread(_require_pose_family, state, request.model_id))
 
     async def run(timeline: GenerationTimeline) -> GenerationOutcome:
         sink = timeline.sink

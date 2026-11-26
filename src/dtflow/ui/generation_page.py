@@ -30,7 +30,7 @@ from dtflow.ui.file_dialogs import QFileDialog
 from dtflow import startup
 from dtflow.core.compute_units import ComputeUnitEstimate, estimate_compute_units
 from dtflow.core.model_profiles import has_own_profile, profile_for
-from dtflow.core.pose import is_flux1
+from dtflow.core.pose import DEFAULT_POSE_FAMILY, supports_pose
 from dtflow.core.models import (
     BackendEvent,
     CredentialProvider,
@@ -883,11 +883,13 @@ class GenerationPage:
         if checked and self._text_slot is None:
             self._text_slot = self._selection()
             values, _, _, catalogue = self._text_slot
-            # Controlnet is FLUX.1 only: it starts on the FLUX.1 base model, keeping the checkpoint only if it is one.
+            # Controlnet works for the pose families only: it starts on the first of them, keeping the checkpoint only
+            # if it already belongs to one.
             entry = self._catalogue.checkpoint(values.model, include_unavailable=True) if values.model else None
-            if not is_flux1(values.model, entry.base_model if entry else None):
+            if not supports_pose(values.model, entry.base_model if entry else None):
                 values = replace(values, model="")
-            catalogue = {**catalogue, "base_model": "flux_1"}
+            if not values.model:
+                catalogue = {**catalogue, "base_model": DEFAULT_POSE_FAMILY}
             if catalogue.get("domain") == "video":
                 catalogue = {**catalogue, "domain": "image"}
             self._apply_selection(self._pose_slot or (replace(values, loras=()), {}, None, catalogue))

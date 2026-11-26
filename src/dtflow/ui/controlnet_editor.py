@@ -13,7 +13,7 @@ from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QLabel, QSizePolicy
 
 from dtflow.core.image_inputs import ImageContent, ImageInputSnapshot
-from dtflow.core.pose import CONTROLS, VERIFIED_MODELS, PoseControl, is_flux1
+from dtflow.core.pose import CONTROLS, POSE_FAMILY_LABEL, VERIFIED_MODELS, PoseControl, supports_pose
 from dtflow.core.tasks import settle
 from dtflow.services import image_preparation as pixels
 from dtflow.services.body_pose import (
@@ -33,7 +33,7 @@ CONFIGURATION_NOTE = "Saving a configuration or preset covers text-to-image only
 CONSENT = "Generate or Start sends the pose map to DT+ Cloud and may consume credits. Saving a queue stays local."
 DETECTOR_NOTE = "YOLO26n-pose · about 11.6 MiB · AGPL-3.0 · runs on this computer"
 NO_BACKEND = "Controlnet needs DT+ Cloud. Choose DT+ Cloud under Provider."
-NO_CHECKPOINT = "Controlnet needs a FLUX.1 checkpoint; the selected one is not."
+NO_CHECKPOINT = f"Controlnet needs a {POSE_FAMILY_LABEL} checkpoint; the selected one is not."
 UNVERIFIED_CHECKPOINT = "Not verified with this checkpoint: only FLUX.1 Dev q5p has been confirmed."
 VERIFIED_CONTROL = "controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt"
 IMAGE_FILTER = "Images (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.bmp)"
@@ -403,22 +403,22 @@ class ControlnetEditor(QObject):
     def _backend(self):
         return self.controller._backend()[0] if self.controller is not None else ""
 
-    def _flux1(self):
-        """Whether the selected checkpoint belongs to the FLUX.1 family, by the catalogue's classification."""
+    def _pose_family(self):
+        """Whether the selected checkpoint belongs to a pose family, by the catalogue's classification."""
         model = self.page.modelCombo.currentText().strip()
         entry = (
             self.controller._catalogue.checkpoint(model, include_unavailable=True)
             if self.controller is not None and model
             else None
         )
-        return is_flux1(model, entry.base_model if entry else None)
+        return supports_pose(model, entry.base_model if entry else None)
 
     def blocker(self) -> str:
         """Why Generate cannot start now; empty when it can. Backend and checkpoint come first, as they are the
         mode's own requirement."""
         if self._backend() != "cloud":
             return NO_BACKEND
-        if not self._flux1():
+        if not self._pose_family():
             return NO_CHECKPOINT
         if self._extracting:
             return "Extracting the pose…"
@@ -473,7 +473,7 @@ class ControlnetEditor(QObject):
                 for text in (
                     CONSENT if self._backend() == "cloud" else "",
                     UNVERIFIED_CHECKPOINT
-                    if self.page.modelCombo.currentText().strip() not in VERIFIED_MODELS and self._flux1()
+                    if self.page.modelCombo.currentText().strip() not in VERIFIED_MODELS and self._pose_family()
                     else "",
                 )
                 if text
