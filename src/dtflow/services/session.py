@@ -599,13 +599,21 @@ def pose_request(
     )
 
 
-def _require_pose_family(state: Path, model_id: str) -> None:
-    """Pose guidance is restricted to the pose families (core.pose.POSE_FAMILIES); every path that submits a pose (desktop, CLI generate and
-    retry) passes through here, so none can skip the check."""
-    from dtflow.core.pose import POSE_FAMILY_LABEL, supports_pose
+def _require_pose_family(state: Path, model_id: str, *, control_checkpoint: str | None = None) -> None:
+    """Check production pose families or explicitly selected CLI-only SDXL and SD 1.5 probes."""
+    from dtflow.core.pose import POSE_FAMILY_LABEL, SD1_PROBE_CONTROLS, probe_models, supports_pose
     from dtflow.services.catalogue import Catalogue
 
+    models = probe_models(control_checkpoint) if control_checkpoint else None
+    if models is not None:
+        if model_id not in models:
+            raise ValidationError("The control probe requires one of: " + ", ".join(models))
+        return
     entry = Catalogue(state).checkpoint(model_id, include_unavailable=True)
+    if control_checkpoint in SD1_PROBE_CONTROLS:
+        if entry is None or entry.base_model != "sd_1" or "t2i" not in entry.modes:
+            raise ValidationError("Official SD 1.x controls require a catalogue SD 1.x text-to-image checkpoint.")
+        return
     if not supports_pose(model_id, entry.base_model if entry else None):
         raise ValidationError(f"Pose is restricted to {POSE_FAMILY_LABEL} checkpoints.")
 
@@ -629,7 +637,11 @@ async def generate_pose_once(
         raise ValidationError("Pose generation requires a pose request with its prepared map.")
     if selection.name != "cloud":
         raise ValidationError("Pose experiments require explicit DT+ Cloud selection.")
-    await settle(asyncio.to_thread(_require_pose_family, state, request.model_id))
+    await settle(
+        asyncio.to_thread(
+            _require_pose_family, state, request.model_id, control_checkpoint=request.pose_control.checkpoint
+        )
+    )
 
     async def run(timeline: GenerationTimeline) -> GenerationOutcome:
         sink = timeline.sink

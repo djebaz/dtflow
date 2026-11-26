@@ -81,11 +81,11 @@ class AdvancedSettings:
 
 
 HIRES_FIELDS = ("hires_fix_factor", "hires_fix_width", "hires_fix_height", "hires_fix_strength")
-# What each kind of request can carry. Exposure is not support: a field is listed only where the pinned inventory marks
-# the mode as a candidate (HiRes and tiled decoding: images; seed mode: every mode), never for an unverified one.
+# All image operations share advanced settings. Availability is not a guarantee of provider acceptance.
+IMAGE_FIELDS = tuple(item.name for item in fields(AdvancedSettings))
 SCOPE_FIELDS = {
-    "image": (*HIRES_FIELDS, "seed_mode", "tiled_decoding"),  # text-to-image, image-to-image and Inpaint
-    "pose": ("seed_mode", "tiled_decoding"),  # the Controlnet pose hint is final-size, so no first pass
+    "image": IMAGE_FIELDS,
+    "pose": IMAGE_FIELDS,
     "video": ("seed_mode",),
 }
 SCOPE_NAMES = {"image": "image", "pose": "Controlnet pose", "video": "video"}

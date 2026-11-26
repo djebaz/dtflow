@@ -579,6 +579,14 @@ def _letterbox(image: Image.Image):
 
 
 def _instances(session, image: Image.Image, threshold: float, *, mask_threshold: float = 0.5):
+    return [
+        (score, mask, box)
+        for _, score, mask, box in _class_instances(session, image, threshold, mask_threshold=mask_threshold)
+    ]
+
+
+def _class_instances(session, image: Image.Image, threshold: float, *, mask_threshold: float = 0.5, class_ids=(0,)):
+    """Decode selected YOLO classes using the existing person-mask geometry."""
     import numpy as np
 
     if not math.isfinite(mask_threshold) or not 0 < mask_threshold < 1:
@@ -589,8 +597,16 @@ def _instances(session, image: Image.Image, threshold: float, *, mask_threshold:
     if not np.isfinite(detections).all() or not np.isfinite(prototypes).all():
         raise ValidationError("Segmentation model returned non-finite values.")
     rows = detections[0]
-    people = rows[(rows[:, 5] == 0) & (rows[:, 4] >= threshold)]
-    people = people[np.argsort(-people[:, 4])][:MAX_PEOPLE]
+    people = rows[np.isin(rows[:, 5], class_ids) & (rows[:, 4] >= threshold)]
+    people = people[np.argsort(-people[:, 4])]
+    counts = {}
+    selected = []
+    for row in people:
+        cls = int(row[5])
+        if counts.get(cls, 0) < MAX_PEOPLE:
+            selected.append(row)
+            counts[cls] = counts.get(cls, 0) + 1
+    people = selected
     proto = prototypes[0].reshape(32, -1)
     yy, xx = np.ogrid[:SIDE, :SIDE]
     width, height = image.size
@@ -612,8 +628,70 @@ def _instances(session, image: Image.Image, threshold: float, *, mask_threshold:
         ys, xs = np.nonzero(mask)
         if not len(xs):
             continue
-        found.append((float(row[4]), mask, (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)))
+        found.append(
+            (int(row[5]), float(row[4]), mask, (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1))
+        )
     return found
+
+
+# Exact overlapping COCO/ADE20K categories only. Unmapped pixels remain black (unknown).
+# ADE20K RGB values: OpenMMLab mmsegmentation/mmseg/datasets/ade.py.
+_CONTROL_SEG_COLORS = {
+    "person": (150, 5, 61),
+    "bicycle": (255, 245, 0),
+    "car": (0, 102, 200),
+    "bus": (255, 0, 245),
+    "truck": (255, 0, 20),
+    "boat": (173, 255, 0),
+    "bench": (194, 255, 0),
+    "chair": (204, 70, 3),
+    "bed": (204, 5, 255),
+    "bottle": (0, 255, 10),
+}
+
+
+def control_segmentation(source: ImageContent, segmentation: ModelRef, clothes: ModelRef | None = None):
+    """Build a sparse ADE20K map, optionally refining person masks with human parsing."""
+    import numpy as np
+
+    image = Image.open(io.BytesIO(source.encoded)).convert("RGB")
+    session = _verified_session(segmentation, _segmentation_session)
+    names = ast.literal_eval(session.get_modelmeta().custom_metadata_map["names"])
+    colors = {key: _CONTROL_SEG_COLORS[name] for key, name in names.items() if name in _CONTROL_SEG_COLORS}
+    instances = _class_instances(session, image, 0.25, class_ids=tuple(colors))
+    if not instances:
+        raise ValidationError("No supported semantic objects were detected for the segmentation control.")
+    canvas = np.zeros((source.height, source.width, 3), dtype=np.uint8)
+    clothes_session = _verified_session(clothes, _clothes_session) if clothes is not None else None
+    # ADE20K has apparel and bag, but no separate face, hair or limb classes.
+    apparel = (0, 112, 255)
+    clothing_ids = tuple(
+        CLOTHES_LABELS.index(name) + 1
+        for name in (
+            "Hat",
+            "Sunglasses",
+            "Upper-clothes",
+            "Skirt",
+            "Pants",
+            "Dress",
+            "Belt",
+            "Left-shoe",
+            "Right-shoe",
+            "Scarf",
+        )
+    )
+    # Highest-confidence instance wins overlaps, matching the editor's ordering.
+    for class_id, _, mask, box in reversed(instances):
+        canvas[mask > 0] = colors[class_id]
+        if class_id == 0 and clothes_session is not None:
+            x0, y0, x1, y1 = box
+            labels = np.frombuffer(_clothes_layers(clothes_session, image, mask, box), dtype=np.uint8)
+            labels = labels.reshape(y1 - y0, x1 - x0)
+            region = canvas[y0:y1, x0:x1]
+            # Stored labels are class index + 1; background/hair/skin stay person.
+            region[np.isin(labels, clothing_ids)] = apparel
+            region[labels == CLOTHES_LABELS.index("Bag") + 1] = (70, 184, 160)
+    return Image.fromarray(canvas), len(instances)
 
 
 def _clothes_layers(session, image: Image.Image, mask, box):

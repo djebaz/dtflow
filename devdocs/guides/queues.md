@@ -189,3 +189,8 @@ Plan files use `dtflow.queue-plan`, version 2 (version 1 files still read; rando
 - [Desktop guide](desktop.md)
 - [CLI reference](cli.md)
 - [Backend contract](../architecture/backend-contract.md)
+
+
+### Cloud ControlNet admission and timing
+
+The owner’s eight-model Pose + HiRes comparison succeeded, but the normal diagnostic log (session 82cfca4ed33e) shows eight prepared attempts at 18:26:52–54 UTC, the first four request-sent events at 18:26:57–18:27:00 and the next four at 18:27:16–24, with concurrency set to ten. The previous image-edit reservation was about 131 MiB plus retained PNG bytes per 768×1024 control request against a 640 MiB queue allowance, admitting only four at a time. The shared generation service now reserves one output plus retained guidance PNGs and the existing pixel/tensor allowance (about 62 MiB at this size), without changing the budget or edit/composite allowances. This is an accounting estimate, not measured RSS. Ordinary single-pass txt2img, local image-operation reservations, video admission, ownership, persistence and retries are unchanged. Cloud HiRes requests also retain their provider slot until the provider stream closes (second-pass progress does not expose a reliable completion count), rather than releasing it at the end of the first pass. A DEBUG generation.buffer_acquired record exposes reservation, used/limit bytes and wait duration; existing -time timelines also show buffer wait and subsequent preparation. Provider-side scheduling after submission remains unmeasured. Repeat the owner comparison with -time and development diagnostics before asserting a speedup or peak-memory bound.

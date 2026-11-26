@@ -15,7 +15,7 @@ from typing import Any
 from uuid import uuid4
 
 from dtflow.composition import BackendSelection
-from dtflow.core.image_inputs import ImageContent, PreparedImageInputs
+from dtflow.core.image_inputs import ImageContent, ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.models import (
     MAX_QUEUE_CONCURRENCY,
     SEED_LIMIT,
@@ -274,7 +274,9 @@ async def _check_pose_queue(
     if selection.name != "cloud":
         raise ValidationError("A pose queue requires DT+ Cloud.")
     for model_id in dict.fromkeys(item.model_id for item in items):
-        await settle(asyncio.to_thread(session._require_pose_family, state, model_id))
+        await settle(
+            asyncio.to_thread(session._require_pose_family, state, model_id, control_checkpoint=control.checkpoint)
+        )
     async with session.open_session(selection, state, durable=False, saved=saved) as service:
         inventory = await service.get_inventory(refresh=True)
     if not any(
@@ -351,6 +353,7 @@ async def create_saved_pose_queue(
     base: ResolvedGenerationRequest,
     *,
     saved: CredentialProvider | None = None,
+    prepared: PreparedImageInputs | None = None,
     plan: Plan | None = None,
     count: int = 1,
     up_next: bool = False,
@@ -359,17 +362,30 @@ async def create_saved_pose_queue(
     origin: str | None = None,
     queue_id: str | None = None,
 ) -> str:
-    """Create a queue from a recorded pose without changing the retained map or submitting anything."""
+    """Queue a retained pose, or stage its prepared map after validation; never submit anything."""
     if base.pose_control is None or base.image_inputs is None:
         raise ValidationError("This request has no retained pose to queue.")
     if backend.get("name") != "cloud":
         raise ValidationError("The recorded pose requires DT+ Cloud; no queue was created.")
     items = expand_items(base, count) if plan is None else expand_plan(base, plan, receipts=receipts)
     await _check_pose_queue(state, selection, items, base.pose_control, saved=saved)
-    try:
-        await settle(asyncio.to_thread(restore_image_inputs, state, base.image_inputs))
-    except (ValidationError, OSError) as exc:
-        raise ValidationError(f"The retained pose map is unavailable: {exc}. No queue was created.") from exc
+    if prepared is not None:
+        if (
+            ImageInputSnapshot.from_prepared(base.image_inputs.attempt_id, prepared, preserve_outside=False)
+            != base.image_inputs
+        ):
+            raise ValidationError("The prepared pose map differs from the recorded input.")
+        staged = await settle(
+            asyncio.to_thread(
+                snapshot_image_inputs, state, base.image_inputs.attempt_id, prepared, preserve_outside=False
+            )
+        )
+        items = [replace(item, schema_version=3, image_inputs=staged) for item in items]
+    else:
+        try:
+            await settle(asyncio.to_thread(restore_image_inputs, state, base.image_inputs))
+        except (ValidationError, OSError) as exc:
+            raise ValidationError(f"The retained pose map is unavailable: {exc}. No queue was created.") from exc
     return await create_queue(
         state, backend, items, up_next=up_next, composer_source=composer_source, origin=origin, queue_id=queue_id
     )
