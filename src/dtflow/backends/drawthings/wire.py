@@ -178,7 +178,7 @@ def build_generation_message(
         ):
             raise _reject(request, "pose_input_mismatch", "Pose input differs from the recorded snapshot.")
         transport = encode_image_inputs(
-            prepared, limits, unit_rgb=request.pose_control.checkpoint == SD15_POSE_PROBE_CONTROL
+            prepared, limits, unit_rgb=_unit_control_rgb(request)
         )
     elif image_operation:
         if not isinstance(image_permit, ImageOperationPermit) or prepared is None or request.image_inputs is None:
@@ -279,7 +279,7 @@ def build_generation_message(
         if request.pose_control is not None:
             message.hints = [
                 image_service.HintProto(
-                    hint_type=request.pose_control.input_type,
+                    hint_type="custom" if request.pose_control.checkpoint == SDXL_CANNY_PROBE_CONTROL else request.pose_control.input_type,
                     tensors=[image_service.TensorAndWeight(tensor=transport.image, weight=1.0)],
                 )
             ]
@@ -301,7 +301,7 @@ def build_generation_message(
                 (f"{request.pose_control.input_type}_cloud_acceptance", "unverified_owner_experiment"),
                 (
                     "control_tensor_rgb_range",
-                    "0..1" if request.pose_control.checkpoint == SD15_POSE_PROBE_CONTROL else "-1..1",
+                    "0..1" if _unit_control_rgb(request) else "-1..1",
                 ),
             )
         else:
@@ -314,6 +314,14 @@ def build_generation_message(
                 ("model_description_sha256", image_permit.model_description_sha256 or ""),
             )
     return WireRequest(message, effective)
+
+
+def _unit_control_rgb(request: ResolvedGenerationRequest) -> bool:
+    """Direct SD 1.5 and SDXL pose hints bypass the upstream RGB range conversion."""
+    return request.pose_control is not None and request.pose_control.checkpoint in (
+        SD15_POSE_PROBE_CONTROL,
+        SDXL_POSE_PROBE_CONTROL,
+    )
 
 
 def _control_input_override(request: ResolvedGenerationRequest) -> str:
