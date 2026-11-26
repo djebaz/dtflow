@@ -143,7 +143,7 @@ def _miss_reason(
             document[name]
     except (ValueError, TypeError, KeyError, AttributeError) as exc:
         return f"entries_unreadable: {type(exc).__name__}: {str(exc)[:160]}"
-    return "unknown"
+    return "readable_when_checked"
 
 
 def inventory_miss_reason(
@@ -154,6 +154,19 @@ def inventory_miss_reason(
         return _miss_reason(root, kind, endpoint=endpoint, credential=credential)
     except OSError:
         return "cache_busy_or_unreadable"
+
+
+def load_inventory_with_reason(
+    root: Path, kind: str, *, endpoint: str | None = None, credential: tuple[str, str] | None = None
+) -> tuple[InventorySnapshot | None, str | None]:
+    """``load_inventory`` plus, for development diagnostics, why it missed (``None`` on a hit)."""
+    try:
+        snapshot = _load_inventory(root, kind, endpoint=endpoint, credential=credential)
+    except OSError as exc:  # for example the cache lock held by another startup read for longer than the wait
+        return None, f"io_error: {type(exc).__name__}"
+    if snapshot is not None:
+        return snapshot, None
+    return None, inventory_miss_reason(root, kind, endpoint=endpoint, credential=credential)
 
 
 def load_inventory(

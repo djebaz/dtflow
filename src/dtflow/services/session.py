@@ -53,7 +53,7 @@ from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import dev_enabled
 from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per_name
 from dtflow.persistence.gallery_snapshot import schedule_publish
-from dtflow.persistence.inventory_cache import inventory_miss_reason, load_inventory, save_inventory
+from dtflow.persistence.inventory_cache import load_inventory, load_inventory_with_reason, save_inventory
 from dtflow.persistence.settings import load_dtplus_concurrency
 from dtflow.persistence.queues import read_attempt_record
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts, StateBusyError
@@ -829,12 +829,16 @@ async def cached_inventory(
     if identity is None:
         return None
     kind, endpoint, credential = identity
-    snapshot = await asyncio.to_thread(load_inventory, state, kind, endpoint=endpoint, credential=credential)
-    data = {"hit": snapshot is not None, "backend": kind}
-    if snapshot is None and dev_enabled():
-        data["reason"] = await asyncio.to_thread(
-            inventory_miss_reason, state, kind, endpoint=endpoint, credential=credential
+    data = {"backend": kind}
+    if dev_enabled():
+        snapshot, reason = await asyncio.to_thread(
+            load_inventory_with_reason, state, kind, endpoint=endpoint, credential=credential
         )
+        if reason is not None:
+            data["reason"] = reason
+    else:
+        snapshot = await asyncio.to_thread(load_inventory, state, kind, endpoint=endpoint, credential=credential)
+    data["hit"] = snapshot is not None
     diagnostic_event(log, "inventory.cache_read", level=logging.INFO, data=data)
     return snapshot
 
