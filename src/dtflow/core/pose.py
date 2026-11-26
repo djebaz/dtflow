@@ -97,7 +97,10 @@ class PoseControl:
         if self.checkpoint == SDXL_CANNY_PROBE_CONTROL:
             if self.input_type != "canny":
                 raise ValidationError("The official SDXL Canny probe requires a Canny edge map.")
-        elif self.checkpoint not in (*CONTROLS, SDXL_POSE_PROBE_CONTROL, SD15_POSE_PROBE_CONTROL) or self.input_type != "pose":
+        elif (
+            self.checkpoint not in (*CONTROLS, SDXL_POSE_PROBE_CONTROL, SD15_POSE_PROBE_CONTROL)
+            or self.input_type != "pose"
+        ):
             raise ValidationError("Only pinned pose controls are offered by this experiment.")
         # A conservative POC subset of the native weight control, not denoising strength.
         if not is_finite_number(self.strength) or not 0 < self.strength <= 2:

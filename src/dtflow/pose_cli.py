@@ -60,8 +60,15 @@ def add_commands(commands, add_request_options):
             add_request_options(child)
             child.set_defaults(endpoint=None, prefix=False)
             source = child.add_mutually_exclusive_group(required=True)
-            source.add_argument("-im", "--image", type=Path, help="Prepared RGB pose or Canny edge map on black background.")
-            source.add_argument("-ph", "--photo", type=Path, help="Source photo: local ONNX pose extraction or OpenCV Canny extraction before submission.")
+            source.add_argument(
+                "-im", "--image", type=Path, help="Prepared RGB pose or Canny edge map on black background."
+            )
+            source.add_argument(
+                "-ph",
+                "--photo",
+                type=Path,
+                help="Source photo: local ONNX pose extraction or OpenCV Canny extraction before submission.",
+            )
             child.add_argument("-pn", "--person", type=int, help="Person number when the photo shows several people.")
             child.add_argument(
                 "-co",
@@ -128,7 +135,13 @@ async def run(args):
     from dtflow.core.request_records import request_from_record
     from dtflow.services.body_pose import DETECTOR, extract_body, install_detector, prepare_pose, save_extraction
     from dtflow.services.config import read_json_file
-    from dtflow.services.session import _require_pose_family, generate_pose_once, pose_request, retry_pose_once, selection_for
+    from dtflow.services.session import (
+        _require_pose_family,
+        generate_pose_once,
+        pose_request,
+        retry_pose_once,
+        selection_for,
+    )
 
     def progress(event):
         if event.kind in ("preparing", "progress", "terminal"):
