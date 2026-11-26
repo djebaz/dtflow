@@ -871,6 +871,10 @@ class GenerationPage:
         if checked and self._text_slot is None:
             self._text_slot = self._selection()
             values, _, _, catalogue = self._text_slot
+            if rules.is_video_model(values.model):  # a video checkpoint is no start for a pose: choose a FLUX.1 one
+                values = replace(values, model="")
+            if catalogue.get("domain") == "video":
+                catalogue = {**catalogue, "domain": "image"}
             self._apply_selection(self._pose_slot or (replace(values, loras=()), {}, None, catalogue))
         elif not checked and self._text_slot is not None:
             self._pose_slot = self._selection()
