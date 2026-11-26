@@ -1561,6 +1561,7 @@ class MainWindow:
             self.form.endpointEdit.setText(endpoint)
         self.generation.restore(document.get("form"), document.get("forms"))
         self.generation.inpaint.restore(document.get("edit"))
+        self.generation.restore_pose_selection(document.get("pose_selection"))  # before Controlnet may switch itself on
         self.generation.controlnet.restore(document.get("pose"))
         # Restore the Generate sub-mode, not the current workspace: startup always stays on Connection.
         page = self.generation_page
@@ -1603,6 +1604,7 @@ class MainWindow:
             "generate_mode": self._generate_mode(),
             "edit": self.generation.inpaint.session_document(),
             "pose": self.generation.controlnet.session_document(),
+            "pose_selection": self.generation.pose_selection_document(),
         }
 
     def _queue_images(self, count: int) -> None:
