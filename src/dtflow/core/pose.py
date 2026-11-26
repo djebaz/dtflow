@@ -1,4 +1,4 @@
-"""Narrow FLUX.1 Dev pose experiment, not a general control compatibility matrix."""
+"""Body-pose control specifications and narrow, explicitly selected provider experiments."""
 
 from dataclasses import dataclass
 
@@ -13,6 +13,10 @@ CONTROLS = (
     "controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt",
     "controlnet_union_pro_flux_1_dev_2.0_q5p.ckpt",
 )
+# #632: CLI-only feasibility probe. Do not add this to the desktop control or family choices until verified.
+SDXL_POSE_PROBE_CONTROL = "controlnet_xinsir_union_promax_sdxl_1.0_f16.ckpt"
+SDXL_POSE_PROBE_MODELS = ("sd_xl_base_1.0_f16.ckpt", "sd_xl_base_1.0_q6p_q8p.ckpt")
+
 MODELS = ("flux_1_dev_f16.ckpt", "flux_1_dev_q5p.ckpt", "flux_1_dev_q8p.ckpt")
 # Only this checkpoint with Union Pro 1.0 q5p at 0.7 has been confirmed (#502). Other FLUX.1 variants may be tried and
 # are labelled "not verified"; a checkpoint moves here only when the owner confirms it.
@@ -50,7 +54,18 @@ _UNION_SPECS = {
 
 
 def control_spec(checkpoint: str) -> dict:
-    """Community specification of one pinned Union Pro control, as the Draw Things override payload expects it."""
+    """Pinned community control specification, as the Draw Things override payload expects it."""
+    if checkpoint == SDXL_POSE_PROBE_CONTROL:
+        # community-models ce4b2ae34a2ef7899fa014f019d04f2632dabe6f,
+        # controlnets/xinsir-union-promax-sdxl-1.0/metadata.json.
+        return {
+            "name": "Xinsir Union ProMax (SDXL, ControlNet)",
+            "file": checkpoint,
+            "version": "sdxl_base_v0.9",
+            "type": "controlnetunion",
+            "global_average_pooling": False,
+            "transformer_blocks": [],
+        }
     if checkpoint not in CONTROLS:
         raise ValidationError("Only the pinned Union pose controls have a known specification.")
     name, kind, blocks = _UNION_SPECS["1.0" if "_1.0_" in checkpoint else "2.0"]
@@ -75,8 +90,8 @@ class PoseControl:
     guidance_end: float = 1.0
 
     def __post_init__(self):
-        if self.checkpoint not in CONTROLS or self.input_type != "pose":
-            raise ValidationError("Only the two pinned Union pose controls are offered by this experiment.")
+        if self.checkpoint not in (*CONTROLS, SDXL_POSE_PROBE_CONTROL) or self.input_type != "pose":
+            raise ValidationError("Only pinned Union pose controls are offered by this experiment.")
         # A conservative POC subset of the native weight control, not denoising strength.
         if not is_finite_number(self.strength) or not 0 < self.strength <= 2:
             raise ValidationError(
