@@ -10,10 +10,11 @@ from dtflow.core.models import TimeoutPolicy, ValidationError
 from dtflow.core.pose import (
     CONTROL_MODES,
     CONTROLS,
+    OFFICIAL_PROBE_CONTROLS,
+    XINSIR_PROBE_INPUTS,
     SD15_POSE_PROBE_CONTROL,
     SD15_POSE_PROBE_MODEL,
     SDXL_CANNY_PROBE_CONTROL,
-    SDXL_CANNY_PROBE_MODELS,
     SDXL_POSE_PROBE_CONTROL,
     SDXL_POSE_PROBE_MODELS,
     PoseControl,
@@ -62,21 +63,29 @@ def add_commands(commands, add_request_options):
             child.set_defaults(endpoint=None, prefix=False)
             source = child.add_mutually_exclusive_group(required=True)
             source.add_argument(
-                "-im", "--image", type=Path, help="Prepared RGB pose or Canny edge map on black background."
+                "-im", "--image", type=Path, help="Prepared pose, Canny, grayscale depth or palette-coloured semantic segmentation map."
             )
             source.add_argument(
                 "-ph",
                 "--photo",
                 type=Path,
-                help="Source photo: local ONNX pose extraction or OpenCV Canny extraction before submission.",
+                help="Source photo: local pose, Canny or depth extraction; segmentation requires a prepared map.",
             )
             child.add_argument("-pn", "--person", type=int, help="Person number when the photo shows several people.")
             child.add_argument(
                 "-co",
                 "--control",
-                choices=(*CONTROLS, SDXL_POSE_PROBE_CONTROL, SDXL_CANNY_PROBE_CONTROL, SD15_POSE_PROBE_CONTROL),
+                choices=(*CONTROLS, SDXL_POSE_PROBE_CONTROL, *OFFICIAL_PROBE_CONTROLS),
                 required=True,
-                help="Exact control checkpoint; SDXL Xinsir/Canny and SD 1.5 Pose are CLI-only probes.",
+                help="Exact control checkpoint; non-FLUX controls are CLI-only probes.",
+            )
+            child.add_argument(
+                "-ct", "--control-type", choices=XINSIR_PROBE_INPUTS,
+                help="Explicit Union mode; official controls infer their native input type.",
+            )
+            child.add_argument(
+                "-dm", "--depth-model", type=Path,
+                help="Local pinned Depth Anything V2 Small ONNX for depth photo extraction.",
             )
             child.add_argument(
                 "-cm",
@@ -131,6 +140,54 @@ def prepare_canny_probe(path: Path, width: int, height: int, *, photo: bool):
     return pixels.prepare_image_bytes(map_content.encoded, width, height), tuple(sorted(evidence.items()))
 
 
+def prepare_spatial_probe(path: Path, width: int, height: int, *, input_type: str, photo: bool, depth_model: Path | None):
+    """Fit depth or semantic maps; preserve class colours with nearest-neighbour resampling."""
+    import hashlib
+
+    import numpy as np
+    from PIL import Image
+
+    from dtflow.services import image_preparation as pixels
+
+    content = pixels.load_source_file(path)
+    image = pixels._verified(content)
+    fit = pixels._fit(image.size, (width, height))
+    evidence = {"origin": f"prepared_{input_type}_map", "source_sha256": content.sha256}
+    if input_type == "depth":
+        if photo:
+            import onnxruntime as ort
+
+            model = depth_model or Path("tmp/models/depth-anything-v2-small.onnx")
+            expected = "afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c"
+            if not model.is_file():
+                raise ValidationError("Depth Anything V2 Small ONNX is missing; provide --depth-model or a prepared depth map.")
+            with model.open("rb") as stream:
+                digest = hashlib.file_digest(stream, "sha256").hexdigest()
+            if digest != expected:
+                raise ValidationError("Depth model differs from the pinned Depth Anything V2 Small checkpoint.")
+            session = ort.InferenceSession(str(model), providers=["CPUExecutionProvider"])
+            rgb = np.asarray(image.resize((518, 518), Image.Resampling.BICUBIC), dtype=np.float32) / 255
+            rgb = (rgb - np.array([0.485, 0.456, 0.406], dtype=np.float32)) / np.array(
+                [0.229, 0.224, 0.225], dtype=np.float32
+            )
+            tensor = np.transpose(rgb, (2, 0, 1))[None].astype(np.float32)
+            depth = np.asarray(session.run(None, {session.get_inputs()[0].name: tensor})[0]).squeeze()
+            if depth.ndim != 2 or not np.isfinite(depth).all() or depth.max() <= depth.min():
+                raise ValidationError("Depth model did not produce a finite nonconstant depth map.")
+            image = Image.fromarray(np.rint((depth - depth.min()) / (depth.max() - depth.min()) * 255).astype(np.uint8))
+            evidence.update({"origin": "depth_photo", "detector": "Depth Anything V2 Small ONNX", "detector_sha256": digest})
+        else:
+            image = image.convert("L")
+        fitted = image.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.BILINEAR).convert("RGB")
+    else:
+        fitted = image.convert("RGB").resize((fit.fitted_width, fit.fitted_height), Image.Resampling.NEAREST)
+    canvas = Image.new("RGB", (width, height), "black")
+    canvas.paste(fitted, (fit.left, fit.top))
+    map_content = pixels._content(canvas)
+    evidence.update({"map_sha256": map_content.sha256, "preparation": "aspect_fit_black_padding_no_crop"})
+    return pixels.prepare_image_bytes(map_content.encoded, width, height), tuple(sorted(evidence.items()))
+
+
 async def run(args):
     from dtflow.cli import resolve_generation
     from dtflow.core.request_records import request_from_record
@@ -158,12 +215,14 @@ async def run(args):
                         "models": SDXL_POSE_PROBE_MODELS,
                         "cloud_application": "unverified; CLI-only feasibility probe",
                     },
-                    "sdxl_canny_probe": {"control": SDXL_CANNY_PROBE_CONTROL, "models": SDXL_CANNY_PROBE_MODELS},
+                    "sdxl_canny_probe": {"control": SDXL_CANNY_PROBE_CONTROL, "models": OFFICIAL_PROBE_CONTROLS[SDXL_CANNY_PROBE_CONTROL][1]},
                     "sd15_pose_probe": {
                         "control": SD15_POSE_PROBE_CONTROL,
                         "models": (SD15_POSE_PROBE_MODEL,),
                         "cloud_application": "unverified in DTFlow; CLI-only feasibility probe",
                     },
+                    "official_probes": OFFICIAL_PROBE_CONTROLS,
+                    "xinsir_inputs": XINSIR_PROBE_INPUTS,
                     "detector": asdict(DETECTOR),
                     "cloud_application": "unverified; requires Echo-listed control and owner smoke",
                     "selection": "one body (exactly one found, or --person); incomplete torso refused; missing joints omitted",
@@ -192,10 +251,12 @@ async def run(args):
         if request.pose_control is None:
             raise ValidationError("Retry requires saved pose control settings.")
     else:
+        native = OFFICIAL_PROBE_CONTROLS.get(args.control)
+        input_type = args.control_type or (native[0] if native else "pose")
         control = PoseControl(
             args.control,
             args.strength,
-            input_type="canny" if args.control == SDXL_CANNY_PROBE_CONTROL else "pose",
+            input_type=input_type,
             control_mode=args.control_mode,
             guidance_start=args.start,
             guidance_end=args.end,
@@ -203,9 +264,23 @@ async def run(args):
         request = resolve_generation(args)
         # Validate the checkpoint family before reading a photograph or running ONNX.
         _require_pose_family(args.state, request.model_id, control_checkpoint=control.checkpoint)
-        if control.input_type == "canny":
-            if args.person is not None:
-                raise ValidationError("Person selection is not used by the Canny probe.")
+        if args.depth_model is not None and (control.input_type != "depth" or args.photo is None):
+            raise ValidationError("--depth-model is only used with a source photo and Depth control.")
+        if control.input_type != "pose" and args.person is not None:
+            raise ValidationError("Person selection is only used for pose extraction.")
+        if control.input_type in ("depth", "seg"):
+            if control.input_type == "seg" and args.photo is not None:
+                raise ValidationError("Segmentation requires a prepared semantic colour map (--image).")
+            prepared, evidence = await asyncio.to_thread(
+                prepare_spatial_probe,
+                args.photo or args.image,
+                request.width_px,
+                request.height_px,
+                input_type=control.input_type,
+                photo=args.photo is not None,
+                depth_model=args.depth_model,
+            )
+        elif control.input_type == "canny":
             prepared, evidence = await asyncio.to_thread(
                 prepare_canny_probe,
                 args.photo or args.image,
