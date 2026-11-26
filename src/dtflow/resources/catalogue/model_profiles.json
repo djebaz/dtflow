@@ -1176,6 +1176,28 @@
     "tcd_trailing"
    ]
   },
+  "pixelwave_flux_1_schnell_04": {
+   "name": "FLUX.1 [schnell]",
+   "sampler": "euler_a_trailing",
+   "steps": 4,
+   "guidance": 4.5,
+   "extras": {
+    "clip_skip": 2,
+    "guidance_embed": 3.5,
+    "resolution_dependent_shift": false,
+    "shift": 1,
+    "speed_up_with_guidance_embed": true,
+    "t5_text_encoder": true
+   },
+   "samplers": [
+    "euler_a_trailing",
+    "dpmpp_sde_trailing",
+    "dpmpp_2m_trailing",
+    "ddim_trailing",
+    "unipc_trailing",
+    "tcd_trailing"
+   ]
+  },
   "qwen_image_1.0": {
    "name": "Qwen Image 1.0",
    "sampler": "unipc_trailing",
