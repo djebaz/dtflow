@@ -33,6 +33,7 @@ from dtflow.core.pose import (
     SD15_POSE_PROBE_CONTROL,
     SD15_POSE_PROBE_MODEL,
     SDXL_CANNY_PROBE_CONTROL,
+    SDXL_CANNY_PROBE_MODELS,
     SDXL_POSE_PROBE_CONTROL,
     SDXL_POSE_PROBE_MODELS,
 )
@@ -168,10 +169,13 @@ def build_generation_message(
         if request.pose_control.checkpoint == SD15_POSE_PROBE_CONTROL and request.model_id != SD15_POSE_PROBE_MODEL:
             raise _reject(request, "sd15_pose_probe_model", "The SD 1.5 pose probe requires Stable Diffusion v1.5 F16.")
         if (
-            request.pose_control.checkpoint in (SDXL_POSE_PROBE_CONTROL, SDXL_CANNY_PROBE_CONTROL)
+            request.pose_control.checkpoint == SDXL_POSE_PROBE_CONTROL
             and request.model_id not in SDXL_POSE_PROBE_MODELS
+        ) or (
+            request.pose_control.checkpoint == SDXL_CANNY_PROBE_CONTROL
+            and request.model_id not in SDXL_CANNY_PROBE_MODELS
         ):
-            raise _reject(request, "sdxl_pose_probe_model", "The SDXL pose probe requires SDXL Base 1.0.")
+            raise _reject(request, "sdxl_pose_probe_model", "The SDXL control probe requires an admitted checkpoint.")
         if (
             ImageInputSnapshot.from_prepared(request.image_inputs.attempt_id, prepared, preserve_outside=False)
             != request.image_inputs
