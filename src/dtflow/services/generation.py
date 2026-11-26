@@ -136,8 +136,6 @@ class GenerationService:
         self.budget = budget or BufferBudget(
             backend.capabilities.limits.buffer_budget * (OVERLAP if admission is not None else 1)
         )
-        # Serialize validation/saving while admitted backend requests may overlap.
-        self._buffers = asyncio.Semaphore(1)
 
     async def _bounded(self, operation, deadline: float, phase: str):
         try:
@@ -465,12 +463,13 @@ class GenerationService:
             not self._explicit_budget
             and caps.backend_id == "drawthings-cloud"
             and request.operation == "txt2img"
-            and prepared_inputs is None
+            and (prepared_inputs is None or (request.pose_control is not None and prepared_inputs.mask is None))
             and request.num_frames is None
             and raw_bytes <= caps.limits.artifact_bytes
+            and reservation <= self.budget.limit
         ):
             # Ordinary remote images are bounded by selected concurrency and per-output limits.
-            # Keep aggregate admission for large images, controls, edits and video.
+            # Ordinary control maps share this policy; retain admission for large inputs, edits and video.
             reservation = 0
         if raw_bytes > caps.limits.tensor_bytes or reservation > self.budget.limit:
             raise BackendError(
@@ -703,55 +702,54 @@ class GenerationService:
                     result,
                     backend_elapsed_seconds=backend_terminal_at - backend_submitted_at,
                 )
-            # Validation/encoding run in the bounded worker path, not the owning loop.
-            async with self._buffers:
-                await settle(asyncio.to_thread(validate_result, result, request, caps.limits))
-                outcome = RemoteOutcome.SUCCEEDED
-                await self.store.transition(attempt_id, ("possibly_submitted",), "saving", stage, outcome)
-                state = "saving"
+            # Independent results can be validated concurrently. Publication keeps the native originals lease.
+            await settle(asyncio.to_thread(validate_result, result, request, caps.limits))
+            outcome = RemoteOutcome.SUCCEEDED
+            await self.store.transition(attempt_id, ("possibly_submitted",), "saving", stage, outcome)
+            state = "saving"
 
-                def commit_originals():
-                    # Keep committed originals behind the same OS-released lease
-                    # used by export and Recycle Bin; no provider code runs here.
-                    # A paid result waits longer than ordinary leases before save_failed.
-                    with original_images_lock(getattr(self.store, "directory", self.output.parent), timeout=30):
-                        extra = {"layout": layout} if layout is not None else {}
-                        if image_operation:
-                            return save_image_artifacts(
-                                self.output,
-                                attempt_id,
-                                request,
-                                result,
-                                identity(),
-                                caps.limits,
-                                prepared_inputs,
-                                **extra,
-                            )
-                        return self.saver(self.output, attempt_id, request, result, identity(), caps.limits, **extra)
+            def commit_originals():
+                # Keep committed originals behind the same OS-released lease
+                # used by export and Recycle Bin; no provider code runs here.
+                # A paid result waits longer than ordinary leases before save_failed.
+                with original_images_lock(getattr(self.store, "directory", self.output.parent), timeout=30):
+                    extra = {"layout": layout} if layout is not None else {}
+                    if image_operation:
+                        return save_image_artifacts(
+                            self.output,
+                            attempt_id,
+                            request,
+                            result,
+                            identity(),
+                            caps.limits,
+                            prepared_inputs,
+                            **extra,
+                        )
+                    return self.saver(self.output, attempt_id, request, result, identity(), caps.limits, **extra)
 
-                async def save_and_register():
-                    try:
-                        saved = await asyncio.to_thread(commit_originals)
-                    except Exception as exc:
-                        if request.num_frames is not None:
-                            diagnostic_event(
-                                log,
-                                "video.artifacts_save_failed",
-                                level=logging.WARNING,
-                                data={"attempt_id": attempt_id, "reason": type(exc).__name__},
-                            )
-                        raise
-                    paths, metadata = saved[:2]
-                    await self._attribute_credential(attempt_id)
-                    await self.store.transition(
-                        attempt_id, ("saving",), "succeeded", stage, outcome, artifacts=(*paths, metadata)
-                    )
-                    return saved
-
-                # Once the file write starts, cancellation must wait for its durable registration too.
-                saved = await settle(save_and_register())
+            async def save_and_register():
+                try:
+                    saved = await asyncio.to_thread(commit_originals)
+                except Exception as exc:
+                    if request.num_frames is not None:
+                        diagnostic_event(
+                            log,
+                            "video.artifacts_save_failed",
+                            level=logging.WARNING,
+                            data={"attempt_id": attempt_id, "reason": type(exc).__name__},
+                        )
+                    raise
                 paths, metadata = saved[:2]
-                display_image = saved[2] if image_operation else None
+                await self._attribute_credential(attempt_id)
+                await self.store.transition(
+                    attempt_id, ("saving",), "succeeded", stage, outcome, artifacts=(*paths, metadata)
+                )
+                return saved
+
+            # Once the file write starts, cancellation must wait for its durable registration too.
+            saved = await settle(save_and_register())
+            paths, metadata = saved[:2]
+            display_image = saved[2] if image_operation else None
             diagnostic_event(
                 log,
                 "generation.attempt_succeeded",
