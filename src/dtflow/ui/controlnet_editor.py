@@ -383,6 +383,7 @@ class ControlnetEditor(QObject):
             form.downloadDetectorButton.setText("Download detector")
         form.poseStep2Label.setVisible(pose_photo)
         form.posePeopleList.setVisible(pose_photo)
+        form.poseStep3Label.setText(f"{3 if pose_photo else 2} · Control and strength")
         self._detector(view)
         form.extractPoseButton.setText(
             "Extracting…" if view.extracting else "Extract pose" if pose else f"Extract {kind_label.lower()}"
