@@ -124,7 +124,10 @@ class PoseControl:
         elif self.checkpoint in OFFICIAL_PROBE_CONTROLS:
             if self.input_type != OFFICIAL_PROBE_CONTROLS[self.checkpoint][0]:
                 raise ValidationError("The input type must match the official control checkpoint.")
-        elif self.checkpoint not in CONTROLS or self.input_type != "pose":
+        elif self.checkpoint in CONTROLS:
+            if self.input_type not in XINSIR_PROBE_INPUTS:
+                raise ValidationError("Unsupported FLUX.1 Union control input.")
+        else:
             raise ValidationError("Only pinned controls are offered by this experiment.")
         # A conservative POC subset of the native weight control, not denoising strength.
         if not is_finite_number(self.strength) or not 0 < self.strength <= 2:
