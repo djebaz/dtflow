@@ -30,6 +30,7 @@ from dtflow.ui.file_dialogs import QFileDialog
 from dtflow import startup
 from dtflow.core.compute_units import ComputeUnitEstimate, estimate_compute_units
 from dtflow.core.model_profiles import has_own_profile, profile_for
+from dtflow.core.pose import is_flux1
 from dtflow.core.models import (
     BackendEvent,
     CredentialProvider,
@@ -571,6 +572,7 @@ class GenerationPage:
             # Capture the leaving form BEFORE clearing availability/filter choices.
             if self._provider:
                 self._forms[self._provider] = self._provider_form()
+            shown = self._selection() if self._text_slot is not None else None  # the Controlnet settings on screen
             self._inventory_source = source
             self._inventory_revision += 1
             self._key_switch_checkpoint = None  # A backend/endpoint change ends the pending cloud-key choice.
@@ -585,8 +587,12 @@ class GenerationPage:
                     self._switch_provider(name, remember=False)
             finally:
                 self._updating_catalogue = False
-            catalogue = self._forms.get(name, {}).get("catalogue", {})
-            self._pending_family = catalogue.get("base_model") if isinstance(catalogue, dict) else None
+            if shown is not None:  # clearing the lists emptied the Controlnet controls: put them back
+                self._apply_selection(shown)
+                self._pending_family = shown[3].get("base_model")
+            else:
+                catalogue = self._forms.get(name, {}).get("catalogue", {})
+                self._pending_family = catalogue.get("base_model") if isinstance(catalogue, dict) else None
         self.page.simulationBox.setVisible(name == "fake")
         self.page.includeCloudCheck.setVisible(name == "local")
         if name != "local" and self.page.includeCloudCheck.isChecked():
@@ -820,17 +826,23 @@ class GenerationPage:
         video = getattr(self, "video", None)
         if not restoring_session and video is not None and (video.active or rules.is_video_model(values.model)):
             values = replace(values, width=current.width, height=current.height)
-        self._apply(values)
-        if restoring_session and video is not None:
-            video.restore(document.get("video") if isinstance(document, dict) else None)
         receipts = document.get("receipts") if isinstance(document, dict) else None
         valid = (
             {k: v for k, v in receipts.items() if type(k) is str and type(v) is str}
             if isinstance(receipts, dict)
             else {}
         )
+        catalogue = document.get("catalogue") if isinstance(document, dict) else None
+        if self._text_slot is not None:
+            # Controlnet is shown: the provider's remembered form is the other modes' settings, which wait in their
+            # slot; the visible Controlnet settings stay as they are.
+            self._text_slot = (values, valid, None, catalogue if isinstance(catalogue, dict) else self._text_slot[3])
+            return
+        self._apply(values)
+        if restoring_session and video is not None:
+            video.restore(document.get("video") if isinstance(document, dict) else None)
         self.lora.set_loras(values.loras, receipts=valid)
-        self._apply_catalogue(document.get("catalogue") if isinstance(document, dict) else None, values.model)
+        self._apply_catalogue(catalogue, values.model)
 
     def _switch_provider(self, name: str, *, remember: bool = True) -> None:
         """Remember the leaving provider's fields and restore the arriving one's (not shared between providers)."""
@@ -871,8 +883,11 @@ class GenerationPage:
         if checked and self._text_slot is None:
             self._text_slot = self._selection()
             values, _, _, catalogue = self._text_slot
-            if rules.is_video_model(values.model):  # a video checkpoint is no start for a pose: choose a FLUX.1 one
+            # Controlnet is FLUX.1 only: it starts on the FLUX.1 base model, keeping the checkpoint only if it is one.
+            entry = self._catalogue.checkpoint(values.model, include_unavailable=True) if values.model else None
+            if not is_flux1(values.model, entry.base_model if entry else None):
                 values = replace(values, model="")
+            catalogue = {**catalogue, "base_model": "flux_1"}
             if catalogue.get("domain") == "video":
                 catalogue = {**catalogue, "domain": "image"}
             self._apply_selection(self._pose_slot or (replace(values, loras=()), {}, None, catalogue))
