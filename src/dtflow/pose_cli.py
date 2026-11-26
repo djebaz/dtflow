@@ -7,7 +7,14 @@ from dataclasses import asdict
 from pathlib import Path
 
 from dtflow.core.models import TimeoutPolicy, ValidationError
-from dtflow.core.pose import CONTROL_MODES, CONTROLS, SDXL_POSE_PROBE_CONTROL, SDXL_POSE_PROBE_MODELS, PoseControl
+from dtflow.core.pose import (
+    CONTROL_MODES,
+    CONTROLS,
+    SDXL_CANNY_PROBE_CONTROL,
+    SDXL_POSE_PROBE_CONTROL,
+    SDXL_POSE_PROBE_MODELS,
+    PoseControl,
+)
 
 
 def add_commands(commands, add_request_options):
@@ -51,15 +58,15 @@ def add_commands(commands, add_request_options):
             add_request_options(child)
             child.set_defaults(endpoint=None, prefix=False)
             source = child.add_mutually_exclusive_group(required=True)
-            source.add_argument("-im", "--image", type=Path, help="Prepared OpenPose RGB body map, black background.")
-            source.add_argument("-ph", "--photo", type=Path, help="Explicit local ONNX extraction before submission.")
+            source.add_argument("-im", "--image", type=Path, help="Prepared RGB pose or Canny edge map on black background.")
+            source.add_argument("-ph", "--photo", type=Path, help="Source photo: local ONNX pose extraction or OpenCV Canny extraction before submission.")
             child.add_argument("-pn", "--person", type=int, help="Person number when the photo shows several people.")
             child.add_argument(
                 "-co",
                 "--control",
-                choices=(*CONTROLS, SDXL_POSE_PROBE_CONTROL),
+                choices=(*CONTROLS, SDXL_POSE_PROBE_CONTROL, SDXL_CANNY_PROBE_CONTROL),
                 required=True,
-                help="Exact control checkpoint; Xinsir SDXL is an unverified CLI-only probe.",
+                help="Exact control checkpoint; SDXL Xinsir and official Canny are CLI-only probes.",
             )
             child.add_argument(
                 "-cm",
@@ -77,6 +84,41 @@ def add_commands(commands, add_request_options):
                 required=True,
                 help="Control weight (0,2], NOT img2img denoising or text guidance.",
             )
+
+
+def prepare_canny_probe(path: Path, width: int, height: int, *, photo: bool):
+    """Prepare a target-sized RGB edge map; OpenCV is optional and only needed for a source photo."""
+    from PIL import Image
+    from dtflow.services import image_preparation as pixels
+
+    content = pixels.load_source_file(path)
+    image = pixels._verified(content)
+    fit = pixels._fit(image.size, (width, height))
+    fitted = image.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.LANCZOS)
+    evidence = {"origin": "canny_photo" if photo else "prepared_canny_map", "source_sha256": content.sha256}
+    if photo:
+        try:
+            import cv2
+        except ImportError as exc:
+            raise ValidationError(
+                "Canny photo extraction needs OpenCV; run with uv run --with opencv-python-headless==4.11.0.86."
+            ) from exc
+        import numpy as np
+
+        gray = cv2.cvtColor(np.asarray(fitted.convert("RGB")), cv2.COLOR_RGB2GRAY)
+        edges = cv2.Canny(gray, 100, 200)
+        fitted = Image.fromarray(edges).convert("RGB")
+        evidence.update({"canny_low": "100", "canny_high": "200", "opencv_version": cv2.__version__})
+    else:
+        fitted = fitted.convert("RGB")
+    canvas = Image.new("RGB", (width, height), "black")
+    canvas.paste(fitted, (fit.left, fit.top))
+    if canvas.getbbox() is None:
+        raise ValidationError("Canny map is empty; no guidance was submitted.")
+    map_content = pixels._content(canvas)
+    evidence["map_sha256"] = map_content.sha256
+    evidence["preparation"] = "aspect_fit_black_padding_no_crop"
+    return pixels.prepare_image_bytes(map_content.encoded, width, height), tuple(sorted(evidence.items()))
 
 
 async def run(args):
@@ -100,6 +142,7 @@ async def run(args):
                         "models": SDXL_POSE_PROBE_MODELS,
                         "cloud_application": "unverified; CLI-only feasibility probe",
                     },
+                    "sdxl_canny_probe": {"control": SDXL_CANNY_PROBE_CONTROL, "models": SDXL_POSE_PROBE_MODELS},
                     "detector": asdict(DETECTOR),
                     "cloud_application": "unverified; requires Echo-listed control and owner smoke",
                     "selection": "one body (exactly one found, or --person); incomplete torso refused; missing joints omitted",
@@ -131,6 +174,7 @@ async def run(args):
         control = PoseControl(
             args.control,
             args.strength,
+            input_type="canny" if args.control == SDXL_CANNY_PROBE_CONTROL else "pose",
             control_mode=args.control_mode,
             guidance_start=args.start,
             guidance_end=args.end,
@@ -138,15 +182,26 @@ async def run(args):
         request = resolve_generation(args)
         # Validate the checkpoint family before reading a photograph or running ONNX.
         _require_pose_family(args.state, request.model_id, control_checkpoint=control.checkpoint)
-        prepared, evidence = await asyncio.to_thread(
-            prepare_pose,
-            args.photo or args.image,
-            request.width_px,
-            request.height_px,
-            photo=args.photo is not None,
-            state=args.state,
-            person=args.person,
-        )
+        if control.input_type == "canny":
+            if args.person is not None:
+                raise ValidationError("Person selection is not used by the Canny probe.")
+            prepared, evidence = await asyncio.to_thread(
+                prepare_canny_probe,
+                args.photo or args.image,
+                request.width_px,
+                request.height_px,
+                photo=args.photo is not None,
+            )
+        else:
+            prepared, evidence = await asyncio.to_thread(
+                prepare_pose,
+                args.photo or args.image,
+                request.width_px,
+                request.height_px,
+                photo=args.photo is not None,
+                state=args.state,
+                person=args.person,
+            )
         request = pose_request(request, control, prepared, evidence)
     selection = selection_for("cloud", None, args.state)
     options = {
@@ -168,7 +223,7 @@ async def run(args):
                 "outputs": outcome.output_paths,
                 "metadata": outcome.metadata_path,
                 "warnings": outcome.warnings,
-                "pose_adherence": "requires owner observation",
+                f"{request.pose_control.input_type}_adherence": "requires owner observation",
             },
             indent=2,
         )
