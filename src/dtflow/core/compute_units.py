@@ -817,8 +817,33 @@ def estimate_compute_units(
     has_loras: bool = False,
     operation: str = "txt2img",
     base_model: str | None = None,
+    first_pass: tuple[int, int] | None = None,
+    second_pass_strength: float | None = None,
 ) -> ComputeUnitEstimate:
-    """Estimate one T2I output, using a classified base family when exact metadata is absent."""
+    """Estimate one T2I output, using a classified base family when exact metadata is absent.
+
+    With ``first_pass`` (the HiRes first-pass size) the result is the sum of two passes: the first at that size with
+    all steps, and the second at the final size with the share of steps Draw Things runs there (``steps`` times
+    ``second_pass_strength``, default 0.7, rounded up). Draw Things' own estimator ignores HiRes; this sum is an
+    approximation built from its per-pass arithmetic (each pass also counts the small once-per-run text part).
+    """
+    if first_pass is not None:
+        strength = 0.7 if second_pass_strength is None else second_pass_strength
+        if not math.isfinite(strength) or not 0 <= strength <= 1:
+            return ComputeUnitEstimate(None, "Invalid HiRes strength.")
+        common = dict(
+            model_id=model_id, guidance=guidance, has_loras=has_loras, operation=operation, base_model=base_model
+        )
+        first = estimate_compute_units(width_px=first_pass[0], height_px=first_pass[1], steps=steps, **common)
+        second = estimate_compute_units(
+            width_px=width_px, height_px=height_px, steps=max(1, math.ceil(steps * strength)), **common
+        )
+        if first.units is None or second.units is None:
+            return first if first.units is None else second
+        return ComputeUnitEstimate(
+            first.units + second.units,
+            f"{first.reason} HiRes: first pass plus second pass, an approximation of Draw Things' step split.",
+        )
     if operation != "txt2img":
         return ComputeUnitEstimate(None, "Image edits are not supported by this estimate.")
     if not model_id:

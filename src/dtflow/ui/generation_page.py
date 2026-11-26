@@ -91,7 +91,7 @@ from dtflow.ui.generation_presenter import (
 from dtflow.ui.generation_grid import GenerationGrid
 from dtflow.ui.inline_feedback import InlineNotice, edit_text
 from dtflow.ui.progress_model import SOLO_QUEUE, ItemProgress, ProgressModel, ProgressSnapshot, QueueTotals
-from dtflow.core.advanced import unsupported_fields
+from dtflow.core.advanced import check_first_pass, first_pass_size, unsupported_fields
 from dtflow.ui.advanced_panel import FIELD_WIDGETS as ADVANCED_FIELD_WIDGETS, AdvancedPanel
 from dtflow.ui.video_panel import VideoPanel
 from dtflow.core import video as rules
@@ -2235,6 +2235,7 @@ class GenerationPage:
             return ComputeUnitEstimate(None, self._catalogue_error or "Catalogue is loading.")
         model_id = page.modelCombo.currentText().strip()
         entry = self._catalogue.checkpoint(model_id, include_unavailable=True) if model_id else None
+        hires = self._hires_estimate_inputs()
         return estimate_compute_units(
             model_id=model_id,
             base_model=entry.base_model if entry else None,
@@ -2244,16 +2245,21 @@ class GenerationPage:
             guidance=page.guidanceSpinBox.value(),
             has_loras=bool(self.lora.loras),
             operation="inpaint" if page.inpaintModeButton.isChecked() else "txt2img",
+            first_pass=hires[0] if hires else None,
+            second_pass_strength=hires[1] if hires else None,
         )
 
-    def _hires_fix_chosen(self) -> bool:
-        """True when the form will send Hires Fix, whose second pass the offline estimate does not include."""
+    def _hires_estimate_inputs(self) -> tuple[tuple[int, int], float | None] | None:
+        """The HiRes first-pass size and chosen strength when the form will send HiRes, else ``None``."""
         try:
             panel = getattr(self, "advanced", None)
             chosen = panel.values() if panel is not None else None
+            width, height = self.page.widthSpinBox.value(), self.page.heightSpinBox.value()
+            check_first_pass(width, height, chosen)
         except ValidationError:
-            return False
-        return chosen is not None and chosen.hires_fix_active
+            return None  # an unusable combination is shown by the panel; the estimate stays the single pass
+        size = first_pass_size(width, height, chosen)
+        return None if size is None else (size, chosen.hires_fix_strength)
 
     def _update_compute_units(self, *_args) -> None:
         """Show an offline, non-authoritative DT+ complexity estimate for one T2I image.
@@ -2288,7 +2294,6 @@ class GenerationPage:
         # No hover overlay: the reason is exposed to assistive technology only.
         meter.setAccessibleDescription(
             f"{estimate.reason} Offline estimate; not a balance, entitlement check or billing quote."
-            + (" Excludes the Hires Fix second pass." if self._hires_fix_chosen() else "")
         )
 
     def show_checkpoint_details(self) -> None:
@@ -2305,8 +2310,8 @@ class GenerationPage:
         if self._backend()[0] in ("local", "cloud"):
             estimate = self._compute_units_estimate()
             result = "unavailable" if estimate.units is None else f"{estimate.units:,}".replace(",", "\u202f") + " CU"
-            if estimate.units is not None and self._hires_fix_chosen():
-                result += " (excludes the Hires Fix second pass)"
+            if estimate.units is not None and self._hires_estimate_inputs():
+                result += " (HiRes: first and second pass)"
             text += (
                 f"\n\nCompute Units: {result}\n"
                 "Supported models: SD 1.x/2.x, SDXL/SSD, SD3, FLUX.1/2/3, "
