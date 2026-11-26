@@ -473,7 +473,10 @@ class QueueDispatcher:
                         )
                         if request.pose_control is not None:
                             await settle(
-                                asyncio.to_thread(_require_pose_family, self.service.input_state, request.model_id)
+                                asyncio.to_thread(
+                                    _require_pose_family, self.service.input_state, request.model_id,
+                                    control_checkpoint=request.pose_control.checkpoint,
+                                )
                             )
                             inventory = await self.service.get_inventory()
                             if not any(
