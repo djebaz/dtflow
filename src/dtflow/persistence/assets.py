@@ -648,25 +648,46 @@ class AssetRegistry:
         if not self.path.exists():
             return None
         with closing(self._connect()) as db:
-            row = db.execute(
-                f"SELECT a.*, {_LORA_COLUMNS}, k.identifier AS scoped_identifier, "
-                "k.remote_id AS scoped_remote, k.confirmed_at_utc AS scoped_confirmed "
-                f"FROM assets a{_LORA_JOIN} JOIN asset_key_receipts k ON k.asset_id=a.asset_id "
-                "WHERE a.asset_id=? AND k.credential_id=? AND k.identifier=? AND k.state='confirmed'",
-                (asset_id, credential_id, identifier),
-            ).fetchone()
-            if row is None:
-                return None
-            from dataclasses import replace
+            return self._scoped_read(db, asset_id, credential_id, identifier)
 
-            return _with_name_family(
-                replace(
-                    self._prepared(row),
-                    identifier=row["scoped_identifier"],
-                    remote_id=row["scoped_remote"],
-                    confirmed_at_utc=row["scoped_confirmed"],
-                )
+    async def scoped_many(
+        self, assets: tuple[PreparedAsset, ...], credential_id: str
+    ) -> tuple[PreparedAsset | None, ...]:
+        """Read exact key-scoped receipts and their families in one local connection, in input order."""
+        if not assets:
+            return ()
+        return await self._run(self._scoped_many, assets, credential_id)
+
+    def _scoped_many(
+        self, assets: tuple[PreparedAsset, ...], credential_id: str
+    ) -> tuple[PreparedAsset | None, ...]:
+        if not self.path.exists():
+            return (None,) * len(assets)
+        with closing(self._connect()) as db:
+            return tuple(
+                self._scoped_read(db, item.receipt_id, credential_id, item.identifier) for item in assets
             )
+
+    def _scoped_read(self, db, asset_id: str, credential_id: str, identifier: str) -> PreparedAsset | None:
+        row = db.execute(
+            f"SELECT a.*, {_LORA_COLUMNS}, k.identifier AS scoped_identifier, "
+            "k.remote_id AS scoped_remote, k.confirmed_at_utc AS scoped_confirmed "
+            f"FROM assets a{_LORA_JOIN} JOIN asset_key_receipts k ON k.asset_id=a.asset_id "
+            "WHERE a.asset_id=? AND k.credential_id=? AND k.identifier=? AND k.state='confirmed'",
+            (asset_id, credential_id, identifier),
+        ).fetchone()
+        if row is None:
+            return None
+        from dataclasses import replace
+
+        return _with_name_family(
+            replace(
+                self._prepared(row),
+                identifier=row["scoped_identifier"],
+                remote_id=row["scoped_remote"],
+                confirmed_at_utc=row["scoped_confirmed"],
+            )
+        )
 
     async def confirmed_lora_contents(self, credential_id: str) -> frozenset[tuple[str, int]]:
         """Locally confirmed LoRA bytes for one DT+ key, without contacting the provider.
