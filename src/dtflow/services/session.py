@@ -601,7 +601,7 @@ def pose_request(
 
 def _require_pose_family(state: Path, model_id: str, *, control_checkpoint: str | None = None) -> None:
     """Check production pose families or explicitly selected CLI-only SDXL and SD 1.5 probes."""
-    from dtflow.core.pose import POSE_FAMILY_LABEL, probe_models, supports_pose
+    from dtflow.core.pose import POSE_FAMILY_LABEL, SD1_PROBE_CONTROLS, probe_models, supports_pose
     from dtflow.services.catalogue import Catalogue
 
     models = probe_models(control_checkpoint) if control_checkpoint else None
@@ -610,6 +610,10 @@ def _require_pose_family(state: Path, model_id: str, *, control_checkpoint: str 
             raise ValidationError("The control probe requires one of: " + ", ".join(models))
         return
     entry = Catalogue(state).checkpoint(model_id, include_unavailable=True)
+    if control_checkpoint in SD1_PROBE_CONTROLS:
+        if entry is None or entry.base_model != "sd_1" or "t2i" not in entry.modes:
+            raise ValidationError("Official SD 1.x controls require a catalogue SD 1.x text-to-image checkpoint.")
+        return
     if not supports_pose(model_id, entry.base_model if entry else None):
         raise ValidationError(f"Pose is restricted to {POSE_FAMILY_LABEL} checkpoints.")
 
