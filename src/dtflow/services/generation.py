@@ -125,6 +125,7 @@ class GenerationService:
             Catalogue(assets.state) if isinstance(assets, AssetService) and assets.state is not None else None
         )
         self.backend, self.store, self.output = backend, store, Path(output)
+        self._publication_gate = getattr(store, "publication_gate", None) or asyncio.Lock()
         self.timeouts = timeouts or TimeoutPolicy()
         self.saver = saver
         self.input_state = Path(input_state) if input_state is not None else None
@@ -731,8 +732,23 @@ class GenerationService:
                     return self.saver(self.output, attempt_id, request, result, identity(), caps.limits, **extra)
 
             async def save_and_register():
+                waiting = monotonic()
                 try:
-                    saved = await asyncio.to_thread(commit_originals)
+                    async with self._publication_gate:
+                        diagnostic_event(
+                            log,
+                            "generation.publication_wait",
+                            level=logging.DEBUG,
+                            data={"waited_ms": round((monotonic() - waiting) * 1000)},
+                        )
+                        saving = monotonic()
+                        saved = await asyncio.to_thread(commit_originals)
+                        diagnostic_event(
+                            log,
+                            "generation.publication_completed",
+                            level=logging.DEBUG,
+                            data={"elapsed_ms": round((monotonic() - saving) * 1000)},
+                        )
                 except Exception as exc:
                     if request.num_frames is not None:
                         diagnostic_event(
@@ -749,7 +765,7 @@ class GenerationService:
                 )
                 return saved
 
-            # Once the file write starts, cancellation must wait for its durable registration too.
+            # Once a successful result is ready, cancellation waits through the publication queue and registration.
             saved = await settle(save_and_register())
             paths, metadata = saved[:2]
             display_image = saved[2] if image_operation else None

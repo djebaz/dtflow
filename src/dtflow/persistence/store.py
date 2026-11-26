@@ -106,6 +106,8 @@ class SQLiteAttempts(QueueMixin):
     def __init__(self, directory: Path):
         self.directory = Path(directory).resolve()
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="dtflow-state")
+        # All generation services using this owner serialize publication before entering a worker.
+        self.publication_gate = asyncio.Lock()
         self._connection: sqlite3.Connection | None = None
         self._lock = None
         self._closed = False
