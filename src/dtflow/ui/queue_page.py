@@ -158,7 +158,7 @@ RANDOM_INPUTS = (
 PLAN_INPUTS = (
     *PLAN_WIDGETS,
     "planFixedLorasEdit",
-    "planConstantLorasEdit",
+    "planSweptLorasEdit",
     "planSweepWeightsEdit",
     "planModeCombo",
     "planIncrementCheck",
@@ -509,7 +509,7 @@ class QueuePage:
         for name in PLAN_WIDGETS:
             getattr(page, name).textChanged.connect(self._plan_changed)
         page.planFixedLorasEdit.textChanged.connect(self._plan_changed)
-        page.planConstantLorasEdit.textChanged.connect(self._plan_changed)
+        page.planSweptLorasEdit.textChanged.connect(self._plan_changed)
         page.planSweepWeightsEdit.textChanged.connect(self._plan_changed)
         page.planModeCombo.currentTextChanged.connect(self._mode_changed)
         page.planIncrementCheck.toggled.connect(self._plan_changed)
@@ -1687,10 +1687,10 @@ class QueuePage:
         fixed.blockSignals(True)  # the draft's LoRAs are the row's values; callers refresh the preview
         fixed.setText("; ".join(lora_set_value(item.identifier, item.weight) for item in request.loras))
         fixed.blockSignals(False)
-        constants = self.page.planConstantLorasEdit
-        constants.blockSignals(True)  # a new draft starts without constants of the previous one
-        constants.clear()
-        constants.blockSignals(False)
+        swept = self.page.planSweptLorasEdit
+        swept.blockSignals(True)  # a new draft starts without the swept LoRAs of the previous one
+        swept.clear()
+        swept.blockSignals(False)
         edit = self.page.composerPromptEdit
         edit.blockSignals(True)
         edit.setPlainText(request.prompt)
@@ -1788,9 +1788,10 @@ class QueuePage:
             raise FormError("Enter a base prompt for the new queue.", "composerPromptEdit")
         # A changed fixed selection must not retain receipts for LoRAs that were removed.
         loras = self._fixed_loras()
-        if self._sweeping:  # the swept LoRAs and the constants make up the base; a swept LoRA wins over a constant
-            swept = {item.identifier for item in loras}
-            loras = (*loras, *(item for item in self._constant_loras() if item.identifier not in swept))
+        if self._sweeping:  # the constants and the swept LoRAs make up the base; a swept LoRA wins over a constant
+            swept = self._swept_loras()
+            named = {item.identifier for item in swept}
+            loras = (*(item for item in loras if item.identifier not in named), *swept)
         selected = {item.identifier for item in loras}
         bound = tuple(item for item in request.prepared_assets if item.identifier in selected)
         changes = {"prompt": prompt, "loras": loras}
@@ -1925,18 +1926,18 @@ class QueuePage:
             replace_all=True,
             editor_hint="Check the LoRAs every item of the new queue uses and set their weights. Apply replaces the list.",
         )
-        page.planConstantLorasEdit.configure(
+        page.planSweptLorasEdit.configure(
             "search",
-            "Constant LoRA",
+            "Swept LoRA",
             weights=self._offered_loras,
             families=lambda: self._choices().get("lora_families", {}),
             notice=self._loras_notice,
-            initial=self._constant_loras,
+            initial=self._swept_loras,
             convert=self._lora_weight_chips,
             label=self._lora_set_label,
-            editor_title="Constant LoRAs",
+            editor_title="Swept LoRAs",
             replace_all=True,
-            editor_hint="Check the LoRAs every item of the new queue uses and set their weights. Apply replaces the list.",
+            editor_hint="Check the LoRAs to try at each sweep weight; the weight set here is not used. Apply replaces the list.",
         )
         page.planSweepWeightsEdit.configure(
             "float", "Sweep weight", minimum=LORA_WEIGHT_MIN, maximum=LORA_WEIGHT_MAX, step=0.1, decimals=2
@@ -1975,24 +1976,24 @@ class QueuePage:
         """Cross LoRA weights from a stored queue: the swept LoRAs and their weights, the other base LoRAs constant."""
         page = self.page
         swept, weights = sweep_from_lines(form.loras)
-        page.planFixedLorasEdit.setText(
+        page.planSweptLorasEdit.setText(
             "; ".join(
                 lora_set_value(item.identifier, item.weight) for item in request.loras if item.identifier in swept
             )
         )
-        page.planConstantLorasEdit.setText(
+        page.planFixedLorasEdit.setText(
             "; ".join(
                 lora_set_value(item.identifier, item.weight) for item in request.loras if item.identifier not in swept
             )
         )
         page.planSweepWeightsEdit.setText(weights)
 
-    def _constant_loras(self) -> tuple[LoRASelection, ...]:
-        """The Constant LoRAs row beside the Swept LoRAs (Cross LoRA weights only) as selections, in the order shown."""
-        return self._chip_loras(self.page.planConstantLorasEdit)
+    def _swept_loras(self) -> tuple[LoRASelection, ...]:
+        """The Swept LoRAs row (Cross LoRA weights only) as selections, in the order shown."""
+        return self._chip_loras(self.page.planSweptLorasEdit)
 
     def _fixed_loras(self) -> tuple[LoRASelection, ...]:
-        """The Constant LoRAs row (the Swept LoRAs row in Cross LoRA weights) as selections, in the order shown."""
+        """The Constant LoRAs row (the draft's LoRAs) as selections, in the order shown."""
         return self._chip_loras(self.page.planFixedLorasEdit)
 
     @staticmethod
@@ -2106,33 +2107,26 @@ class QueuePage:
         page.planIncrementCheck.setVisible(planned)
         sweep = page.planModeCombo.currentText() == LORA_WEIGHTS_MODE
         if self._sweeping and not sweep:  # leaving the mode: both rows are one Constant LoRAs row again
-            merged = {item.identifier: item for item in (*self._constant_loras(), *self._fixed_loras())}
+            merged = {item.identifier: item for item in (*self._fixed_loras(), *self._swept_loras())}
             fixed = page.planFixedLorasEdit
             fixed.blockSignals(True)
             fixed.setText("; ".join(lora_set_value(item.identifier, item.weight) for item in merged.values()))
             fixed.blockSignals(False)
-            page.planConstantLorasEdit.blockSignals(True)
-            page.planConstantLorasEdit.clear()
-            page.planConstantLorasEdit.blockSignals(False)
+            page.planSweptLorasEdit.blockSignals(True)
+            page.planSweptLorasEdit.clear()
+            page.planSweptLorasEdit.blockSignals(False)
         self._sweeping = sweep
         if sweep and not page.planSweepWeightsEdit.text().strip():
             page.planSweepWeightsEdit.blockSignals(True)
             page.planSweepWeightsEdit.setText(SWEEP_WEIGHTS)
             page.planSweepWeightsEdit.blockSignals(False)
         for name in (
-            "planConstantLorasLabel",
-            "planConstantLorasEdit",
+            "planSweptLorasLabel",
+            "planSweptLorasEdit",
             "planSweepWeightsLabel",
             "planSweepWeightsEdit",
         ):
             getattr(page, name).setVisible(sweep)
-        page.planFixedLorasLabel.setText("Swept LoRAs" if sweep else "Constant LoRAs")
-        page.planFixedLorasLabel.setToolTip(
-            "Every LoRA here is taken at each of the sweep weights in every combination; the weight shown on its chip "
-            "is not used."
-            if sweep
-            else ""
-        )
         if sweep:  # the mode sets the weights; no LoRA row applies
             for name in ("planLorasLabel", "planLorasEdit", "planLoraSetsLabel", "planLoraSetsEdit"):
                 getattr(page, name).setVisible(False)
@@ -2209,7 +2203,7 @@ class QueuePage:
 
     def _count(self) -> tuple[str, str]:
         if self.page.planModeCombo.currentText() == LORA_WEIGHTS_MODE:
-            if not self._fixed_loras():
+            if not self._swept_loras():
                 return "unknown", "Add Swept LoRAs to the new queue to cross their weights."
             if not self.page.planSweepWeightsEdit.values():
                 return "unknown", "Add sweep weights to cross."
@@ -3181,7 +3175,7 @@ class QueuePage:
             page.planSamplersEdit.text(),
             page.planSizesEdit.text(),
             sweep_lora_lines(
-                (item.identifier for item in self._fixed_loras()), "; ".join(page.planSweepWeightsEdit.values())
+                (item.identifier for item in self._swept_loras()), "; ".join(page.planSweepWeightsEdit.values())
             )
             if sweep
             else self._lora_weight_lines(),

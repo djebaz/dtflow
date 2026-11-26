@@ -1254,14 +1254,14 @@
                         <string>Constant LoRAs</string>
                        </property>
                        <property name="toolTip">
-                        <string>LoRAs every item of the new queue uses, with their weights: Edit… opens the LoRA editor; click a LoRA to remove it. LoRA sets add to them per item (a set's weight wins), and a LoRA weight row changes the weight of its LoRA.</string>
+                        <string>LoRAs every item of the new queue uses, with their weights: Edit… opens the LoRA editor; click a LoRA to remove it. LoRA sets add to them per item (a set's weight wins), and a LoRA weight row changes the weight of its LoRA. In Cross LoRA weights a LoRA that is also swept is swept only.</string>
                        </property>
                       </widget>
                      </item>
                      <item row="10" column="0">
-                      <widget class="QLabel" name="planConstantLorasLabel">
+                      <widget class="QLabel" name="planSweptLorasLabel">
                        <property name="text">
-                        <string>Constant LoRAs</string>
+                        <string>Swept LoRAs</string>
                        </property>
                        <property name="textRole" stdset="0">
                         <string>caption</string>
@@ -1269,12 +1269,12 @@
                       </widget>
                      </item>
                      <item row="10" column="1">
-                      <widget class="ValueChips" name="planConstantLorasEdit">
+                      <widget class="ValueChips" name="planSweptLorasEdit">
                        <property name="accessibleName">
-                        <string>Constant LoRAs beside the swept LoRAs</string>
+                        <string>Swept LoRAs</string>
                        </property>
                        <property name="toolTip">
-                        <string>LoRAs every item uses at the weight shown, beside the swept LoRAs: Edit… opens the LoRA editor; click a LoRA to remove it. A LoRA that is also swept is swept only.</string>
+                        <string>Every LoRA here is taken at each of the sweep weights in every combination; the weight shown on its chip is not used. A LoRA that is also a Constant LoRA is swept only.</string>
                        </property>
                       </widget>
                      </item>
