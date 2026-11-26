@@ -137,7 +137,13 @@ def _miss_reason(
             return "other_credential_source"
         if recorded.get("fingerprint") != _fingerprint(str(recorded.get("salt")), key):
             return "other_key"
-    return "entries_unreadable"
+    try:
+        tuple(InventoryEntry(**item) for item in document["entries"])
+        for name in ("backend_id", "server_identity", "observed_at_utc", "refreshed", "diagnostics"):
+            document[name]
+    except (ValueError, TypeError, KeyError, AttributeError) as exc:
+        return f"entries_unreadable: {type(exc).__name__}: {str(exc)[:160]}"
+    return "unknown"
 
 
 def inventory_miss_reason(
