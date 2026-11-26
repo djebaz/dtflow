@@ -238,7 +238,7 @@ def build_generation_message(
             global_average_pooling=False,
             down_sampling_rate=1.0,
             control_mode=request.pose_control.control_mode,
-            input_override="Canny" if request.pose_control.input_type == "canny" else "Pose",
+            input_override=_control_input_override(request),
             target_blocks=[],
         )
     configuration = config.to_fbs(request.seed)
@@ -310,6 +310,15 @@ def build_generation_message(
     return WireRequest(message, effective)
 
 
+def _control_input_override(request: ResolvedGenerationRequest) -> str:
+    """Use the official SD 1.5 control's native Pose modifier, matching the app export."""
+    control = request.pose_control
+    assert control is not None
+    if control.checkpoint == SD15_POSE_PROBE_CONTROL:
+        return "Unspecified"
+    return "Canny" if control.input_type == "canny" else "Pose"
+
+
 def verify_wire_configuration(
     request: ResolvedGenerationRequest, configuration: bytes, extras: dict[str, float | bool | int | str] | None = None
 ) -> Metadata:
@@ -324,8 +333,7 @@ def verify_wire_configuration(
             control is None
             or control.File().decode() != request.pose_control.checkpoint
             or not _same_float32(control.Weight(), request.pose_control.strength)
-            or control.InputOverride()
-            != (ControlInputType.Canny if request.pose_control.input_type == "canny" else ControlInputType.Pose)
+            or control.InputOverride() != getattr(ControlInputType, _control_input_override(request))
             or control.ControlMode() != getattr(ControlMode, request.pose_control.control_mode)
             or not _same_float32(control.GuidanceStart(), request.pose_control.guidance_start)
             or not _same_float32(control.GuidanceEnd(), request.pose_control.guidance_end)
