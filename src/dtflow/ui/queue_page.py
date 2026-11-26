@@ -1688,7 +1688,7 @@ class QueuePage:
             else (not plan and is_video_model(self._live_choices().get("model", "")))
         )
         if video:
-            return f"Uses {source}. DT+ video: up to 10 concurrent clips, from Connection's default. Start may use credits; Retry is manual."
+            return f"Uses {source}. DT+ video: concurrency follows Connection's default and local resource limits. Start may use credits; Retry is manual."
         return f"Uses {source}. Provider: {name}. A cloud run may use credits."
 
     def _draft_size(self) -> tuple[int, int] | None:
@@ -3542,6 +3542,10 @@ class QueuePage:
             return
         # A queue that ran before may still be owned by another process; if so, Resume is posted to it instead.
         self._dispatch(view["queue_id"], resume_fallback=view["queue_id"] if self._started(view) else None)
+
+    async def invalidate_cloud_inventory(self) -> None:
+        """Retire dispatch inventory on the desktop runner, without interrupting active generations."""
+        await self._dispatch_auth.invalidate_inventory()
 
     @profile_slow_gui_callback("queue.dispatch")
     def _dispatch(self, queue_id: str, *, resume_fallback: str | None, waiting: tuple[str, ...] = ()) -> None:
