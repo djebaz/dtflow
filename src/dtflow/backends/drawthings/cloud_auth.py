@@ -356,6 +356,10 @@ class CloudAuth:
                             if response.status_code in (401, 403)
                             else ErrorCategory.REMOTE_REJECTION
                         )
+                        if category == ErrorCategory.AUTHENTICATION and token == self._token:
+                            # Do not keep a rejected token for a subsequent generation; never replay this request.
+                            self._token = None
+                            self.inventories.clear()
                         raise api_error(
                             category,
                             "cloud_http_rejected",
