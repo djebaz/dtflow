@@ -329,15 +329,11 @@ def _control_hint_type(request: ResolvedGenerationRequest) -> str:
     """Choose the native hint or upstream custom RGB conversion and fitting path."""
     control = request.pose_control
     assert control is not None
+    hires = request.advanced is not None and request.advanced.hires_fix_active
     if control.input_type == "depth":
         return "depth"
-    # The upstream customRGB(true) path resizes and normalizes the hint for
-    # each sampling pass; direct Pose passes the tensor through unchanged.
-    if (
-        control.checkpoint == SD15_POSE_PROBE_CONTROL
-        and request.advanced is not None
-        and request.advanced.hires_fix_active
-    ):
+    # The upstream customRGB(true) path fits each sampling pass; direct Pose passes the tensor through unchanged.
+    if hires and control.input_type == "pose":
         return "custom"
     if control.input_type in ("canny", "seg") or control.checkpoint == SDXL_POSE_PROBE_CONTROL:
         return "custom"
