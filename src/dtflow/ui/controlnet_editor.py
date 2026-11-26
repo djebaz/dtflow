@@ -863,7 +863,9 @@ class ControlnetEditor(QObject):
         if isinstance(paths, dict):
             self._paths = {k: v for k, v in paths.items() if k in ("photo", "map") and isinstance(v, str)}
         control = document.get("control")
-        if isinstance(control, str):
+        if (
+            control in DESKTOP_CONTROLS or control in RETIRED_CONTROLS
+        ):  # a malformed session value never blocks Generate
             self._wanted_control = control
             self._control_index = next((i for i, c in enumerate(self._controls) if c.checkpoint == control), 0)
         kind = document.get("kind")
