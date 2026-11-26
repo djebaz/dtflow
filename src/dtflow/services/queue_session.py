@@ -274,7 +274,7 @@ async def _check_pose_queue(
     if selection.name != "cloud":
         raise ValidationError("A pose queue requires DT+ Cloud.")
     for model_id in dict.fromkeys(item.model_id for item in items):
-        await settle(asyncio.to_thread(session._require_flux1, state, model_id))
+        await settle(asyncio.to_thread(session._require_pose_family, state, model_id))
     async with session.open_session(selection, state, durable=False, saved=saved) as service:
         inventory = await service.get_inventory(refresh=True)
     if not any(
@@ -304,7 +304,7 @@ async def create_pose_queue(
 ) -> str:
     """Stage one verified pose map for a cloud queue; creation never uploads or generates.
 
-    Check the exact backend, FLUX.1 model family and Union control inventory before writing staged inputs.
+    Check the exact backend, pose model family and Union control inventory before writing staged inputs.
     Each item retains the same immutable map and control; Start is the generation/upload consent.
     """
     if selection.name != "cloud" or backend.get("name") != "cloud":

@@ -50,9 +50,10 @@ from dtflow.core.retry_policy import (
 )
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
+from dtflow.logging_setup import dev_enabled
 from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per_name
 from dtflow.persistence.gallery_snapshot import schedule_publish
-from dtflow.persistence.inventory_cache import load_inventory, save_inventory
+from dtflow.persistence.inventory_cache import BUSY, load_inventory_with_reason, save_inventory
 from dtflow.persistence.settings import load_dtplus_concurrency
 from dtflow.persistence.queues import read_attempt_record
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts, StateBusyError
@@ -598,15 +599,15 @@ def pose_request(
     )
 
 
-def _require_flux1(state: Path, model_id: str) -> None:
-    """Pose guidance is restricted to the FLUX.1 family; every path that submits a pose (desktop, CLI generate and
+def _require_pose_family(state: Path, model_id: str) -> None:
+    """Pose guidance is restricted to the pose families (core.pose.POSE_FAMILIES); every path that submits a pose (desktop, CLI generate and
     retry) passes through here, so none can skip the check."""
-    from dtflow.core.pose import is_flux1
+    from dtflow.core.pose import POSE_FAMILY_LABEL, supports_pose
     from dtflow.services.catalogue import Catalogue
 
     entry = Catalogue(state).checkpoint(model_id, include_unavailable=True)
-    if not is_flux1(model_id, entry.base_model if entry else None):
-        raise ValidationError("Pose is restricted to FLUX.1 checkpoints.")
+    if not supports_pose(model_id, entry.base_model if entry else None):
+        raise ValidationError(f"Pose is restricted to {POSE_FAMILY_LABEL} checkpoints.")
 
 
 async def generate_pose_once(
@@ -628,7 +629,7 @@ async def generate_pose_once(
         raise ValidationError("Pose generation requires a pose request with its prepared map.")
     if selection.name != "cloud":
         raise ValidationError("Pose experiments require explicit DT+ Cloud selection.")
-    await settle(asyncio.to_thread(_require_flux1, state, request.model_id))
+    await settle(asyncio.to_thread(_require_pose_family, state, request.model_id))
 
     async def run(timeline: GenerationTimeline) -> GenerationOutcome:
         sink = timeline.sink
@@ -828,16 +829,20 @@ async def cached_inventory(
     if identity is None:
         return None
     kind, endpoint, credential = identity
-    snapshot = await asyncio.to_thread(load_inventory, state, kind, endpoint=endpoint, credential=credential)
-    diagnostic_event(
-        log,
-        "inventory.cache_read",
-        level=logging.INFO,
-        data={
-            "hit": snapshot is not None,
-            "backend": kind,
-        },
-    )
+    data = {"backend": kind}
+    # Other startup cache work (image-removal reconcile, thumbnails, LoRA scans) can hold the shared cache lock longer
+    # than one read waits: a busy lock is a false miss, so wait for it in the background, up to about 10 s in all.
+    for attempt in range(20):
+        snapshot, reason = await asyncio.to_thread(
+            load_inventory_with_reason, state, kind, endpoint=endpoint, credential=credential
+        )
+        if reason != BUSY:
+            break
+        data["busy_attempts"] = attempt + 1
+    if reason is not None and dev_enabled():
+        data["reason"] = reason
+    data["hit"] = snapshot is not None
+    diagnostic_event(log, "inventory.cache_read", level=logging.INFO, data=data)
     return snapshot
 
 
@@ -918,6 +923,13 @@ class InventoryDisplayMemory:
             kind, _, credential = identity
             try:
                 await asyncio.to_thread(save_inventory, state, kind, snapshot, credential=credential)
+                if dev_enabled():
+                    diagnostic_event(
+                        log,
+                        "inventory.cache_write",
+                        level=logging.DEBUG,
+                        data={"backend": kind, "entries": len(snapshot.entries)},
+                    )
             except OSError as exc:
                 diagnostic_event(
                     log,

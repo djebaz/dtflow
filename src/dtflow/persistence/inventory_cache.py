@@ -17,7 +17,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile
 
 from dtflow.core.models import InventoryEntry, InventorySnapshot, LoRAInventorySnapshot
-from dtflow.persistence.cache_coordination import cache_io, category_path, check_path
+from dtflow.persistence.cache_coordination import CacheBusyError, cache_io, category_path, check_path
 
 CACHE_VERSION = 2
 KINDS = ("local", "cloud")
@@ -75,11 +75,14 @@ def save_inventory(
     return _write_json(_target(root, f"{kind}_inventory.json"), payload, f".{kind}-")
 
 
+BUSY = "busy"  # another cache operation held the shared lock for longer than one read waits
+
+
 @cache_io("inventory")
-def _load_inventory(
+def _read_inventory(
     root: Path, kind: str, *, endpoint: str | None = None, credential: tuple[str, str] | None = None
-) -> InventorySnapshot | None:
-    """The cached snapshot, or ``None`` for any kind of miss.
+) -> tuple[InventorySnapshot | None, str | None]:
+    """The cached snapshot and ``None``, or ``None`` and why there is none (a short development-diagnostic reason).
 
     ``endpoint`` (when given) must equal the recorded one; ``credential`` is ``(source, key)`` for the cloud entry.
     """
@@ -87,21 +90,24 @@ def _load_inventory(
         raise ValueError("Inventory kind must be local or cloud.")
     try:
         document = json.loads(_target(root, f"{kind}_inventory.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return None, "file_missing"
+    except (OSError, ValueError):
+        return None, "unreadable"
+    try:
         if type(document.get("cache_version")) is not int or document["cache_version"] != CACHE_VERSION:
-            return None
+            return None, "other_cache_version"
         if endpoint is not None and document.get("endpoint") != endpoint:
-            return None
+            return None, "other_endpoint"
         if credential is not None:
             recorded = document.get("credential")
             source, key = credential
-            if (
-                not isinstance(recorded, dict)
-                or recorded.get("source") != source
-                or recorded.get("fingerprint") != _fingerprint(str(recorded.get("salt")), key)
-            ):
-                return None
+            if not isinstance(recorded, dict) or recorded.get("source") != source:
+                return None, "other_credential_source"
+            if recorded.get("fingerprint") != _fingerprint(str(recorded.get("salt")), key):
+                return None, "other_key"
         entries = tuple(InventoryEntry(**item) for item in document["entries"])
-        return InventorySnapshot(
+        snapshot = InventorySnapshot(
             document["backend_id"],
             document["server_identity"],
             document["observed_at_utc"],
@@ -110,14 +116,25 @@ def _load_inventory(
             tuple((str(name), str(value)) for name, value in document["diagnostics"]),
             endpoint=document.get("endpoint"),
         )
-    except (OSError, ValueError, TypeError, KeyError, AttributeError):
-        return None
+    except (ValueError, TypeError, KeyError, AttributeError) as exc:
+        return None, f"entries_unreadable: {type(exc).__name__}: {str(exc)[:160]}"
+    return snapshot, None
+
+
+def load_inventory_with_reason(
+    root: Path, kind: str, *, endpoint: str | None = None, credential: tuple[str, str] | None = None
+) -> tuple[InventorySnapshot | None, str | None]:
+    """One read: the snapshot, or ``None`` with the reason (``BUSY`` when the cache lock was held, so a caller may
+    wait and read again)."""
+    try:
+        return _read_inventory(root, kind, endpoint=endpoint, credential=credential)
+    except CacheBusyError:
+        return None, BUSY
+    except OSError as exc:
+        return None, f"io_error: {type(exc).__name__}"
 
 
 def load_inventory(
     root: Path, kind: str, *, endpoint: str | None = None, credential: tuple[str, str] | None = None
 ) -> InventorySnapshot | None:
-    try:
-        return _load_inventory(root, kind, endpoint=endpoint, credential=credential)
-    except OSError:
-        return None
+    return load_inventory_with_reason(root, kind, endpoint=endpoint, credential=credential)[0]
