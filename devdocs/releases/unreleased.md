@@ -17,7 +17,7 @@ Changes through 6.5.5 are consolidated in [DTFlow 6.5.5](v6.5.5.md). The publish
 ## Fixed
 
 - The saved model list is used again after a restart: the app no longer gives up reading it when other startup work holds the cache for a moment, so Refresh models is no longer needed after every start.
-- Controlnet keeps its own checkpoint, LoRAs and settings (size, steps, guidance, sampler, seed and Advanced generation), apart from Text to image and Inpaint. A preset or a LoRA chosen in one mode no longer lands in the other, so a Text to image LoRA from another model family no longer blocks a Controlnet generation, and the sampler stays as you chose it when you go back and forth. Prompts stay shared. The first time you open Controlnet it starts from your current settings without LoRAs.
+- Controlnet keeps its own base model, checkpoint, LoRAs and settings (size, steps, guidance, sampler, seed and Advanced generation), apart from Text to image and Inpaint. A preset or a LoRA chosen in one mode no longer lands in the other, so a Text to image LoRA from another model family no longer blocks a Controlnet generation, and the sampler stays as you chose it when you go back and forth. Prompts stay shared. The first time you open Controlnet it starts from your current settings without LoRAs.
 
 - The Compute Units estimate in Generate now follows HiRes: it adds the second pass to the smaller first pass, so turning HiRes on changes the number. The result is an approximation (Draw Things' own estimate ignores HiRes), and the "excludes the second pass" note is gone. The wording is now "HiRes" everywhere, and the HiRes factor goes up to 10 instead of 4.
 

@@ -324,8 +324,8 @@ class GenerationPage:
         # Controlnet keeps its own checkpoint and LoRAs (#630): the pose selection while another mode is shown, the
         # other modes' selection while Controlnet is shown. Each is a (model, loras, receipts) triple or None.
         # (values, receipts, preset name): everything but the prompts, so a preset loaded in one mode stays there.
-        self._pose_slot: tuple[FormValues, dict, str | None] | None = None
-        self._text_slot: tuple[FormValues, dict, str | None] | None = None
+        self._pose_slot: tuple[FormValues, dict, str | None, dict] | None = None
+        self._text_slot: tuple[FormValues, dict, str | None, dict] | None = None
         self._provider: str | None = None
         self._previewed_seed: int | None = None
         # Set by the window: queue_behind(request, backend, endpoint, receipts, edit) adds a one-item up-next queue.
@@ -783,13 +783,35 @@ class GenerationPage:
         if video is not None:
             # Keep the video draft even if the user temporarily browses image checkpoints.
             form["video"] = video.session_document()
-        form["catalogue"] = {
+        form["catalogue"] = self._text_slot[3] if self._text_slot is not None else self._catalogue_state()
+        return form
+
+    def _catalogue_state(self) -> dict:
+        """The browsing filters above the checkpoint: kind, base model (family), cloud and niche."""
+        return {
             "domain": self.page.generationDomainCombo.currentData() or "all",
             "base_model": self.page.baseModelCombo.currentData() or self._pending_family,
             "include_cloud": self.page.includeCloudCheck.isChecked() if self._provider == "local" else False,
             "include_niche": self.page.includeNicheCheck.isChecked(),
         }
-        return form
+
+    def _apply_catalogue(self, catalogue: object, model: str) -> None:
+        if not isinstance(catalogue, dict):
+            return
+        domain = catalogue.get("domain")
+        index = self.page.generationDomainCombo.findData(domain if domain in ("all", "image", "video") else "all")
+        self.page.generationDomainCombo.setCurrentIndex(max(index, 0))
+        self.page.includeCloudCheck.setChecked(self._backend()[0] == "local" and catalogue.get("include_cloud") is True)
+        self.page.includeNicheCheck.setChecked(catalogue.get("include_niche") is True)
+        family = catalogue.get("base_model")
+        if isinstance(family, str):
+            self._pending_family = family
+            self._rebuild_catalogue(
+                preferred_family=family,
+                preferred_checkpoint=model,
+                restore_niche=True,
+                preserve_selection=True,
+            )
 
     def _apply_provider_form(self, document: object, *, restoring_session: bool = False) -> None:
         """Restore a provider without overwriting an in-progress video draft."""
@@ -808,24 +830,7 @@ class GenerationPage:
             else {}
         )
         self.lora.set_loras(values.loras, receipts=valid)
-        catalogue = document.get("catalogue") if isinstance(document, dict) else None
-        if isinstance(catalogue, dict):
-            domain = catalogue.get("domain")
-            index = self.page.generationDomainCombo.findData(domain if domain in ("all", "image", "video") else "all")
-            self.page.generationDomainCombo.setCurrentIndex(max(index, 0))
-            self.page.includeCloudCheck.setChecked(
-                self._backend()[0] == "local" and catalogue.get("include_cloud") is True
-            )
-            self.page.includeNicheCheck.setChecked(catalogue.get("include_niche") is True)
-            family = catalogue.get("base_model")
-            if isinstance(family, str):
-                self._pending_family = family
-                self._rebuild_catalogue(
-                    preferred_family=family,
-                    preferred_checkpoint=values.model,
-                    restore_niche=True,
-                    preserve_selection=True,
-                )
+        self._apply_catalogue(document.get("catalogue") if isinstance(document, dict) else None, values.model)
 
     def _switch_provider(self, name: str, *, remember: bool = True) -> None:
         """Remember the leaving provider's fields and restore the arriving one's (not shared between providers)."""
@@ -848,14 +853,15 @@ class GenerationPage:
                 },
             )
 
-    def _selection(self) -> tuple[FormValues, dict, str | None]:
-        return self._current_draft(), self.lora.receipts(), self._config_name
+    def _selection(self) -> tuple[FormValues, dict, str | None, dict]:
+        return self._current_draft(), self.lora.receipts(), self._config_name, self._catalogue_state()
 
-    def _apply_selection(self, selection: tuple[FormValues, dict, str | None]) -> None:
-        values, receipts, config = selection
+    def _apply_selection(self, selection: tuple[FormValues, dict, str | None, dict]) -> None:
+        values, receipts, config, catalogue = selection
         current = self._values()
         self._apply(replace(values, prompt=current.prompt, negative_prompt=current.negative_prompt))
         self.lora.set_loras(values.loras, receipts=receipts)
+        self._apply_catalogue(catalogue, values.model)  # the base model (family) filter follows the mode too
         self._config_name = config
 
     def _pose_mode_toggled(self, checked: bool) -> None:
@@ -864,8 +870,8 @@ class GenerationPage:
         (the first time the same settings without LoRAs); leaving stores the pose ones and brings the others back."""
         if checked and self._text_slot is None:
             self._text_slot = self._selection()
-            values, receipts, _ = self._text_slot
-            self._apply_selection(self._pose_slot or (replace(values, loras=()), {}, None))
+            values, _, _, catalogue = self._text_slot
+            self._apply_selection(self._pose_slot or (replace(values, loras=()), {}, None, catalogue))
         elif not checked and self._text_slot is not None:
             self._pose_slot = self._selection()
             stashed, self._text_slot = self._text_slot, None
@@ -876,9 +882,13 @@ class GenerationPage:
         selection = self._selection() if self._text_slot is not None else self._pose_slot
         if selection is None:
             return None
-        values, receipts, _ = selection
+        values, receipts, _, catalogue = selection
         document = form_to_document(values)
-        return {**{name: document[name] for name in self.PROVIDER_FIELDS}, "receipts": dict(receipts)}
+        return {
+            **{name: document[name] for name in self.PROVIDER_FIELDS},
+            "receipts": dict(receipts),
+            "catalogue": dict(catalogue),
+        }
 
     def restore_pose_selection(self, document: object) -> None:
         """Restore the remembered Controlnet settings; anything unusable leaves Controlnet without its own yet."""
@@ -891,7 +901,8 @@ class GenerationPage:
             if isinstance(receipts, dict)
             else {}
         )
-        self._pose_slot = (form_from_document(document), valid, None)
+        catalogue = document.get("catalogue")
+        self._pose_slot = (form_from_document(document), valid, None, catalogue if isinstance(catalogue, dict) else {})
 
     def form_document(self) -> dict:
         """The remembered form values (credential-free, unvalidated)."""
