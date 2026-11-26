@@ -21,7 +21,7 @@ from dtflow.services.wildcards import bind_wildcards
 from dtflow.ui.generation_presenter import FormError
 
 MODES = {"Pair": "pair", "Cross": "cross"}
-LORA_WEIGHTS_MODE = "Cross LoRA weights"  # composer mode: Cross over the weights 0, 0.5 and 1 of every Fixed LoRA
+LORA_WEIGHTS_MODE = "Cross LoRA weights"  # composer mode: Cross over the sweep weights of every Swept LoRA
 SWEEP_WEIGHTS = "0; 0.5; 1"
 # Dimension name (or leading error word) -> Designer object name of the owning widget.
 ERROR_FIELDS = {
@@ -197,16 +197,22 @@ def candidate_counts(form: PlanForm) -> dict[str, int]:
     }
 
 
-def sweep_lora_lines(identifiers) -> str:
-    """The planner's LoRA weight lines for Cross LoRA weights: every given LoRA at each of 0, 0.5 and 1."""
-    return "\n".join(f"{identifier}: {SWEEP_WEIGHTS}" for identifier in identifiers)
+def sweep_lora_lines(identifiers, weights: str = SWEEP_WEIGHTS) -> str:
+    """The planner's LoRA weight lines for Cross LoRA weights: every given LoRA at each of the sweep weights."""
+    return "\n".join(f"{identifier}: {weights}" for identifier in identifiers)
+
+
+def sweep_from_lines(text: str) -> tuple[tuple[str, ...], str]:
+    """The swept LoRA identifiers and the shared sweep weights of stored LoRA weight lines, as the composer shows them."""
+    lines = _loras(text)
+    return tuple(identifier for identifier, _ in lines), "; ".join(f"{weight:g}" for weight in lines[0][1])
 
 
 def queue_edit_from_source(source: dict) -> QueueEdit:
-    """The stored composer input; a Cross over exactly the base LoRAs at 0, 0.5 and 1 reopens as Cross LoRA weights.
+    """The stored composer input; a Cross over base LoRAs at the same several weights reopens as Cross LoRA weights.
 
     The mode stores its plan as plain Cross lines, so Edit as new would otherwise show the Fixed LoRAs and the same
-    weights again as a LoRA weights row.
+    weights again as a LoRA weights row. Base LoRAs that are not swept reopen as its constants.
     """
     edit = _stored_edit(source)
     form = edit.form
@@ -218,8 +224,11 @@ def queue_edit_from_source(source: dict) -> QueueEdit:
         return edit
     swept = {identifier for identifier, _ in lines}
     fixed = {item["identifier"] for item in edit.base.get("loras", ())}
-    if swept == fixed and all(weights == (0.0, 0.5, 1.0) for _, weights in lines):
-        return replace(edit, form=replace(form, mode=LORA_WEIGHTS_MODE, loras=""))
+    shared = {weights for _, weights in lines}
+    # Every swept LoRA taken at the same several weights, each one also in the base, is the sweep mode; the other
+    # base LoRAs are its constants. Anything else (random weight draws included) stays a plain Cross.
+    if len(shared) == 1 and len(next(iter(shared))) > 1 and swept <= fixed and not dict(form.draws).get("lora_weight"):
+        return replace(edit, form=replace(form, mode=LORA_WEIGHTS_MODE))
     return edit
 
 
@@ -297,6 +306,7 @@ def build_plan(form: PlanForm) -> Plan:
         tuple(dimensions),
         seed_policy="increment" if form.increment else None,
         rng_seed=_rng_seed(form.rng_seed),
+        constant_loras=form.constant_loras,
     )
 
 

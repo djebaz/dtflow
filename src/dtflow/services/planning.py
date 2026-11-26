@@ -92,6 +92,9 @@ class Plan:
     rng_seed: int | None = None  # the one recorded seed behind every random dimension and a random prompt sample
     evidence: tuple[tuple[str, str], ...] = ()  # filled by ``resolve_plan``: how the random values were drawn
     prompt_tags: tuple[tuple[str, str], ...] = ()  # filled by ``resolve_plan``: resolved prompt -> its variation runs
+    constant_loras: bool = (
+        False  # base LoRAs stay on beside every LoRA set (a set's weight wins); off: a set replaces them
+    )
 
     def __post_init__(self) -> None:
         # Lists (from JSON or widgets) become tuples so values are hashable and the plan is immutable.
@@ -341,9 +344,14 @@ def lora_set_text(selections) -> str:
     return " + ".join(f"{item.identifier} {item.weight:g}" for item in selections) or "none"
 
 
-def _set(loras: list, name: str, value: Any) -> dict[str, Any]:
+def _set(loras: list, name: str, value: Any, *, constant: bool = False) -> dict[str, Any]:
     if name == LORA_SETS:
-        loras[:] = lora_set(value)
+        chosen = lora_set(value)
+        if constant:  # the base LoRAs stay; a LoRA named in the set takes the set's weight
+            named = {item.identifier for item in chosen}
+            loras[:] = [item for item in loras if item.identifier not in named] + list(chosen)
+        else:
+            loras[:] = chosen
         return {}
     if name in FIELD_NAMES:
         return {FIELD_NAMES[name]: value}
@@ -444,7 +452,7 @@ def expand_plan(
         evidence = [("plan.index", str(index + 1)), ("plan.mode", plan.mode), ("plan.seed", policy), *plan.evidence]
         try:
             for (name, _), value in zip(plan.dimensions, combo, strict=True):
-                changes.update(_set(loras, name, value))
+                changes.update(_set(loras, name, value, constant=plan.constant_loras))
                 if preview and name == "strength":
                     if type(value) not in (int, float) or not 0 <= value <= 1:
                         raise PlanError("Strength must be a number in 0..1.")
@@ -618,7 +626,9 @@ def parse_plan(document: Any) -> Plan:
     version = document.get("version")
     if type(version) is not int or version not in READABLE:
         raise PlanError(f"Unsupported plan version {version!r}; this build reads versions {READABLE[0]} to {VERSION}.")
-    unknown = sorted(set(document) - {"schema", "version", "mode", "count", "seed", "dimensions", "rng_seed"})
+    unknown = sorted(
+        set(document) - {"schema", "version", "mode", "count", "seed", "dimensions", "rng_seed", "constant_loras"}
+    )
     if unknown:
         raise PlanError("Unknown plan field(s): " + ", ".join(unknown))
     raw = document.get("dimensions", {})
@@ -630,7 +640,17 @@ def parse_plan(document: Any) -> Plan:
     rng_seed = document.get("rng_seed")
     if rng_seed is not None and (version < 2 or type(rng_seed) is not int or not 0 <= rng_seed <= SEED_LIMIT):
         raise PlanError("rng_seed is a whole number in 0..4294967295 (plan version 2).")
-    plan = Plan(document.get("mode"), tuple(dimensions), document.get("count"), document.get("seed"), rng_seed)
+    constant = document.get("constant_loras", False)
+    if constant is not False and (version < 2 or constant is not True):
+        raise PlanError("constant_loras is true or false (plan version 2).")
+    plan = Plan(
+        document.get("mode"),
+        tuple(dimensions),
+        document.get("count"),
+        document.get("seed"),
+        rng_seed,
+        constant_loras=constant,
+    )
     plan_size(plan, bound=False)  # wildcard files are bound after parsing, so their counts wait for ``expand_plan``
     return plan
 

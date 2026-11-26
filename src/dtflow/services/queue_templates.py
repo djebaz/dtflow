@@ -159,7 +159,12 @@ def recipe_from_record(record: dict) -> Recipe:
             raise ValidationError("Template bases cannot retain image inputs or execution pose references.")
         if base.get("num_frames") is not None:
             raise ValidationError("Video templates are not supported; use a paused video queue.")
-        if not isinstance(source["form"], dict) or set(source["form"]) != set(asdict(PlanForm())):
+        form_fields = set(asdict(PlanForm()))
+        # Templates saved before LoRA sets could keep the draft's LoRAs have no constant_loras field.
+        if not isinstance(source["form"], dict) or set(source["form"]) not in (
+            form_fields,
+            form_fields - {"constant_loras"},
+        ):
             raise ValidationError("Template form fields are incomplete or unsupported.")
         edited = queue_edit_from_source(
             {
