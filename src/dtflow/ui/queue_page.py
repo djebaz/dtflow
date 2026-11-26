@@ -313,6 +313,7 @@ class QueuePage:
         generate_hook: Callable[[], None] = lambda: None,
         reuse_hook: Callable[[dict], None] = lambda request: None,
         pose_controls_source: Callable = lambda _model, _kind: (),
+        pose_control_problem: Callable = lambda _model, _checkpoint, _kind: "",
     ):
         self.page = page
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
@@ -534,7 +535,7 @@ class QueuePage:
             else:
                 widget.currentTextChanged.connect(self._plan_changed)
         self.templates = QueueTemplates(self)
-        self.pose_editor = QueuePoseEditor(self, pose_controls_source)
+        self.pose_editor = QueuePoseEditor(self, pose_controls_source, pose_control_problem)
         self._mode_changed()
         activity.listen(self._sync)
         activity.listen(self._after_generation_ended)

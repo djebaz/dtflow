@@ -59,9 +59,7 @@ def probe_models(checkpoint: str) -> tuple[str, ...] | None:
 
 
 MODELS = ("flux_1_dev_f16.ckpt", "flux_1_dev_q5p.ckpt", "flux_1_dev_q8p.ckpt")
-# Only this checkpoint with Union Pro 2.0 q5p has been confirmed (#633/#635; Union Pro 1.0 at 0.7 in #502). Other FLUX.1 variants may be tried and
-# are labelled "not verified"; a checkpoint moves here only when the owner confirms it.
-VERIFIED_MODELS = ("flux_1_dev_q5p.ckpt",)
+# Verified checkpoints per control live in resources/catalogue/controlnet_desktop.json (verified_models).
 # Draw Things "Control Force" and the step range over which the control applies (fractions of the run).
 CONTROL_MODES = ("Balanced", "Prompt", "Control")
 

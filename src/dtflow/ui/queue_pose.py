@@ -18,10 +18,11 @@ from dtflow.ui.inline_feedback import feedback
 
 
 class QueuePoseEditor(QObject):
-    def __init__(self, queue, controls_source):
+    def __init__(self, queue, controls_source, control_problem=lambda _model, _checkpoint, _kind: ""):
         super().__init__(queue.page)
         self.queue = queue
         self._controls_source = controls_source
+        self._control_problem = control_problem
         self._epoch = 0
         self._busy = False
         self._shown_control = None
@@ -163,6 +164,11 @@ class QueuePoseEditor(QObject):
         if control is not None and control.checkpoint in retired_controls():
             # Existing queues keep their exact request; a new queue or template needs an explicit replacement (#635).
             raise FormError(RETIRED_CONTROL_NOTE, None)
+        if control is not None:
+            # A new queue or template uses only what the desktop table admits for the draft's checkpoint (#636 S2).
+            problem = self._control_problem(self.queue._draft[0].model_id, control.checkpoint, control.input_type)
+            if problem:
+                raise FormError(problem, None)
 
     def _changed(self, *_):
         q = self.queue

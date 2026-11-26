@@ -82,6 +82,22 @@ def control_choices(
     )
 
 
+def control_problem(checkpoint: str, input_type: str, model_id: str, base_model=None, modes=None) -> str:
+    """Why the desktop table does not admit this control and type with this checkpoint; empty when it does. The one
+    check shared by Generate and the queue composer; retired controls get their own note."""
+    if checkpoint in retired_controls():
+        return RETIRED_CONTROL_NOTE
+    control = desktop_control(checkpoint)
+    label = INPUT_LABELS.get(input_type, input_type)
+    if control is None:
+        return "This control is not offered in the desktop. Choose another control."
+    if input_type not in control.inputs:
+        return f"{control.label} does not offer {label}. Choose another control or control type."
+    if not desktop_admits(control, model_id, base_model, modes):
+        return f"{control.label} is not offered with this checkpoint. Choose another control or checkpoint."
+    return ""
+
+
 def input_choices(model, base_model=None, modes=None) -> tuple[str, ...]:
     """The input types some desktop control offers for this checkpoint, whatever the inventory lists."""
     offered = {kind for c in desktop_controls() if desktop_admits(c, model, base_model, modes) for kind in c.inputs}
@@ -622,6 +638,18 @@ class ControlnetEditor(QObject):
             input_type,
         )
 
+    def queue_control_problem(self, model_id: str, checkpoint: str, input_type: str) -> str:
+        """Why a queue draft or template may not use this control with this checkpoint and type; empty when it may.
+        Uses the bundled desktop table and the catalogue only, never the inventory (#636 review S2)."""
+        entry = (
+            self.controller._catalogue.checkpoint(model_id, include_unavailable=True)
+            if self.controller is not None and model_id
+            else None
+        )
+        return control_problem(
+            checkpoint, input_type, model_id, entry.base_model if entry else None, entry.modes if entry else None
+        )
+
     def refresh_controls(self, *_):
         """The input types and controls for the selected checkpoint that the active DT+ inventory lists. Only while
         Controlnet is shown: the other modes never read the control table (#635)."""
@@ -631,8 +659,19 @@ class ControlnetEditor(QObject):
             desktop_control(self._wanted_control) or self._wanted_control in retired_controls()
         ):
             self._wanted_control = None  # a malformed remembered value never blocks Generate
-        chosen = self._wanted_control or (self._controls[self._control_index].checkpoint if self._controls else None)
         model, base_model, modes = self._checkpoint()
+        wanted = desktop_control(self._wanted_control) if self._wanted_control else None
+        known = base_model is not None or (wanted is not None and wanted.models is not None)  # catalogue loaded
+        if (
+            wanted is not None
+            and model
+            and known
+            and control_problem(wanted.checkpoint, self._input_type, model, base_model, modes)
+        ):
+            # The hold keeps a recorded control the inventory does not list; it is not for a control the user's own
+            # change of checkpoint or type made inapplicable (#636 review S1). Retired controls keep their hold.
+            self._wanted_control = None
+        chosen = self._wanted_control or (self._controls[self._control_index].checkpoint if self._controls else None)
         self._inputs = input_choices(model, base_model, modes)
         self._controls = control_choices(
             self.controller._inventory_snapshot, model, base_model, modes, self._input_type
