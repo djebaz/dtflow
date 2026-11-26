@@ -209,7 +209,7 @@ The fake backend returns the bundled illustrative lighthouse, cropped and resamp
 |---|---|
 | `-im/--image MAP` or `-ph/--photo PHOTO` | One required: a prepared OpenPose RGB body map on a black background, or a photograph extracted locally before submission |
 | `-co/--control NAME` | One pinned Union Pro control: `controlnet_union_pro_flux_1_dev_{1.0,2.0}_{q8p,q5p}.ckpt`, or the explicit Xinsir SDXL probe below |
-| `-cs/--strength` | Control weight in (0, 2]. Optional for fast-model Pose (default 0.9) and official SD 1.5 Pose (default 1); otherwise required. Not img2img denoising or text guidance |
+| `-cs/--strength` | Control weight in (0, 2]. Optional for fast-model Pose (default 0.9) and official SD 1.x Pose (default 0.77); otherwise required. Not img2img denoising or text guidance |
 | `-cm/--control-mode` | Draw Things control force: `Balanced` (default), `Prompt` or `Control` |
 | `-st/--start`, `-en/--end` | Where in the steps the control applies, 0 to 1 (default 0 and 1); the start must be before the end |
 | `-pn/--person N` | With `--photo`, the person to use when the photograph shows several |
@@ -276,9 +276,9 @@ This sends one real request and may consume credits. Compare the result to the e
 
 ### Official SD 1.5 Pose feasibility probe
 
-New CLI requests for `sd_v1.5_f16.ckpt` with the official SD v1.x Pose checkpoint default to weight 1, Balanced, start 0 and end 1, matching the owner's successful app exports. Explicit overrides win; Retry retains the original settings. Recommended generation settings are 16 steps, CFG 5 and DPM++ 2M AYS, not automatic generation overrides. Other SD 1.x checkpoints and non-pose controls are not established by this evidence.
+New CLI requests for catalogue SD 1.x text-to-image checkpoints with the official SD v1.x Pose checkpoint default to weight 0.77, Balanced, start 0 and end 1, matching the latest successful owner app export (384×512, seed 1819044058). Previous owner exports used weight 1; the later 640×960 CLI result was poor. Weight, resolution and seed varied, so causality is not isolated. Explicit overrides win; Retry retains the original settings. Recommended generation settings are 16 steps, CFG 5 and DPM++ 2M AYS, not automatic generation overrides. Other SD 1.x checkpoints are admitted for experimentation, not verified by this evidence.
 
-The official [Draw Things ControlNetZoo specification](https://github.com/drawthingsai/draw-things-community/blob/cb2d4c61d1b58816ce1843481e74293a240e5bf4/Libraries/ModelZoo/Sources/ControlNetZoo.swift) identifies `controlnet_openpose_1.x_v1.1_f16.ckpt` as Pose (SD v1.x, ControlNet 1.1), modifier Pose, version v1, regular ControlNet. The CLI probe accepts only `sd_v1.5_f16.ckpt`. It leaves the input override Unspecified (the app exports an empty string) and sends the existing semantic `pose` float tensor hint, without community metadata. The official control declares its native Pose modifier. The owner reported good pose results in the official app and subsequently confirmed a normal image with visible pose adherence in DTFlow after the unit-range normalization change. Neither the production desktop nor queue composer is extended.
+The official [Draw Things ControlNetZoo specification](https://github.com/drawthingsai/draw-things-community/blob/cb2d4c61d1b58816ce1843481e74293a240e5bf4/Libraries/ModelZoo/Sources/ControlNetZoo.swift) identifies `controlnet_openpose_1.x_v1.1_f16.ckpt` as Pose (SD v1.x, ControlNet 1.1), modifier Pose, version v1, regular ControlNet. The CLI probe accepts catalogue SD 1.x text-to-image checkpoints. It leaves the input override Unspecified (the app exports an empty string) and sends the existing semantic `pose` float tensor hint, without community metadata. The official control declares its native Pose modifier. The owner reported good pose results in the official app and subsequently confirmed a normal image with visible pose adherence in DTFlow after the unit-range normalization change. Neither the production desktop nor queue composer is extended.
 
 The owner supplied two equivalent successful app configuration exports: 640 × 1024, 16 steps, guidance 5, sampler 12 (DPM++ 2M AYS), seed 1580038928, Clip Skip 1, seed mode 2, strength 1, control weight 1, Balanced, range 0–1, no LoRAs. The commands match exposed settings; exact equivalence of the app's seed mode, preprocessing and remaining defaults is not established.
 
@@ -321,9 +321,34 @@ uv run dtflow pose generate -b cloud -m sd_v1.5_f16.ckpt -co controlnet_seg_1.x_
 
 For official SD 1.5 Depth/Canny, use `controlnet_depth_1.x_v1.1_f16.ckpt` or `controlnet_canny_1.x_v1.1_f16.ckpt` with the SD 1.5 model and settings above. For official Turbo Canny use `controlnet_canny_sdxl_v1.0_mid_f16.ckpt`. The pinned depth model is available at https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/4472b7362082ad9968fee890ca0f1e5aca36b93d/onnx/model.onnx (SHA-256 `afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c`); obtain it explicitly if needed. The owner has also visually confirmed Turbo Xinsir Canny, Depth and both sparse and clothes-refined Segmentation. The official SD 1.5 non-pose combinations remain untested. The owner confirmed SDXL Turbo Xinsir Pose, SD 1.5 Pose, and SDXL Base official Canny; SDXL Base Xinsir Pose returned noise even with the successful Turbo settings. Compare against an uncontrolled same-seed baseline before claiming acceptance.
 
+### Realistic Vision SD 1.x comparison
+
+The owner preferred Realistic Vision V5.1 Q6P/Q8P in an uncontrolled 960×960 generation with HiRes Fix (512×512 first pass, strength 0.7), 16 steps, CFG 5 and DPM++ 2M AYS (attempt `a82df8968b4d408689cbadc06fd902f9`, 22.30 s). The catalogue identifies it as SD 1.x text-to-image and its published description is version v1. All four official SD 1.x controls now admit catalogue SD 1.x text-to-image checkpoints; inpaint-only and other families remain excluded. Retest without HiRes Fix first; quality and conditioning are not established for Realistic Vision. The owner reported good SD 1.5 Canny, Depth and clothes segmentation at weight 1, Balanced, range 0–1.
+
+```powershell
+$Model = "realistic_vision_v5.1_q6p_q8p.ckpt"
+$Prompt = "Lara is a beautiful woman in a park at night"
+$Photo = ".\tmp\pose.png"
+$Out = ".\tmp\rv-controls"
+foreach ($Type in @("pose", "canny", "depth", "seg")) {
+    $Control = switch ($Type) {
+        "pose" { "controlnet_openpose_1.x_v1.1_f16.ckpt" }
+        "canny" { "controlnet_canny_1.x_v1.1_f16.ckpt" }
+        "depth" { "controlnet_depth_1.x_v1.1_f16.ckpt" }
+        "seg" { "controlnet_seg_1.x_v1.1_f16.ckpt" }
+    }
+    $Extra = switch ($Type) {
+        "depth" { "-dm"; ".\tmp\models\depth-anything-v2-small.onnx" }
+        "seg" { "-sm"; "clothes" }
+    }
+    $Weight = if ($Type -eq "pose") { 0.77 } else { 1 }
+    uv run --with opencv-python-headless==4.11.0.86 dtflow pose generate -b cloud -m $Model -co $Control -ct $Type -ph $Photo -p $Prompt -s 1819044058 -w 384 -y 512 -i 16 -g 5 -a dpmpp_2m_ays -cs $Weight -o $Out @Extra
+}
+```
+
 ### Fast-model Pose defaults (owner comparison)
 
-New CLI Pose requests using SDXL Turbo + Xinsir, or FLUX.1 Schnell / PixelWave Schnell 04 + Union Pro 2.0, default to weight 0.9, Balanced, guidance start 0 and end 0.65. Explicit flags always win; official SD 1.5 Pose instead defaults to weight 1 and end 1; other combinations retain their explicit-weight requirement and default end 1. Saved requests and Retry retain their recorded values. The desktop is unchanged during this CLI-only feasibility phase.
+New CLI Pose requests using SDXL Turbo + Xinsir, or FLUX.1 Schnell / PixelWave Schnell 04 + Union Pro 2.0, default to weight 0.9, Balanced, guidance start 0 and end 0.65. Explicit flags always win; official SD 1.x Pose instead defaults to weight 0.77 and end 1; other combinations retain their explicit-weight requirement and default end 1. Saved requests and Retry retain their recorded values. The desktop is unchanged during this CLI-only feasibility phase.
 
 The owner compared eight-step, 640×960, seed 1234455 generations with Turbo (CFG 0.7, Euler A) and official Schnell Q4P (CFG 1, Euler A Trailing). Weight 0.7 / Balanced / end 1 gave poor adherence; weight 1 / Balanced / end 1 and weight 0.9 / Balanced / end 0.65 gave very good adherence; weight 1 / Control / end 1 gave poor adherence. The final Schnell 0.9 result (attempt `6e7818d8886547c590402b126f304b1d`) completed in 30.90 s without warnings. PixelWave shares the proposed Schnell defaults but has not been validated at those weights. No detector or wire changes were needed. Single-seed visual evidence, not a controlled baseline or broad compatibility guarantee.
 
