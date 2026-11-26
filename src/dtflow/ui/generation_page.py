@@ -1040,6 +1040,10 @@ class GenerationPage:
 
     def reuse_saved_request(self, document: dict, source_identity: str, *, origin: str = "the selected output") -> bool:
         """Populate Generate from one recorded request without dispatching."""
+        if document.get("pose_control") is not None:
+            if problem := self.controlnet.restore_problem(document):
+                self._status(Presentation("warning", "Cannot load Controlnet settings", problem))
+                return False
         video_request = None
         if document.get("num_frames") is not None:
             from dtflow.core.request_records import request_from_record
