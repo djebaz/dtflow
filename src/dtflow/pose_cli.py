@@ -6,6 +6,7 @@ import sys
 from dataclasses import asdict
 from pathlib import Path
 
+from dtflow.core.model_profiles import model_key
 from dtflow.core.models import TimeoutPolicy, ValidationError
 from dtflow.core.pose import (
     CONTROL_MODES,
@@ -99,13 +100,12 @@ def add_commands(commands, add_request_options):
                 help="Draw Things control force: Balanced, Prompt (prompt leads) or Control (pose leads).",
             )
             child.add_argument("-st", "--start", type=float, default=0.0, help="Control start, 0..1 of the steps.")
-            child.add_argument("-en", "--end", type=float, default=1.0, help="Control end, 0..1 of the steps.")
+            child.add_argument("-en", "--end", type=float, help="Control end, 0..1; defaults to 0.65 for fast-model Pose, otherwise 1.")
             child.add_argument(
                 "-cs",
                 "--strength",
                 type=float,
-                required=True,
-                help="Control weight (0,2], NOT img2img denoising or text guidance.",
+                help="Control weight (0,2]; defaults to 0.9 for fast-model Pose, otherwise required.",
             )
 
 
@@ -297,15 +297,23 @@ async def run(args):
     else:
         native = OFFICIAL_PROBE_CONTROLS.get(args.control)
         input_type = args.control_type or (native[0] if native else "pose")
+        request = resolve_generation(args)
+        key = model_key(request.model_id)
+        fast_pose = input_type == "pose" and (
+            (key == "sd_xl_turbo" and args.control == SDXL_POSE_PROBE_CONTROL)
+            or (key in ("flux_1_schnell", "pixelwave_flux_1_schnell_04")
+                and args.control in CONTROLS and "_2.0_" in args.control)
+        )
+        if args.strength is None and not fast_pose:
+            raise ValidationError("--strength is required outside the fast-model Pose presets.")
         control = PoseControl(
             args.control,
-            args.strength,
+            args.strength if args.strength is not None else 0.9,
             input_type=input_type,
             control_mode=args.control_mode,
             guidance_start=args.start,
-            guidance_end=args.end,
+            guidance_end=args.end if args.end is not None else (0.65 if fast_pose else 1.0),
         )
-        request = resolve_generation(args)
         # Validate the checkpoint family before reading a photograph or running ONNX.
         _require_pose_family(args.state, request.model_id, control_checkpoint=control.checkpoint)
         if args.seg_method != "yolo" and (control.input_type != "seg" or args.photo is None):
