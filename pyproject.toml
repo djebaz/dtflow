@@ -20,6 +20,7 @@ dependencies = [
     "nodeeditor-qtpy==0.9.0",
     "numpy==2.3.5",
     "onnxruntime>=1.32.0,<2",
+    "opencv-python-headless==4.11.0.86",
     "orjson==3.13.0",
     "pillow>=13.0.0,<14",
     "pyside6-addons>=6.12.0",

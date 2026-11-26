@@ -265,11 +265,11 @@ uv run dtflow generate -b cloud -m sd_xl_turbo_f16.ckpt -p $Prompt -s 444714817 
 
 This CLI-only diagnostic uses the built-in `controlnet_canny_sdxl_v1.0_mid_f16.ckpt` rather than community Union metadata. It sends a Canny input override and a `custom` RGB hint in −1–1 using the existing durable generation path. The upstream Canny branch reads custom RGB when no initial image is present and converts it internally to 0–1; the previous `canny` hint was not consumed by that branch. The provider must advertise the exact control. The production desktop and queue composer do not offer this probe.
 
-Use a source photo with `-ph`; OpenCV generates edges locally at the fitted target resolution (thresholds 100/200). OpenCV is an optional, invocation-scoped dependency, not an addition to the project lockfile. Alternatively use `-im` with an already prepared edge map, without OpenCV.
+Use a source photo with `-ph`; OpenCV generates edges locally at the fitted target resolution (thresholds 100/200). OpenCV (`opencv-python-headless`) is a project dependency since #635. Alternatively use `-im` with an already prepared edge map.
 
 ```powershell
 uv run dtflow models -b cloud -r
-uv run --with opencv-python-headless==4.11.0.86 dtflow pose generate -b cloud -m sd_xl_base_1.0_f16.ckpt -co controlnet_canny_sdxl_v1.0_mid_f16.ckpt -ph .\tmp\pose.png -p "a person in a red coat in a park, full body shot" -s 12345 -w 1024 -y 1024 -i 25 -g 6 -a euler_a -cs 0.7 -o .\tmp\sdxl-canny
+uv run dtflow pose generate -b cloud -m sd_xl_base_1.0_f16.ckpt -co controlnet_canny_sdxl_v1.0_mid_f16.ckpt -ph .\tmp\pose.png -p "a person in a red coat in a park, full body shot" -s 12345 -w 1024 -y 1024 -i 25 -g 6 -a euler_a -cs 0.7 -o .\tmp\sdxl-canny
 ```
 
 This sends one real request and may consume credits. Compare the result to the existing baseline and the retained edge map. The Canny probe does not establish pose support or satisfy AC-1 by itself. No automatic retries or provider substitutions are added.
@@ -301,7 +301,7 @@ Use `-im` instead of `-ph` for an already extracted pose map. Each generation is
 
 ### Additional SD 1.5 and SDXL Turbo spatial control probes
 
-CLI-only; production UI and queue choices are unchanged. The official SD 1.5 Canny, Depth and Segmentation checkpoints and official SDXL Depth/Canny checkpoints are admitted; Xinsir Union also accepts explicit `-ct depth`, `-ct seg` or `-ct canny` with SDXL Turbo or the previously admitted Base checkpoints. Official controls infer their native input; do not select a mismatching mode. Depth uses a single-channel float16 hint in −1–1, which the upstream generator converts to RGB 0–1. Segmentation and Canny use custom RGB in −1–1. Segmentation accepts a prepared model-compatible semantic palette map or a photo using the existing configured Inpaint YOLO segmentation model. The photo path maps a small subset of overlapping COCO object classes to ADE20K RGB colours; all unrecognized pixels remain black. This is sparse instance-derived conditioning, not full-scene semantic segmentation. Palette colours are preserved with nearest-neighbour resizing. No new model is automatically downloaded. Add `-sm clothes` to a segmentation photo command to reuse the configured SegFormer clothes model: apparel and bag receive their ADE20K colours, skin and hair remain person, and unknown background remains black. The default `-sm yolo` retains the original silhouette mode. The existing research-only model licensing applies; this is not dense scene parsing.
+The CLI admits more combinations than the desktop, which offers only the owner-observed ones (#635). The official SD 1.5 Canny, Depth and Segmentation checkpoints and official SDXL Depth/Canny checkpoints are admitted; Xinsir Union also accepts explicit `-ct depth`, `-ct seg` or `-ct canny` with SDXL Turbo or the previously admitted Base checkpoints. Official controls infer their native input; do not select a mismatching mode. Depth uses a single-channel float16 hint in −1–1, which the upstream generator converts to RGB 0–1. Segmentation and Canny use custom RGB in −1–1. Segmentation accepts a prepared model-compatible semantic palette map or a photo using the existing configured Inpaint YOLO segmentation model. The photo path maps a small subset of overlapping COCO object classes to ADE20K RGB colours; all unrecognized pixels remain black. This is sparse instance-derived conditioning, not full-scene semantic segmentation. Palette colours are preserved with nearest-neighbour resizing. No new model is automatically downloaded. Add `-sm clothes` to a segmentation photo command to reuse the configured SegFormer clothes model: apparel and bag receive their ADE20K colours, skin and hair remain person, and unknown background remains black. The default `-sm yolo` retains the original silhouette mode. The existing research-only model licensing applies; this is not dense scene parsing.
 
 ```powershell
 $Prompt = "a girl in a bikini at the beach"
@@ -313,13 +313,13 @@ uv run dtflow pose generate -b cloud -m $Model -co $Union -ph .\tmp\pose.png -p 
 uv run dtflow pose generate -b cloud -m $Model -co controlnet_depth_sdxl_v1.0_mid_f16.ckpt -im .\tmp\depth.png -p $Prompt -s 1234455 -w 640 -y 960 -i 8 -g 0.7 -a euler_a -cs 1 -o .\tmp\turbo-depth
 # Or extract locally from a photo using the pinned Depth Anything V2 Small ONNX already used by tools/images.
 uv run dtflow pose generate -b cloud -m $Model -co $Union -ct depth -ph .\tmp\pose.png -dm .\tmp\models\depth-anything-v2-small.onnx -p $Prompt -s 1234455 -w 640 -y 960 -i 8 -g 0.7 -a euler_a -cs 1 -o .\tmp\turbo-union-depth
-uv run --with opencv-python-headless==4.11.0.86 dtflow pose generate -b cloud -m $Model -co $Union -ct canny -ph .\tmp\pose.png -p $Prompt -s 1234455 -w 640 -y 960 -i 8 -g 0.7 -a euler_a -cs 1 -o .\tmp\turbo-union-canny
+uv run dtflow pose generate -b cloud -m $Model -co $Union -ct canny -ph .\tmp\pose.png -p $Prompt -s 1234455 -w 640 -y 960 -i 8 -g 0.7 -a euler_a -cs 1 -o .\tmp\turbo-union-canny
 uv run dtflow pose generate -b cloud -m $Model -co $Union -ct seg -ph .\tmp\pose.png -p $Prompt -s 1234455 -w 640 -y 960 -i 8 -g 0.7 -a euler_a -cs 1 -o .\tmp\turbo-union-seg
 uv run dtflow pose generate -b cloud -m $Model -co $Union -ct seg -sm clothes -ph .\tmp\pose.png -p $Prompt -s 1234455 -w 640 -y 960 -i 8 -g 0.7 -a euler_a -cs 1 -o .\tmp\turbo-union-seg-clothes
 uv run dtflow pose generate -b cloud -m sd_v1.5_f16.ckpt -co controlnet_seg_1.x_v1.1_f16.ckpt -ph .\tmp\pose.png -p $Prompt -s 722970881 -w 640 -y 1024 -i 16 -g 5 -a dpmpp_2m_ays -cs 1 -o .\tmp\sd15-seg
 ```
 
-For official SD 1.5 Depth/Canny, use `controlnet_depth_1.x_v1.1_f16.ckpt` or `controlnet_canny_1.x_v1.1_f16.ckpt` with the SD 1.5 model and settings above. For official Turbo Canny use `controlnet_canny_sdxl_v1.0_mid_f16.ckpt`. The pinned depth model is available at https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/4472b7362082ad9968fee890ca0f1e5aca36b93d/onnx/model.onnx (SHA-256 `afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c`); obtain it explicitly if needed. The owner has also visually confirmed Turbo Xinsir Canny, Depth and both sparse and clothes-refined Segmentation. The official SD 1.5 non-pose combinations remain untested. The owner confirmed SDXL Turbo Xinsir Pose, SD 1.5 Pose, and SDXL Base official Canny; SDXL Base Xinsir Pose returned noise even with the successful Turbo settings. Compare against an uncontrolled same-seed baseline before claiming acceptance.
+For official SD 1.5 Depth/Canny, use `controlnet_depth_1.x_v1.1_f16.ckpt` or `controlnet_canny_1.x_v1.1_f16.ckpt` with the SD 1.5 model and settings above. For official Turbo Canny use `controlnet_canny_sdxl_v1.0_mid_f16.ckpt`. The pinned depth model (https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/4472b7362082ad9968fee890ca0f1e5aca36b93d/onnx/model.onnx, SHA-256 `afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c`) is installed by the Download button in desktop Controlnet → Depth into `<state>/models/person/`, which a depth photo uses by default; `-dm` names another copy explicitly. There is no fallback to `tmp/models`. The owner has also visually confirmed Turbo Xinsir Canny, Depth and both sparse and clothes-refined Segmentation. The official SD 1.5 non-pose combinations remain untested. The owner confirmed SDXL Turbo Xinsir Pose, SD 1.5 Pose, and SDXL Base official Canny; SDXL Base Xinsir Pose returned noise even with the successful Turbo settings. Compare against an uncontrolled same-seed baseline before claiming acceptance.
 
 ### Realistic Vision SD 1.x comparison
 
@@ -342,7 +342,7 @@ foreach ($Type in @("pose", "canny", "depth", "seg")) {
         "seg" { "-sm"; "clothes" }
     }
     $Weight = if ($Type -eq "pose") { 0.77 } else { 1 }
-    uv run --with opencv-python-headless==4.11.0.86 dtflow pose generate -b cloud -m $Model -co $Control -ct $Type -ph $Photo -p $Prompt -s 1819044058 -w 384 -y 512 -i 16 -g 5 -a dpmpp_2m_ays -cs $Weight -o $Out @Extra
+    uv run dtflow pose generate -b cloud -m $Model -co $Control -ct $Type -ph $Photo -p $Prompt -s 1819044058 -w 384 -y 512 -i 16 -g 5 -a dpmpp_2m_ays -cs $Weight -o $Out @Extra
 }
 ```
 
@@ -362,13 +362,13 @@ uv run dtflow pose generate -b cloud -m flux_1_schnell_q4p.ckpt -co controlnet_u
 
 ### FLUX.1 Union spatial control probes
 
-The existing FLUX.1 Union Pro 1.0 and 2.0 controls now accept `-ct canny`, `-ct depth` and `-ct seg` through the CLI. Existing Pose remains the default. Upstream FLUX.1 Union 1.0 maps Canny to mode 0, Depth to 2 and Segmentation to 1 (the shared tile/custom mode, not a dedicated segmentation mode); Union 2.0 is a regular ControlNet without the mode embedding. Segmentation is therefore exploratory, not established checkpoint training compatibility. The existing signed RGB custom hint and signed single-channel depth hint match the upstream FLUX.1 paths, which do not apply SDXL's RGB range conversion. Desktop choices remain pose-only.
+The existing FLUX.1 Union Pro 1.0 and 2.0 controls now accept `-ct canny`, `-ct depth` and `-ct seg` through the CLI. Existing Pose remains the default. Upstream FLUX.1 Union 1.0 maps Canny to mode 0, Depth to 2 and Segmentation to 1 (the shared tile/custom mode, not a dedicated segmentation mode); Union 2.0 is a regular ControlNet without the mode embedding. Segmentation is therefore exploratory, not established checkpoint training compatibility. The existing signed RGB custom hint and signed single-channel depth hint match the upstream FLUX.1 paths, which do not apply SDXL's RGB range conversion. The desktop offers only the owner-observed combinations listed in `resources/catalogue/controlnet_desktop.json` (#635); see the desktop guide.
 
 ```powershell
 $Model = "flux_1_dev_q5p.ckpt"
 $Union = "controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt"
 $Prompt = "a girl in a bikini at the beach"
-uv run --with opencv-python-headless==4.11.0.86 dtflow pose generate -b cloud -m $Model -co $Union -ct canny -ph .\tmp\pose.png -p $Prompt -s 1234455 -w 640 -y 960 -i 24 -g 3.5 -a euler_a -cs 0.7 -o .\tmp\flux-canny
+uv run dtflow pose generate -b cloud -m $Model -co $Union -ct canny -ph .\tmp\pose.png -p $Prompt -s 1234455 -w 640 -y 960 -i 24 -g 3.5 -a euler_a -cs 0.7 -o .\tmp\flux-canny
 uv run dtflow pose generate -b cloud -m $Model -co $Union -ct depth -ph .\tmp\pose.png -dm .\tmp\models\depth-anything-v2-small.onnx -p $Prompt -s 1234455 -w 640 -y 960 -i 24 -g 3.5 -a euler_a -cs 0.7 -o .\tmp\flux-depth
 uv run dtflow pose generate -b cloud -m $Model -co $Union -ct seg -sm clothes -ph .\tmp\pose.png -p $Prompt -s 1234455 -w 640 -y 960 -i 24 -g 3.5 -a euler_a -cs 0.7 -o .\tmp\flux-seg
 ```

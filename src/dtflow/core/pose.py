@@ -1,6 +1,9 @@
 """Body-pose control specifications and narrow, explicitly selected provider experiments."""
 
+import json
 from dataclasses import dataclass
+from functools import cache
+from pathlib import Path
 
 from dtflow.core.models import ValidationError, is_finite_number
 
@@ -65,17 +68,100 @@ CONTROL_MODES = ("Balanced", "Prompt", "Control")
 
 # The checkpoint families pose guidance is offered for: catalogue ``base_model`` key and its display label. Add a family
 # here (with its control in CONTROLS) and every check, message and default below follows; nothing else names FLUX.1.
-POSE_FAMILIES = (("flux_1", "FLUX.1"),)
+POSE_FAMILIES = (("flux_1", "FLUX.1"), ("sd_1", "SD 1.x"), ("sdxl", "SDXL"))
 DEFAULT_POSE_FAMILY = POSE_FAMILIES[0][0]
-POSE_FAMILY_LABEL = " or ".join(label for _, label in POSE_FAMILIES)
+POSE_FAMILY_LABEL = ", ".join(label for _, label in POSE_FAMILIES[:-1]) + " or " + POSE_FAMILIES[-1][1]
+INPUT_LABELS = {"pose": "Pose", "canny": "Canny", "depth": "Depth", "seg": "Segmentation"}
 
 
-def supports_pose(model_id: str, base_model: str | None = None) -> bool:
-    """Whether the checkpoint belongs to a pose family (for FLUX.1: dev, schnell, krea, depth, de_distill, ...).
+@dataclass(frozen=True, slots=True)
+class DesktopControl:
+    """One control the desktop offers (#635), read from ``controlnet_desktop.json``: family, input types, evidence.
+
+    ``inputs`` lists only the input types with owner-observed DT+ results; ``models`` narrows the family to exact
+    checkpoints when only those were observed; ``verified_models`` are the checkpoints the owner saw work with it."""
+
+    checkpoint: str
+    label: str
+    family: str
+    inputs: tuple[str, ...]
+    verified: bool
+    verified_models: tuple[str, ...]
+    evidence: str
+    models: tuple[str, ...] | None = None
+
+
+_DESKTOP_DATASET = Path(__file__).parents[1] / "resources" / "catalogue" / "controlnet_desktop.json"
+
+
+def _encodable(checkpoint: str, input_type: str) -> bool:
+    """Whether DTFlow has a request encoding for this control and input (wire.py follows the same constants)."""
+    if checkpoint in CONTROLS or checkpoint == SDXL_POSE_PROBE_CONTROL:
+        return input_type in XINSIR_PROBE_INPUTS
+    native = OFFICIAL_PROBE_CONTROLS.get(checkpoint)
+    return native is not None and native[0] == input_type
+
+
+@cache
+def _load_desktop_controls() -> tuple[tuple[DesktopControl, ...], frozenset[str]]:
+    """Read the bundled table; a malformed entry or one without a request encoding is a packaging error."""
+    data = json.loads(_DESKTOP_DATASET.read_text(encoding="utf-8"))
+    controls = []
+    for item in data["controls"]:
+        control = DesktopControl(
+            checkpoint=item["checkpoint"],
+            label=item["label"],
+            family=item["family"],
+            inputs=tuple(item["inputs"]),
+            verified=bool(item["verified"]),
+            verified_models=tuple(item.get("verified_models", ())),
+            evidence=item.get("evidence", ""),
+            models=tuple(item["models"]) if item.get("models") is not None else None,
+        )
+        families = {family for family, _ in POSE_FAMILIES}
+        if (
+            control.family not in families
+            or not control.inputs
+            or any(kind not in INPUT_LABELS or not _encodable(control.checkpoint, kind) for kind in control.inputs)
+        ):
+            raise ValueError(f"controlnet_desktop.json: {control.checkpoint} has no supported family or encoding.")
+        controls.append(control)
+    retired = frozenset(data.get("retired", ()))
+    if len({c.checkpoint for c in controls}) != len(controls) or retired & {c.checkpoint for c in controls}:
+        raise ValueError("controlnet_desktop.json: duplicate or retired control entries.")
+    return tuple(controls), retired
+
+
+def desktop_controls() -> tuple[DesktopControl, ...]:
+    """The desktop table, read once per run on first use and then served from memory."""
+    return _load_desktop_controls()[0]
+
+
+def retired_controls() -> frozenset[str]:
+    """Controls removed from new desktop selections; records naming them are reported, never replaced."""
+    return _load_desktop_controls()[1]
+
+
+def desktop_control(checkpoint: str | None) -> DesktopControl | None:
+    return next((control for control in desktop_controls() if control.checkpoint == checkpoint), None)
+
+
+def desktop_admits(control: DesktopControl, model_id: str, base_model: str | None, modes=None) -> bool:
+    """Whether the desktop offers ``control`` with this checkpoint: its exact models, or its catalogue family (SD 1.x
+    text-to-image checkpoints only, as the session requires)."""
+    if control.models is not None:
+        return model_id in control.models
+    if control.family == "sd_1" and modes is not None and "t2i" not in modes:
+        return False
+    return supports_pose(model_id, base_model, families=(control.family,))
+
+
+def supports_pose(model_id: str, base_model: str | None = None, *, families: tuple[str, ...] | None = None) -> bool:
+    """Whether the checkpoint belongs to a Controlnet family (for FLUX.1: dev, schnell, krea, depth, de_distill, ...).
 
     The catalogue's family of the checkpoint (``base_model``) decides when it is known; only an unclassified checkpoint
     falls back to the family key as a file-name prefix (``flux_1_``)."""
-    families = tuple(family for family, _ in POSE_FAMILIES)
+    families = families or tuple(family for family, _ in POSE_FAMILIES)
     if base_model:
         return base_model in families
     name = model_id.strip().lower()

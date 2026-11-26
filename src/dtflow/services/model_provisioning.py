@@ -211,6 +211,13 @@ def _fetch(entry: CatalogueEntry, folder: Path, report, cancel) -> Path:
 
 
 def _check_contract(entry: CatalogueEntry, path: Path) -> None:
+    if entry.role == "depth":
+        from dtflow.services.body_pose import DEPTH_DETECTOR, _depth_session
+
+        if entry != DEPTH_DETECTOR:
+            raise ValidationError("Only the pinned depth model can be installed.")
+        _depth_session(person_selection._read_model(str(path)))
+        return
     if entry.role == "pose":
         from dtflow.services.body_pose import DETECTOR, _pose_session
 

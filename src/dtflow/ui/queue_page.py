@@ -312,7 +312,7 @@ class QueuePage:
         models_source: Callable[[], dict] = dict,
         generate_hook: Callable[[], None] = lambda: None,
         reuse_hook: Callable[[dict], None] = lambda request: None,
-        pose_controls_source: Callable = tuple,
+        pose_controls_source: Callable = lambda _model, _kind: (),
     ):
         self.page = page
         self._runner, self._backend, self._saved = runner, backend_source, saved_source

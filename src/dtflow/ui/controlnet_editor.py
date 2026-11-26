@@ -13,50 +13,79 @@ from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QLabel, QSizePolicy
 
 from dtflow.core.image_inputs import ImageContent, ImageInputSnapshot
-from dtflow.core.pose import CONTROLS, POSE_FAMILY_LABEL, VERIFIED_MODELS, PoseControl, supports_pose
+from dtflow.core.pose import (
+    INPUT_LABELS,
+    POSE_FAMILY_LABEL,
+    PoseControl,
+    desktop_admits,
+    desktop_control,
+    desktop_controls,
+    retired_controls,
+)
 from dtflow.core.tasks import settle
 from dtflow.services import image_preparation as pixels
 from dtflow.services.body_pose import (
     body_map,
     detect_people,
+    depth_ready,
     detector_ready,
-    fit_pose_map,
+    extract_control_map,
+    fit_control_map,
+    load_control_map,
     load_prepared_map,
 )
 from dtflow.services.image_inputs import restore_image_inputs
 from dtflow.ui.activity_strip import activity_strip
 from dtflow.ui.file_dialogs import QFileDialog
-from dtflow.ui.model_download import is_downloading, start_pose_download
+from dtflow.ui.model_download import is_downloading, start_depth_download, start_pose_download
 from dtflow.ui.pose_canvas import PoseCanvas
 
-CONFIGURATION_NOTE = "Saving a configuration or preset covers text-to-image only: it would drop the pose."
-CONSENT = "Generate or Start sends the pose map to DT+ Cloud and may consume credits. Saving a queue stays local."
+CONFIGURATION_NOTE = "Saving a configuration or preset covers text-to-image only: it would drop the control map."
+CONSENT = "Generate or Start sends the control map to DT+ Cloud and may consume credits. Saving a queue stays local."
 DETECTOR_NOTE = "YOLO26n-pose · about 11.6 MiB · AGPL-3.0 · runs on this computer"
+DEPTH_NOTE = "Depth Anything V2 Small · about 94.5 MiB · Apache-2.0 · runs on this computer"
 NO_BACKEND = "Controlnet needs DT+ Cloud. Choose DT+ Cloud under Provider."
-NO_CHECKPOINT = f"Controlnet needs a {POSE_FAMILY_LABEL} checkpoint; the selected one is not."
-UNVERIFIED_CHECKPOINT = "Not verified with this checkpoint: only FLUX.1 Dev q5p has been confirmed."
-VERIFIED_CONTROL = "controlnet_union_pro_flux_1_dev_2.0_q5p.ckpt"
+NO_CHECKPOINT = (
+    f"Controlnet needs a {POSE_FAMILY_LABEL} checkpoint that a desktop control supports; the selected one is not."
+)
+UNVERIFIED_CHECKPOINT = "Not verified with this checkpoint: the owner runs used {models}."
 IMAGE_FILTER = "Images (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.bmp)"
-
-
-DESKTOP_CONTROLS = frozenset(name for name in CONTROLS if "_2.0_" in name)
-# Union Pro 1.0 is retired from new desktop selections (#635); saved records that name it are reported, never replaced.
-RETIRED_CONTROLS = frozenset(name for name in CONTROLS if "_1.0_" in name)
 RETIRED_CONTROL_NOTE = "The saved control, Union Pro 1.0, is retired. Choose Union Pro 2.0 to continue."
+# What a prepared map of each type looks like; a pose map is drawn as OpenPose limbs on black.
+MAP_HINTS = {
+    "pose": "An OpenPose body map: black background, coloured limbs. Used as it is; nothing is detected.",
+    "canny": "A Canny edge map: white edges on black. Used as it is; nothing is detected.",
+    "depth": "A grayscale depth map: near is light, far is dark. Used as it is; nothing is detected.",
+    "seg": "A segmentation map in ADE20K colours, unknown areas black. Used as it is; nothing is detected.",
+}
+PHOTO_HINTS = {
+    "canny": "Edges are found in the photo on this computer (OpenCV Canny), at the size you generate.",
+    "depth": "Depth is estimated on this computer with Depth Anything V2 Small, when it is installed.",
+    "seg": "People and common objects are found with the Inpaint YOLO segmentation model, on this computer.",
+}
 
 
-def control_choices(snapshot) -> tuple["PoseControlChoice", ...]:
-    """Union Pro 2.0 controls the DT+ inventory lists, q5p first; Union Pro 1.0 is retired from new selections."""
+def control_choices(
+    snapshot, model="", base_model=None, modes=None, input_type=None
+) -> tuple["PoseControlChoice", ...]:
+    """The desktop controls (``controlnet_desktop.json``) the DT+ inventory lists that admit this checkpoint and,
+    when given, this input type, in table order (verified variant first). The table is read once and cached."""
     if snapshot is None:
         return ()
     listed = {entry.identifier for entry in snapshot.entries}
-    names = sorted(DESKTOP_CONTROLS & listed, key=lambda n: ("q5p" not in n, n))
-    return tuple(PoseControlChoice(_control_label(name), name == VERIFIED_CONTROL, name) for name in names)
+    return tuple(
+        PoseControlChoice(c.label, c.verified, c.checkpoint, c.inputs, c.evidence, c.verified_models)
+        for c in desktop_controls()
+        if c.checkpoint in listed
+        and desktop_admits(c, model, base_model, modes)
+        and (input_type is None or input_type in c.inputs)
+    )
 
 
-def _control_label(checkpoint: str) -> str:
-    quant = checkpoint.rsplit("_", 1)[-1].removesuffix(".ckpt")
-    return f"Union Pro 2.0 {quant}"
+def input_choices(model, base_model=None, modes=None) -> tuple[str, ...]:
+    """The input types some desktop control offers for this checkpoint, whatever the inventory lists."""
+    offered = {kind for c in desktop_controls() if desktop_admits(c, model, base_model, modes) for kind in c.inputs}
+    return tuple(kind for kind in INPUT_LABELS if kind in offered)
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +102,9 @@ class PoseControlChoice:
     label: str
     verified: bool
     checkpoint: str = ""
+    inputs: tuple[str, ...] = ("pose",)
+    evidence: str = ""
+    verified_models: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +135,8 @@ class PoseView:
         PoseControlChoice("Union Pro 2.0 q8p", False),
     )
     control_index: int = 0
+    input_type: str = "pose"
+    inputs: tuple[str, ...] = ("pose",)
     strength: float = 0.7
     blocker: str = ""  # why Generate is unavailable; empty means ready
     notice: str = ""
@@ -135,6 +169,7 @@ class ControlnetEditor(QObject):
         self._downloading = False
         self._result = None
         self._controls = ()
+        self._inputs = ()  # input types offered for the selected checkpoint
         self._control_index = 0
         self._generate_tip = False  # Generate's tooltip is ours while in this mode and cleared on leaving
         self._wanted_control = None  # a remembered control, applied once the inventory lists it
@@ -192,6 +227,7 @@ class ControlnetEditor(QObject):
         self.canvas.personPicked.connect(lambda row: self.form.posePeopleList.setCurrentRow(row))
         self.canvas.sourceDropped.connect(self.load_source)
         self.form.poseControlCombo.currentIndexChanged.connect(self._control_changed)
+        self.form.poseInputCombo.currentIndexChanged.connect(self._input_changed)
         self.form.poseStrengthSpin.valueChanged.connect(self._strength_changed)
         self.form.poseStartSpin.valueChanged.connect(self._range_changed)
         self.form.poseEndSpin.valueChanged.connect(self._range_changed)
@@ -206,8 +242,8 @@ class ControlnetEditor(QObject):
         """The generation page owns backend selection and dispatch; the editor only asks it."""
         self.controller = controller
         page = self.page
-        for signal in (page.modelCombo.currentTextChanged, page.generationBackendCombo.currentTextChanged):
-            signal.connect(self.refresh)
+        page.modelCombo.currentTextChanged.connect(self.refresh_controls)
+        page.generationBackendCombo.currentTextChanged.connect(self.refresh)
         for spin in (page.widthSpinBox, page.heightSpinBox):
             spin.valueChanged.connect(self._size_changed)
         self._wired = True
@@ -227,7 +263,7 @@ class ControlnetEditor(QObject):
         if not (self._restore_source_pending and self.active and self._generate_visible):
             return
         self._restore_source_pending = False
-        remembered = self._paths.get(self._kind)
+        remembered = self._paths.get(self._path_key())
         if remembered and Path(remembered).is_file():
             self.load_source(remembered)
 
@@ -237,7 +273,9 @@ class ControlnetEditor(QObject):
             widget.setVisible(active)
         if active:
             self.page.resultPreviewLabel.setVisible(False)
-            self.page.generateButton.setText("Generate with pose")
+            self.page.generateButton.setText(
+                "Generate with pose" if self._input_type == "pose" else "Generate with Controlnet"
+            )
         elif not self.page.inpaintModeButton.isChecked():
             self.page.resultPreviewLabel.setVisible(True)
             self.page.generateButton.setText("Generate image")
@@ -259,7 +297,7 @@ class ControlnetEditor(QObject):
                 getattr(self.page, name).setEnabled(True)
         if active and self._wired:
             self.activate_if_visible()
-            self.refresh()
+            self.refresh_controls()
         else:
             self.sync_buttons()
 
@@ -309,6 +347,7 @@ class ControlnetEditor(QObject):
         form, canvas = self.form, self.canvas
         form.photoKindButton.setChecked(view.kind == "photo")
         form.mapKindButton.setChecked(view.kind == "map")
+        form.mapKindButton.setText("Body map" if view.input_type == "pose" else "Map")
         has_source = view.source is not None
         busy = view.extracting or view.detector == "downloading"
         if has_source:
@@ -317,27 +356,47 @@ class ControlnetEditor(QObject):
         else:
             form.poseThumbnail.clear()
             canvas.clear_all()
+        pose = view.input_type == "pose"
+        kind_label = INPUT_LABELS.get(view.input_type, view.input_type)
         form.poseSourceFacts.setText(
-            view.source_facts or ("Choose a photo…" if view.kind == "photo" else "Choose a body map…")
+            view.source_facts
+            or ("Choose a photo…" if view.kind == "photo" else "Choose a body map…" if pose else "Choose a map…")
         )
         form.poseSourceError.setText(view.source_error)
         form.poseSourceError.setVisible(bool(view.source_error))
         form.removePoseButton.setEnabled(has_source and not busy)
         form.choosePoseButton.setEnabled(not busy)
-        form.poseSourceLimits.setText(
-            "Up to 64 MiB / 16 MP. You can also drop an image on the canvas."
-            if view.kind == "photo"
-            else "An OpenPose body map: black background, coloured limbs. Used as it is; nothing is detected."
-        )
+        limits = "Up to 64 MiB / 16 MP. You can also drop an image on the canvas."
+        if view.kind == "photo" and not pose:
+            limits = f"{limits} {PHOTO_HINTS.get(view.input_type, '')}"
+        form.poseSourceLimits.setText(limits if view.kind == "photo" else MAP_HINTS.get(view.input_type, ""))
         photo = view.kind == "photo"
-        for widget in (form.poseStep1Label, form.extractPoseButton, form.detectorBadge, form.detectorStatus):
-            widget.setVisible(photo)
-        form.downloadDetectorButton.setVisible(photo and view.detector in ("missing", "downloading"))
-        form.poseStep2Label.setVisible(photo)
-        form.posePeopleList.setVisible(photo)
+        pose_photo = photo and pose
+        extracted = photo and view.input_type in ("pose", "depth", "seg")  # Canny is found while fitting
+        for widget in (form.poseStep1Label, form.extractPoseButton):
+            widget.setVisible(extracted)
+        needs_model = photo and view.input_type in ("pose", "depth")
+        for widget in (form.detectorBadge, form.detectorStatus):
+            widget.setVisible(needs_model)
+        form.downloadDetectorButton.setVisible(needs_model and view.detector in ("missing", "downloading"))
+        if pose:
+            form.downloadDetectorButton.setText("Download detector")
+        form.poseStep2Label.setVisible(pose_photo)
+        form.posePeopleList.setVisible(pose_photo)
         self._detector(view)
-        form.extractPoseButton.setText("Extracting…" if view.extracting else "Extract pose")
-        form.extractPoseButton.setEnabled(has_source and view.detector == "ready" and not busy)
+        form.extractPoseButton.setText(
+            "Extracting…" if view.extracting else "Extract pose" if pose else f"Extract {kind_label.lower()}"
+        )
+        form.extractPoseButton.setEnabled(has_source and (view.detector == "ready" or not needs_model) and not busy)
+        form.poseInputCombo.blockSignals(True)
+        form.poseInputCombo.clear()
+        for kind in view.inputs:
+            form.poseInputCombo.addItem(INPUT_LABELS.get(kind, kind), kind)
+        if view.input_type not in view.inputs:  # a restored type the checkpoint does not offer stays visible
+            form.poseInputCombo.addItem(f"{kind_label} · not offered for this checkpoint", view.input_type)
+        form.poseInputCombo.setCurrentIndex(form.poseInputCombo.findData(view.input_type))
+        form.poseInputCombo.blockSignals(False)
+        form.poseInputCombo.setEnabled(not busy and form.poseInputCombo.count() > 1)
         form.downloadDetectorButton.setEnabled(view.detector == "missing")
         form.posePeopleList.blockSignals(True)
         form.posePeopleList.clear()
@@ -352,6 +411,7 @@ class ControlnetEditor(QObject):
         shown = {"Pose": view.pose, "Result": view.result}.get(view.view, True)
         canvas.set_view(view.view if shown is not None else "Source")
         canvas._view_buttons["Pose"].setEnabled(view.pose is not None)
+        canvas._view_buttons["Pose"].setText("Pose" if pose else "Map")
         canvas._view_buttons["Result"].setEnabled(view.result is not None)
         canvas.setEnabled(not busy)
         form.poseControlCombo.blockSignals(True)
@@ -366,12 +426,11 @@ class ControlnetEditor(QObject):
             note = (
                 "Choose an available control, or refresh the inventory to restore the saved control."
                 if view.controls
-                else "No Union Pro 2.0 control is in your DT+ inventory. Generate cannot start without one."
+                else f"No {kind_label} control for this checkpoint is in your DT+ inventory. Generate cannot start "
+                "without one."
             )
-        elif chosen.verified:
-            note = "Verified together with FLUX.1 Dev q5p on DT+ Cloud."
         else:
-            note = "Not verified: only Union Pro 2.0 q5p with FLUX.1 Dev q5p and Schnell q4p has been confirmed."
+            note = chosen.evidence
         form.poseControlCombo.setToolTip(note)
         form.poseStrengthSpin.blockSignals(True)
         form.poseStrengthSpin.setValue(view.strength)
@@ -389,6 +448,9 @@ class ControlnetEditor(QObject):
 
     def _detector(self, view):
         form = self.form
+        if view.input_type == "depth":
+            self._depth_detector(view)
+            return
         text, state, glyph, summary = {
             "ready": (DETECTOR_NOTE, "ok", "✓", "Pose detector installed"),
             "missing": (
@@ -410,58 +472,112 @@ class ControlnetEditor(QObject):
         form.detectorBadge.style().unpolish(form.detectorBadge)
         form.detectorBadge.style().polish(form.detectorBadge)
 
+    def _depth_detector(self, view):
+        form = self.form
+        text, state, glyph, summary = {
+            "ready": (DEPTH_NOTE, "ok", "✓", "Depth model installed"),
+            "missing": (
+                "The depth model is not installed. Download estimates depth from photos; a depth map works without "
+                "it. Pressing Download accepts the Apache-2.0 licence of Depth Anything V2 Small (about 94.5 MiB, from "
+                "Hugging Face).",
+                "missing",
+                "0",
+                "Depth model not installed",
+            ),
+            "downloading": ("Downloading the depth model…", "checking", "·", "Downloading the depth model"),
+            "unknown": ("Model availability could not be checked.", "unknown", "?", "Model availability unknown"),
+        }[view.detector]
+        form.detectorStatus.setText("" if view.detector == "ready" else text)
+        form.detectorStatus.setVisible(view.detector != "ready")
+        form.downloadDetectorButton.setText("Download depth model")
+        form.detectorBadge.setText(glyph)
+        form.detectorBadge.setProperty("readiness", state)
+        form.detectorBadge.setAccessibleName(summary)
+        form.detectorBadge.setToolTip(summary)
+        form.detectorBadge.style().unpolish(form.detectorBadge)
+        form.detectorBadge.style().polish(form.detectorBadge)
+
+    def _model_ready(self):
+        """The local model the current photo extraction needs: the pose detector, or the depth model for Depth."""
+        if self.controller is None:
+            return False
+        state = self.controller._state
+        return depth_ready(state) if self._input_type == "depth" else detector_ready(state)
+
     # -- behaviour --------------------------------------------------------------------------------------------------
     def _backend(self):
         return self.controller._backend()[0] if self.controller is not None else ""
 
-    def _pose_family(self):
-        """Whether the selected checkpoint belongs to a pose family, by the catalogue's classification."""
+    def _checkpoint(self):
+        """The selected checkpoint with its catalogue family and modes (None when the catalogue does not know it)."""
         model = self.page.modelCombo.currentText().strip()
         entry = (
             self.controller._catalogue.checkpoint(model, include_unavailable=True)
             if self.controller is not None and model
             else None
         )
-        return supports_pose(model, entry.base_model if entry else None)
+        return model, (entry.base_model if entry else None), (entry.modes if entry else None)
+
+    def _choice(self):
+        if self._controls and 0 <= self._control_index < len(self._controls):
+            choice = self._controls[self._control_index]
+            if not self._wanted_control or choice.checkpoint == self._wanted_control:
+                return choice
+        return None
 
     def blocker(self) -> str:
         """Why Generate cannot start now; empty when it can. Backend and checkpoint come first, as they are the
         mode's own requirement."""
-        if self._input_type != "pose":
-            return "This experimental control type is not supported in the desktop."
+        label = INPUT_LABELS.get(self._input_type, self._input_type)
+        pose = self._input_type == "pose"
         if self._backend() != "cloud":
             return NO_BACKEND
-        if not self._pose_family():
+        if not self._inputs:
             return NO_CHECKPOINT
+        if self._input_type not in self._inputs:
+            return f"{label} is not offered for this checkpoint. Choose another control type or checkpoint."
         if self._extracting:
-            return "Extracting the pose…"
+            return "Extracting the pose…" if pose else f"Preparing the {label.lower()} map…"
         if self._downloading:
             return "Downloading the pose detector…"
         if self._content is None:
-            return "Choose a photo or a body map first."
-        if self._kind == "photo" and not detector_ready(self.controller._state):
+            return "Choose a photo or a body map first." if pose else "Choose a photo or a map first."
+        if pose and self._kind == "photo" and not detector_ready(self.controller._state):
             return "Install the pose detector, or use a body map."
-        if self._kind == "photo" and self._detection is not None and not self._detection.candidates:
+        if self._input_type == "depth" and self._kind == "photo" and not self._map and not self._model_ready():
+            return "Install the depth model, or use a depth map."
+        if pose and self._kind == "photo" and self._detection is not None and not self._detection.candidates:
             return "No person was found. Choose another photo or use a body map."
-        if self._kind == "photo" and self._detection is not None and self._selected is None:
+        if pose and self._kind == "photo" and self._detection is not None and self._selected is None:
             return "Pick the person the pose is taken from."
         if self._map is None:
-            return "No pose to send yet."
+            return "No pose to send yet." if pose else f"No {label.lower()} map to send yet."
         if self._pose_pixmap is None:
             return "Preparing the map for this size…"
-        if not self._controls:
-            return "No Union Pro 2.0 control is in your DT+ inventory. Refresh the models."
-        if self._wanted_control in RETIRED_CONTROLS:
+        if self._wanted_control in retired_controls():
             return RETIRED_CONTROL_NOTE
-        if self._wanted_control and self._controls[self._control_index].checkpoint != self._wanted_control:
-            return "The saved control is not in your DT+ inventory. Refresh models or choose another control."
+        if not self._controls:
+            return f"No {label} control for this checkpoint is in your DT+ inventory. Refresh the models."
+        if self._choice() is None:
+            return "The saved control is not available here. Refresh models or choose another control."
         return ""
+
+    def _notice_text(self):
+        choice = self._choice()
+        model = self._checkpoint()[0]
+        unverified = ""
+        if choice is not None and choice.verified_models and model not in choice.verified_models:
+            names = ", ".join(name.removesuffix(".ckpt") for name in choice.verified_models)
+            unverified = UNVERIFIED_CHECKPOINT.format(models=names)
+        elif choice is not None and not choice.verified:
+            unverified = choice.evidence
+        return " ".join(text for text in (CONSENT if self._backend() == "cloud" else "", unverified) if text)
 
     def refresh(self, *_):
         """Rebuild the presentation from the editor's state; the single place the widgets are driven from."""
         if self.runner.closed or self.controller is None:
             return
-        detector = "ready" if detector_ready(self.controller._state) else "missing"
+        detector = "ready" if self._model_ready() else "missing"
         if self._downloading:
             detector = "downloading"
         people = ()
@@ -482,35 +598,65 @@ class ControlnetEditor(QObject):
             map_note=self._map_note(),
             extraction_error=self._extraction_error,
             controls=self._controls,
-            control_index=(
-                -1
-                if self._wanted_control and not any(c.checkpoint == self._wanted_control for c in self._controls)
-                else self._control_index
-            ),
+            control_index=-1 if self._choice() is None else self._control_index,
+            input_type=self._input_type,
+            inputs=self._inputs,
             strength=self._strength,
             blocker=self.blocker(),
-            notice=" ".join(
-                text
-                for text in (
-                    CONSENT if self._backend() == "cloud" else "",
-                    UNVERIFIED_CHECKPOINT
-                    if self.page.modelCombo.currentText().strip() not in VERIFIED_MODELS and self._pose_family()
-                    else "",
-                )
-                if text
-            ),
+            notice=self._notice_text(),
             view=self.canvas._view,
         )
         self.present(view)
 
-    def refresh_controls(self, *_):
-        """The Union Pro 2.0 controls the active DT+ inventory lists."""
+    def queue_control_choices(self, model_id: str, input_type: str) -> tuple[PoseControlChoice, ...]:
+        """The controls a queue draft for this checkpoint and input type may pick, from the cached inventory."""
         if self.controller is None:
+            return ()
+        entry = self.controller._catalogue.checkpoint(model_id, include_unavailable=True) if model_id else None
+        return control_choices(
+            self.controller._inventory_snapshot,
+            model_id,
+            entry.base_model if entry else None,
+            entry.modes if entry else None,
+            input_type,
+        )
+
+    def refresh_controls(self, *_):
+        """The input types and controls for the selected checkpoint that the active DT+ inventory lists. Only while
+        Controlnet is shown: the other modes never read the control table (#635)."""
+        if self.controller is None or not self.active:
             return
+        if self._wanted_control and not (
+            desktop_control(self._wanted_control) or self._wanted_control in retired_controls()
+        ):
+            self._wanted_control = None  # a malformed remembered value never blocks Generate
         chosen = self._wanted_control or (self._controls[self._control_index].checkpoint if self._controls else None)
-        self._controls = control_choices(self.controller._inventory_snapshot)
+        model, base_model, modes = self._checkpoint()
+        self._inputs = input_choices(model, base_model, modes)
+        self._controls = control_choices(
+            self.controller._inventory_snapshot, model, base_model, modes, self._input_type
+        )
         self._control_index = next((i for i, c in enumerate(self._controls) if c.checkpoint == chosen), 0)
         self.refresh()
+
+    def _input_changed(self, index):
+        """A new control type needs a map of that type: a photo is prepared again, a map of another type is cleared."""
+        kind = self.form.poseInputCombo.itemData(index)
+        if not isinstance(kind, str) or kind == self._input_type:
+            return
+        self._input_type = kind
+        self._clear_source()
+        self._pending_person = None
+        self.sync_mode()
+        self.refresh_controls()
+        remembered = self._paths.get(self._path_key())
+        if remembered and Path(remembered).is_file():
+            self.load_source(remembered)
+
+    def _path_key(self, kind=None):
+        """Photos are shared by every control type; maps are kept per type (a pose map is no depth map)."""
+        kind = kind or self._kind
+        return kind if kind == "photo" or self._input_type == "pose" else f"{self._input_type}_map"
 
     def _control_changed(self, index):
         if 0 <= index < len(self._controls):
@@ -547,7 +693,7 @@ class ControlnetEditor(QObject):
         self._clear_source()
         self._pending_person = None
         self._kind = kind
-        remembered = self._paths.get(kind)
+        remembered = self._paths.get(self._path_key(kind))
         if remembered and Path(remembered).is_file():
             self.load_source(remembered)
             return
@@ -555,7 +701,6 @@ class ControlnetEditor(QObject):
 
     def _clear_source(self):
         self._restore_source_pending = False
-        self._input_type = "pose"
         self._revision += 1
         self._extracting = False
         self._content, self._filename, self._source_pixmap = None, "", None
@@ -576,7 +721,13 @@ class ControlnetEditor(QObject):
     def choose_source(self):
         if self._extracting or self._downloading:
             return
-        caption = "Choose photo" if self._kind == "photo" else "Choose body map"
+        caption = (
+            "Choose photo"
+            if self._kind == "photo"
+            else "Choose body map"
+            if self._input_type == "pose"
+            else f"Choose {INPUT_LABELS[self._input_type].lower()} map"
+        )
         path = QFileDialog.getOpenFileName(self.page, caption, "", IMAGE_FILTER)[0]
         if path:
             self.load_source(path)
@@ -591,7 +742,7 @@ class ControlnetEditor(QObject):
             return
         self._restore_source_pending = False
         path = Path(path)
-        kind = self._kind
+        kind, input_type = self._kind, self._input_type
         self._revision += 1
         revision = self._revision
         self._extracting = True
@@ -599,7 +750,9 @@ class ControlnetEditor(QObject):
 
         def worker():
             if kind == "map":
-                content, evidence = load_prepared_map(path)
+                content, evidence = (
+                    load_prepared_map(path) if input_type == "pose" else load_control_map(path, input_type)
+                )
             else:
                 content, evidence = pixels.load_source_file(path), {}
             return content, evidence
@@ -618,7 +771,7 @@ class ControlnetEditor(QObject):
             content, evidence = value
             self._clear_source()
             self._revision = revision + 1
-            self._paths[kind] = str(path)
+            self._paths[self._path_key(kind)] = str(path)
             self._content, self._source_evidence = content, evidence
             self._source_pixmap = self._pixmap(content)
             name = path.name
@@ -626,6 +779,14 @@ class ControlnetEditor(QObject):
             if kind == "map":
                 self._map, self._map_evidence = content, dict(evidence)
                 self._schedule_refit()
+            elif input_type == "canny":  # edges are found inside the fitted photo, at each size
+                self._map = content
+                self._map_evidence = {"origin": "canny_photo", "source_sha256": content.sha256}
+                self._schedule_refit()
+            elif input_type == "seg" or (input_type == "depth" and depth_ready(self.controller._state)):
+                self.refresh()
+                self.extract()
+                return
             elif detector_ready(self.controller._state):
                 self.refresh()
                 self.extract()
@@ -638,13 +799,18 @@ class ControlnetEditor(QObject):
         if self._extracting or self._downloading:
             return
         self._clear_source()
-        self._paths.pop(self._kind, None)
+        self._paths.pop(self._path_key(), None)
         self._pending_person = None
         self.refresh()
 
     def extract(self):
         """Find the people in the photo on a worker (local ONNX); one person is taken, several wait for a pick."""
         if self._content is None or self._kind != "photo" or self.runner.closed or self._extracting:
+            return
+        if self._input_type == "seg" or (self._input_type == "depth" and self._model_ready()):
+            self._extract_map()
+            return
+        if self._input_type != "pose":
             return
         if not detector_ready(self.controller._state):
             self.refresh()
@@ -685,6 +851,37 @@ class ControlnetEditor(QObject):
                 self._build_map(row)
             else:
                 self.refresh()
+
+        self.runner.submit(work(), done)
+
+    def _extract_map(self):
+        """The depth or segmentation map of the photo, on a worker (local ONNX, nothing downloaded or sent)."""
+        content, state, input_type = self._content, self.controller._state, self._input_type
+        self._revision += 1
+        revision = self._revision
+        self._extracting = True
+        self._extraction_error = ""
+        self._map, self._pose_pixmap, self._map_facts = None, None, ""
+        label = INPUT_LABELS[input_type]
+        strip = activity_strip(self.page)
+        strip.start("controlnet-extract", f"Extract {label.lower()}")
+        self.refresh()
+
+        async def work():
+            return await settle(asyncio.to_thread(extract_control_map, content, input_type, state))
+
+        def done(value, error):
+            strip.finish("controlnet-extract")
+            if self.runner.closed or revision != self._revision:
+                return
+            self._extracting = False
+            if error is not None:
+                self._extraction_error = str(error)
+                self.refresh()
+                return
+            self._map, evidence = value
+            self._map_evidence = dict(evidence)
+            self._schedule_refit()
 
         self.runner.submit(work(), done)
 
@@ -729,13 +926,13 @@ class ControlnetEditor(QObject):
         """Fit the map to the current size on a worker, so the Pose view is exactly what Generate will send."""
         if self._map is None or self.runner.closed or self.controller is None:
             return
-        content, evidence = self._map, dict(self._map_evidence)
+        content, evidence, input_type = self._map, dict(self._map_evidence), self._input_type
         width, height = self.page.widthSpinBox.value(), self.page.heightSpinBox.value()
         self._revision += 1
         revision = self._revision
 
         async def work():
-            return await settle(asyncio.to_thread(fit_pose_map, content, evidence, width, height))
+            return await settle(asyncio.to_thread(fit_control_map, content, evidence, input_type, width, height))
 
         def done(value, error):
             if self.runner.closed or revision != self._revision or self._map is not content:
@@ -757,7 +954,7 @@ class ControlnetEditor(QObject):
     def _map_note(self):
         """The tooltip of the map details: which joints were left out, why, and what that means for the result."""
         evidence = self._map_evidence
-        if self._map is None or evidence.get("origin") == "prepared_map":
+        if self._map is None or self._input_type != "pose" or evidence.get("origin") == "prepared_map":
             return ""
         omitted = evidence.get("omitted_joints", "")
         if not omitted:
@@ -771,6 +968,12 @@ class ControlnetEditor(QObject):
 
     def _facts(self, width, height):
         evidence = self._map_evidence
+        if self._input_type != "pose":
+            label = INPUT_LABELS[self._input_type]
+            fit = "depth continued to the edges" if self._input_type == "depth" else "fitted with black padding"
+            origin = evidence.get("origin", "")
+            source = "found in the photo on this computer" if origin.endswith("_photo") else "map used as it is"
+            return f"{label} map: {width} × {height}, {fit}, no crop · {source}"
         parts = [f"Map: {width} × {height}, fitted with black padding, no crop"]
         if evidence.get("origin") == "prepared_map":
             parts.append("body map used as it is · nothing detected")
@@ -791,30 +994,31 @@ class ControlnetEditor(QObject):
         return " · ".join(parts)
 
     def download_detector(self):
-        """Pressing Download is the accept: the AGPL-3.0 licence is shown beside the button."""
-        if (
-            self.controller is None
-            or self._downloading
-            or is_downloading(self.page)
-            or detector_ready(self.controller._state)
-        ):
+        """Pressing Download is the accept: the licence (AGPL-3.0 for the pose detector, Apache-2.0 for the depth
+        model) is shown beside the button."""
+        if self.controller is None or self._downloading or is_downloading(self.page) or self._model_ready():
             return
+        depth = self._input_type == "depth"
         self._downloading = True
         self.refresh()
 
         def done(error):
             self._downloading = False
             self.refresh()
-            if error is None and self._content is not None and self._kind == "photo" and self._detection is None:
-                self.extract()
+            if error is None and self._content is not None and self._kind == "photo":
+                if depth and self._input_type == "depth" and self._map is None:
+                    self.extract()
+                elif not depth and self._input_type == "pose" and self._detection is None:
+                    self.extract()
 
-        start_pose_download(self.page, self.controller._state, self.runner, done)
+        start = start_depth_download if depth else start_pose_download
+        start(self.page, self.controller._state, self.runner, done)
 
     def job(self):
         """The pose request input for Generate, or None while the reason line says it cannot start."""
-        if self.blocker() or self._map is None:
+        choice = self._choice()
+        if self.blocker() or self._map is None or choice is None:
             return None
-        choice = self._controls[self._control_index]
         form = self.form
         control = PoseControl(
             choice.checkpoint,
@@ -844,6 +1048,7 @@ class ControlnetEditor(QObject):
             "paths": dict(self._paths),
             "person": self._selected if self._selected is not None else self._pending_person,
             "control": chosen,
+            "input_type": self._input_type,
             "strength": self._strength,
             "control_mode": self.form.poseModeCombo.currentText(),
             "start": self.form.poseStartSpin.value(),
@@ -861,33 +1066,42 @@ class ControlnetEditor(QObject):
         self._set_range(document.get("control_mode"), document.get("start"), document.get("end"))
         paths = document.get("paths")
         if isinstance(paths, dict):
-            self._paths = {k: v for k, v in paths.items() if k in ("photo", "map") and isinstance(v, str)}
+            keys = ("photo", "map", *(f"{kind}_map" for kind in INPUT_LABELS if kind != "pose"))
+            self._paths = {k: v for k, v in paths.items() if k in keys and isinstance(v, str)}
         control = document.get("control")
-        if (
-            control in DESKTOP_CONTROLS or control in RETIRED_CONTROLS
-        ):  # a malformed session value never blocks Generate
+        if isinstance(control, str):  # checked against the table when Controlnet opens (refresh_controls)
             self._wanted_control = control
             self._control_index = next((i for i, c in enumerate(self._controls) if c.checkpoint == control), 0)
         kind = document.get("kind")
         if kind in ("photo", "map"):
             self._kind = kind
+        input_type = document.get("input_type")
+        if input_type in INPUT_LABELS:
+            self._input_type = input_type
         person = document.get("person")
         self._pending_person = person if type(person) is int and person >= 0 else None
         # Restore preferences now, but postpone source I/O and ONNX detection until ControlNet is visible.
-        self._restore_source_pending = bool(self._paths.get(self._kind))
+        self._restore_source_pending = bool(self._paths.get(self._path_key()))
         self.refresh()
         if document.get("mode") == "controlnet":
             self.page.controlnetModeButton.setChecked(True)
 
     def restore_problem(self, document):
-        """Refuse experimental controls before modifying the desktop form."""
+        """Refuse controls and types the desktop does not offer before modifying the form. Checked against the
+        bundled control table, never the live inventory, so a record restores offline or with Local selected. A
+        retired Union Pro 1.0 pose record restores as recorded and Generate waits for an explicit replacement."""
         pose = document.get("pose_control")
-        if not isinstance(pose, dict) or pose.get("input_type", "pose") != "pose":
+        if not isinstance(pose, dict):
             return "This saved control type is not supported in desktop Controlnet."
-        if pose.get("checkpoint") in RETIRED_CONTROLS:
-            return RETIRED_CONTROL_NOTE
-        if pose.get("checkpoint") not in DESKTOP_CONTROLS:
+        checkpoint, input_type = pose.get("checkpoint"), pose.get("input_type", "pose")
+        control = desktop_control(checkpoint)
+        if checkpoint in retired_controls():
+            if input_type != "pose":
+                return "This saved control type is not supported in desktop Controlnet."
+        elif control is None:
             return "The saved control checkpoint is not supported in desktop Controlnet."
+        elif input_type not in control.inputs:
+            return f"The saved control type ({input_type}) is not offered with this control in desktop Controlnet."
         if not document.get("image_inputs"):
             return "The saved control map is missing."
         return ""
@@ -912,7 +1126,7 @@ class ControlnetEditor(QObject):
         revision = self._revision
         self._kind = "map"
         self._extracting = True
-        self.refresh()
+        self.sync_mode()  # the control type, its controls and the Generate label follow the record
 
         async def work():
             def read():
@@ -933,15 +1147,16 @@ class ControlnetEditor(QObject):
             self._source_pixmap = self._pixmap(content)
             self._filename = f"Retained map\n{content.width} × {content.height} · restored from the saved image"
             self._map_evidence = {str(k): str(v) for k, v in pose.get("evidence", ())}
+            if self._input_type == "canny" and self._map_evidence.get("origin") == "canny_photo":
+                # The retained map already holds the edges; fitting must not detect edges in it again.
+                self._map_evidence["origin"] = "retained_canny_map"
             self._strength = float(pose["strength"])
             start, end = pose.get("guidance_start"), pose.get("guidance_end")
             self._set_range(
                 pose.get("control_mode") or "Balanced", 0.0 if start is None else start, 1.0 if end is None else end
             )
             self._wanted_control = pose["checkpoint"]
-            self._control_index = next(
-                (i for i, choice in enumerate(self._controls) if choice.checkpoint == self._wanted_control), 0
-            )
+            self.refresh_controls()
             self._schedule_refit()
 
         self.runner.submit(work(), done)

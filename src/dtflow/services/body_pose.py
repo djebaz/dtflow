@@ -356,41 +356,185 @@ def prepare_pose(path: Path, width: int, height: int, *, photo: bool = False, st
     return fit_pose_map(content, evidence, width, height)
 
 
-def prepare_canny_probe(path: Path, width: int, height: int, *, photo: bool):
-    """Prepare a target-sized RGB edge map; OpenCV is optional and only needed for a source photo."""
-    from PIL import Image
-    from dtflow.services import image_preparation as pixels
+DEPTH_DETECTOR = CatalogueEntry(
+    "depth",
+    "Depth Anything V2 Small (Apache-2.0)",
+    "https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/4472b7362082ad9968fee890ca0f1e5aca36b93d/onnx/model.onnx",
+    "afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c",
+    94.47,
+    "Apache-2.0",
+    "https://huggingface.co/depth-anything/Depth-Anything-V2-Small",
+    "https://huggingface.co/onnx-community/depth-anything-v2-small",
+)
+DEPTH_MODEL_SHA256 = DEPTH_DETECTOR.sha256
+DEPTH_BYTES = 99_060_839
 
+
+def depth_model_path(state: Path) -> Path:
+    return state / "models" / "person" / f"{DEPTH_DETECTOR.sha256}.onnx"
+
+
+def depth_ready(state: Path) -> bool:
+    """GUI-side readiness: the pinned depth file is installed and has the pinned size."""
+    try:
+        return depth_model_path(state).stat().st_size == DEPTH_BYTES
+    except OSError:
+        return False
+
+
+def _depth_session(data: bytes):
+    session = _cpu_session(data)
+    inputs, outputs = session.get_inputs(), session.get_outputs()
+    if len(inputs) != 1 or len(inputs[0].shape) != 4 or inputs[0].type != "tensor(float)" or len(outputs) != 1:
+        raise ValidationError("Expected the pinned Depth Anything V2 Small ONNX: one float image input, one output.")
+    return session
+
+
+def install_depth_model(state: Path, progress=None, cancel=None) -> dict:
+    """Explicit download only, through the same HTTPS/checksum/atomic-install boundary as the pose detector."""
+    from dtflow.services.model_provisioning import _install, install_dir
+
+    folder = install_dir(state)
+    folder.mkdir(parents=True, exist_ok=True)
+    ref = _install(DEPTH_DETECTOR, folder, progress or (lambda *args: None), cancel)
+    return {"detector": asdict(DEPTH_DETECTOR), "path": ref.path}
+
+
+def load_control_map(path: Path, input_type: str):
+    """A prepared Canny, depth or segmentation map from disk, used as it is (nothing is detected)."""
     content = pixels.load_source_file(path)
+    return content, {"origin": f"prepared_{input_type}_map", "source_sha256": content.sha256}
+
+
+def extract_control_map(content, input_type: str, state: Path, *, depth_model: Path | None = None, seg_method="yolo"):
+    """The source-size depth or segmentation map of a photograph, on a worker (local ONNX, no download).
+
+    Canny is extracted at fitting time instead, inside the fitted photograph, so it has no separate step here."""
+    evidence = {"origin": f"{input_type}_photo", "source_sha256": content.sha256}
+    image = pixels._verified(content)
+    if input_type == "depth":
+        import onnxruntime as ort
+
+        model = depth_model or depth_model_path(state)
+        if not model.is_file():
+            raise ValidationError(
+                "Depth from a photo needs Depth Anything V2 Small: download it in Controlnet, or use a prepared "
+                "depth map."
+            )
+        with model.open("rb") as stream:
+            digest = hashlib.file_digest(stream, "sha256").hexdigest()
+        if digest != DEPTH_MODEL_SHA256:
+            raise ValidationError("Depth model differs from the pinned Depth Anything V2 Small checkpoint.")
+        session = ort.InferenceSession(str(model), providers=["CPUExecutionProvider"])
+        rgb = np.asarray(image.resize((518, 518), Image.Resampling.BICUBIC), dtype=np.float32) / 255
+        rgb = (rgb - np.array([0.485, 0.456, 0.406], dtype=np.float32)) / np.array(
+            [0.229, 0.224, 0.225], dtype=np.float32
+        )
+        tensor = np.transpose(rgb, (2, 0, 1))[None].astype(np.float32)
+        depth = np.asarray(session.run(None, {session.get_inputs()[0].name: tensor})[0]).squeeze()
+        if depth.ndim != 2 or not np.isfinite(depth).all() or depth.max() <= depth.min():
+            raise ValidationError("Depth model did not produce a finite nonconstant depth map.")
+        depth_image = Image.fromarray(
+            np.rint((depth - depth.min()) / (depth.max() - depth.min()) * 255).astype(np.uint8)
+        )
+        # Back to the photo's own size, so fitting treats it as any prepared depth map.
+        result = depth_image.resize(image.size, Image.Resampling.BILINEAR).convert("RGB")
+        evidence.update({"detector": "Depth Anything V2 Small ONNX", "detector_sha256": digest})
+    elif input_type == "seg":
+        from dtflow.persistence.person_models import load_person_models
+        from dtflow.services.person_selection import control_segmentation
+
+        models = load_person_models(state)
+        model = models.segmentation
+        if model is None:
+            raise ValidationError("Choose or install the YOLO segmentation model in Inpaint first, or use a map.")
+        clothes = models.clothes if seg_method == "clothes" else None
+        if seg_method == "clothes" and clothes is None:
+            raise ValidationError("Choose the existing SegFormer clothes model in Inpaint first.")
+        result, count = control_segmentation(content, model, clothes)
+        if clothes is not None:
+            evidence.update({"clothes_sha256": clothes.sha256, "clothes_model": "Configured SegFormer human parsing"})
+        evidence.update(
+            {
+                "detector": "Configured YOLO segmentation",
+                "detector_sha256": model.sha256,
+                "instances": str(count),
+                "palette": "ADE20K sparse COCO overlap; unknown black",
+                "seg_method": seg_method,
+            }
+        )
+    else:
+        raise ValidationError(f"No photo extraction step for {input_type} maps.")
+    return pixels._content(result.convert("RGB")), evidence
+
+
+def fit_control_map(content, evidence: dict, input_type: str, width: int, height: int):
+    """Fit a Canny, depth or segmentation map (or, for Canny, a photograph) to the request size, without crop.
+
+    Canny from a photo is extracted inside the fitted photograph before black padding (OpenCV, optional); depth
+    continues its edge values instead of padding; segmentation keeps its palette (nearest neighbour)."""
+    if input_type == "pose":
+        return fit_pose_map(content, evidence, width, height)
     image = pixels._verified(content)
     fit = pixels._fit(image.size, (width, height))
-    fitted = image.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.LANCZOS)
-    evidence = {"origin": "canny_photo" if photo else "prepared_canny_map", "source_sha256": content.sha256}
-    if photo:
-        try:
-            import cv2
-        except ImportError as exc:
-            raise ValidationError(
-                "Canny photo extraction needs OpenCV; run with uv run --with opencv-python-headless==4.11.0.86."
-            ) from exc
-        import numpy as np
-
-        # Extract only within the fitted photograph. Replicating pixels before
-        # Canny extends boundary features into artificial horizontal/vertical lines.
-        gray = cv2.cvtColor(np.asarray(fitted.convert("RGB")), cv2.COLOR_RGB2GRAY)
-        edges = cv2.Canny(gray, 100, 200)
+    evidence = dict(evidence)
+    if input_type == "canny":
+        fitted = image.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.LANCZOS)
         canvas = Image.new("RGB", (width, height), "black")
-        canvas.paste(Image.fromarray(edges).convert("RGB"), (fit.left, fit.top))
-        evidence.update({"canny_low": "100", "canny_high": "200", "opencv_version": cv2.__version__})
+        if evidence.get("origin") == "canny_photo":
+            try:
+                import cv2
+            except ImportError as exc:
+                raise ValidationError(
+                    "Canny from a photo needs OpenCV, which could not be loaded; use a prepared edge map."
+                ) from exc
+            # Extract only within the fitted photograph. Replicating pixels before
+            # Canny extends boundary features into artificial horizontal/vertical lines.
+            gray = cv2.cvtColor(np.asarray(fitted.convert("RGB")), cv2.COLOR_RGB2GRAY)
+            edges = cv2.Canny(gray, 100, 200)
+            canvas.paste(Image.fromarray(edges).convert("RGB"), (fit.left, fit.top))
+            evidence.update({"canny_low": "100", "canny_high": "200", "opencv_version": cv2.__version__})
+            preparation = "aspect_fit_canny_before_black_padding"
+        else:
+            canvas.paste(fitted.convert("RGB"), (fit.left, fit.top))
+            preparation = "aspect_fit_black_padding_no_crop"
+        if canvas.getbbox() is None:
+            raise ValidationError("Canny map is empty; no guidance was submitted.")
+    elif input_type == "depth":
+        fitted = image.convert("L").resize((fit.fitted_width, fit.fitted_height), Image.Resampling.BILINEAR)
+        # Continue the depth field outside the fitted photo without a false depth discontinuity.
+        canvas = Image.fromarray(
+            np.pad(
+                np.asarray(fitted.convert("RGB")),
+                (
+                    (fit.top, height - fit.top - fit.fitted_height),
+                    (fit.left, width - fit.left - fit.fitted_width),
+                    (0, 0),
+                ),
+                mode="edge",
+            )
+        )
+        preparation = "aspect_fit_edge_replicated_depth_no_crop"
+    elif input_type == "seg":
+        fitted = image.convert("RGB").resize((fit.fitted_width, fit.fitted_height), Image.Resampling.NEAREST)
+        canvas = Image.new("RGB", (width, height), "black")
+        canvas.paste(fitted, (fit.left, fit.top))
+        preparation = "aspect_fit_black_padding_no_crop"
     else:
-        canvas = Image.new("RGB", (width, height), "black")
-        canvas.paste(fitted.convert("RGB"), (fit.left, fit.top))
-    if canvas.getbbox() is None:
-        raise ValidationError("Canny map is empty; no guidance was submitted.")
+        raise ValidationError("Unsupported control input type.")
     map_content = pixels._content(canvas)
-    evidence["map_sha256"] = map_content.sha256
-    evidence["preparation"] = "aspect_fit_canny_before_black_padding" if photo else "aspect_fit_black_padding_no_crop"
-    return pixels.prepare_image_bytes(map_content.encoded, width, height), tuple(sorted(evidence.items()))
+    evidence.update({"map_sha256": map_content.sha256, "preparation": preparation})
+    return pixels.prepare_image_bytes(map_content.encoded, width, height), tuple(
+        sorted((str(k), str(v)) for k, v in evidence.items())
+    )
+
+
+def prepare_canny_probe(path: Path, width: int, height: int, *, photo: bool):
+    """Prepare a target-sized RGB edge map; OpenCV is optional and only needed for a source photo."""
+    content, evidence = load_control_map(path, "canny")
+    if photo:
+        evidence["origin"] = "canny_photo"
+    return fit_control_map(content, evidence, "canny", width, height)
 
 
 def prepare_spatial_probe(
@@ -405,96 +549,12 @@ def prepare_spatial_probe(
     seg_method: str = "yolo",
 ):
     """Fit depth or semantic maps; preserve class colours with nearest-neighbour resampling."""
-    import hashlib
-
-    import numpy as np
-    from PIL import Image
-
-    from dtflow.services import image_preparation as pixels
-
-    content = pixels.load_source_file(path)
-    image = pixels._verified(content)
-    fit = pixels._fit(image.size, (width, height))
-    evidence = {"origin": f"prepared_{input_type}_map", "source_sha256": content.sha256}
-    if input_type == "depth":
-        if photo:
-            import onnxruntime as ort
-
-            model = depth_model or Path("tmp/models/depth-anything-v2-small.onnx")
-            expected = "afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c"
-            if not model.is_file():
-                raise ValidationError(
-                    "Depth Anything V2 Small ONNX is missing; provide --depth-model or a prepared depth map."
-                )
-            with model.open("rb") as stream:
-                digest = hashlib.file_digest(stream, "sha256").hexdigest()
-            if digest != expected:
-                raise ValidationError("Depth model differs from the pinned Depth Anything V2 Small checkpoint.")
-            session = ort.InferenceSession(str(model), providers=["CPUExecutionProvider"])
-            rgb = np.asarray(image.resize((518, 518), Image.Resampling.BICUBIC), dtype=np.float32) / 255
-            rgb = (rgb - np.array([0.485, 0.456, 0.406], dtype=np.float32)) / np.array(
-                [0.229, 0.224, 0.225], dtype=np.float32
-            )
-            tensor = np.transpose(rgb, (2, 0, 1))[None].astype(np.float32)
-            depth = np.asarray(session.run(None, {session.get_inputs()[0].name: tensor})[0]).squeeze()
-            if depth.ndim != 2 or not np.isfinite(depth).all() or depth.max() <= depth.min():
-                raise ValidationError("Depth model did not produce a finite nonconstant depth map.")
-            image = Image.fromarray(np.rint((depth - depth.min()) / (depth.max() - depth.min()) * 255).astype(np.uint8))
-            evidence.update(
-                {"origin": "depth_photo", "detector": "Depth Anything V2 Small ONNX", "detector_sha256": digest}
-            )
-        else:
-            image = image.convert("L")
-        fitted = image.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.BILINEAR).convert("RGB")
-    else:
-        if photo:
-            from dtflow.persistence.person_models import load_person_models
-            from dtflow.services.person_selection import control_segmentation
-
-            models = load_person_models(state)
-            model = models.segmentation
-            if model is None:
-                raise ValidationError("Choose or install the YOLO segmentation model in Inpaint first, or use --image.")
-            clothes = models.clothes if seg_method == "clothes" else None
-            if seg_method == "clothes" and clothes is None:
-                raise ValidationError("Choose the existing SegFormer clothes model in Inpaint first.")
-            image, count = control_segmentation(content, model, clothes)
-            if clothes is not None:
-                evidence.update(
-                    {"clothes_sha256": clothes.sha256, "clothes_model": "Configured SegFormer human parsing"}
-                )
-            evidence.update(
-                {
-                    "origin": "seg_photo",
-                    "detector": "Configured YOLO segmentation",
-                    "detector_sha256": model.sha256,
-                    "instances": str(count),
-                    "palette": "ADE20K sparse COCO overlap; unknown black",
-                    "seg_method": seg_method,
-                }
-            )
-        fitted = image.convert("RGB").resize((fit.fitted_width, fit.fitted_height), Image.Resampling.NEAREST)
-    if input_type == "depth":
-        # Continue the depth field outside the fitted photo without a false depth discontinuity.
-        canvas = Image.fromarray(
-            np.pad(
-                np.asarray(fitted),
-                (
-                    (fit.top, height - fit.top - fit.fitted_height),
-                    (fit.left, width - fit.left - fit.fitted_width),
-                    (0, 0),
-                ),
-                mode="edge",
-            )
+    content, evidence = load_control_map(path, input_type)
+    if photo:
+        content, evidence = extract_control_map(
+            content, input_type, state, depth_model=depth_model, seg_method=seg_method
         )
-        preparation = "aspect_fit_edge_replicated_depth_no_crop"
-    else:
-        canvas = Image.new("RGB", (width, height), "black")
-        canvas.paste(fitted, (fit.left, fit.top))
-        preparation = "aspect_fit_black_padding_no_crop"
-    map_content = pixels._content(canvas)
-    evidence.update({"map_sha256": map_content.sha256, "preparation": preparation})
-    return pixels.prepare_image_bytes(map_content.encoded, width, height), tuple(sorted(evidence.items()))
+    return fit_control_map(content, evidence, input_type, width, height)
 
 
 def write_comparison_collage(queue, root: Path) -> Path:

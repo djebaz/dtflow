@@ -614,8 +614,12 @@ def _require_pose_family(state: Path, model_id: str, *, control_checkpoint: str 
         if entry is None or entry.base_model != "sd_1" or "t2i" not in entry.modes:
             raise ValidationError("Official SD 1.x controls require a catalogue SD 1.x text-to-image checkpoint.")
         return
+    if control_checkpoint is not None and not supports_pose(
+        model_id, entry.base_model if entry else None, families=("flux_1",)
+    ):
+        raise ValidationError("FLUX.1 Union controls require a FLUX.1 checkpoint.")
     if not supports_pose(model_id, entry.base_model if entry else None):
-        raise ValidationError(f"Pose is restricted to {POSE_FAMILY_LABEL} checkpoints.")
+        raise ValidationError(f"Controlnet is restricted to {POSE_FAMILY_LABEL} checkpoints.")
 
 
 async def generate_pose_once(

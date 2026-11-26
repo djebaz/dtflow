@@ -284,7 +284,10 @@ class ItemRow:
             strength = pose.get("strength")
             mode = pose.get("control_mode", "Balanced")
             start, end = pose.get("guidance_start", 0.0), pose.get("guidance_end", 1.0)
-            return f"Pose · {label} · strength {strength:g} · {mode} · {start:g}–{end:g}"
+            kind = {"pose": "Pose", "canny": "Canny", "depth": "Depth", "seg": "Segmentation"}.get(
+                pose.get("input_type", "pose"), "Controlnet"
+            )
+            return f"{kind} · {label} · strength {strength:g} · {mode} · {start:g}–{end:g}"
         return {
             "txt2img": "Text to image",
             "img2img": "Image to image",
@@ -331,7 +334,10 @@ class ItemRow:
 
             return f"Video · {duration_seconds(self.model, self.num_frames):.2f} s · {self.num_frames} frames"
         if self.pose_control is not None:
-            return f"Pose · {self.pose_control['strength']:g}"
+            kind = {"pose": "Pose", "canny": "Canny", "depth": "Depth", "seg": "Segmentation"}.get(
+                self.pose_control.get("input_type", "pose"), "Controlnet"
+            )
+            return f"{kind} · {self.pose_control['strength']:g}"
         if self.operation == "txt2img":
             return "—"
         name = "Inpaint" if self.operation == "inpaint" else "Image to image"

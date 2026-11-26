@@ -149,6 +149,8 @@ def start_download(
 
 POSE_KEY = "pose-detector-download"
 POSE_TITLE = "Download pose detector"
+DEPTH_KEY = "depth-model-download"
+DEPTH_TITLE = "Download depth model"
 
 
 def start_pose_download(parent_page, state_dir: Path, runner, on_done: Callable[[Exception | None], None]) -> None:
@@ -158,6 +160,19 @@ def start_pose_download(parent_page, state_dir: Path, runner, on_done: Callable[
     runs on the GUI thread (``None`` on success, ``DownloadCancelled`` after Cancel)."""
     from dtflow.services.body_pose import DETECTOR, install_detector
 
+    _start_single_download(parent_page, state_dir, runner, on_done, DETECTOR, install_detector, POSE_KEY, POSE_TITLE)
+
+
+def start_depth_download(parent_page, state_dir: Path, runner, on_done: Callable[[Exception | None], None]) -> None:
+    """Download the pinned Depth Anything V2 Small model now (#635), on the same terms as the pose detector."""
+    from dtflow.services.body_pose import DEPTH_DETECTOR, install_depth_model
+
+    _start_single_download(
+        parent_page, state_dir, runner, on_done, DEPTH_DETECTOR, install_depth_model, DEPTH_KEY, DEPTH_TITLE
+    )
+
+
+def _start_single_download(parent_page, state_dir, runner, on_done, entry, install, key, title) -> None:
     window = parent_page.window()
     if runner.closed or is_downloading(parent_page):
         return
@@ -167,17 +182,17 @@ def start_pose_download(parent_page, state_dir: Path, runner, on_done: Callable[
 
     def show(progress: ProvisionProgress):
         if strip is not None:
-            done, total, detail, count = _progress_detail(progress, (DETECTOR,))
-            strip.update(POSE_KEY, done, total, detail=detail, count=count)
+            done, total, detail, count = _progress_detail(progress, (entry,))
+            strip.update(key, done, total, detail=detail, count=count)
 
     relay = LatestRelay(show, parent_page, cancel)
     runner.shutdown_started.connect(relay.cancel_work)
     if strip is not None:
-        strip.start(POSE_KEY, POSE_TITLE, stop=cancel.set, stop_text="Cancel download", action_text="Cancel")
+        strip.start(key, title, stop=cancel.set, stop_text="Cancel download", action_text="Cancel")
 
     def worker():
-        install_detector(
-            Path(state_dir), lambda stage, done, total: relay(ProvisionProgress("pose", stage, done, total)), cancel
+        install(
+            Path(state_dir), lambda stage, done, total: relay(ProvisionProgress(entry.role, stage, done, total)), cancel
         )
 
     async def work():
@@ -189,11 +204,11 @@ def start_pose_download(parent_page, state_dir: Path, runner, on_done: Callable[
         window._model_download_running = False
         if strip is not None:
             if failure is None:
-                strip.complete(POSE_KEY, POSE_TITLE, "Installed; SHA-256 and model contract verified.")
+                strip.complete(key, title, "Installed; SHA-256 and model contract verified.")
             elif isinstance(failure, (DownloadCancelled, asyncio.CancelledError)):
-                strip.complete(POSE_KEY, "Download stopped", str(failure) or "Download cancelled.", "stopped")
+                strip.complete(key, "Download stopped", str(failure) or "Download cancelled.", "stopped")
             else:
-                strip.complete(POSE_KEY, POSE_TITLE, str(failure) or "The download failed.", "error")
+                strip.complete(key, title, str(failure) or "The download failed.", "error")
         on_done(failure)
 
     runner.submit(work(), done)

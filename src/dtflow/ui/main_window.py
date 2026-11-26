@@ -494,7 +494,7 @@ class MainWindow:
             models_source=self.generation.plan_models,
             generate_hook=self._show_generation,
             reuse_hook=self._reuse_queue_request,
-            pose_controls_source=lambda: self.generation.controlnet._controls,
+            pose_controls_source=lambda model, kind: self.generation.controlnet.queue_control_choices(model, kind),
             activity=self.activity,
         )
         # One shared overlay occupies only the right inspector's scroll viewport,
