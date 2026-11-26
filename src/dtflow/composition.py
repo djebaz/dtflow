@@ -4,8 +4,8 @@ Services depend on the backend contract only. The CLI and a later Qt shell call 
 backend to another, and credentials are read from the environment by providers, never passed on a command line.
 """
 
-import os
 import hashlib
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -26,8 +26,8 @@ from dtflow.services.credentials import KEY, EnvironmentCredentials, resolve_cre
 
 if TYPE_CHECKING:  # the Draw Things provider library is slow to import, so it loads only when a backend needs it
     from dtflow.backends.drawthings.backend import DrawThingsEndpoint
-    from dtflow.backends.drawthings.tls import TlsPolicy
     from dtflow.backends.drawthings.cloud_auth import CloudAuth
+    from dtflow.backends.drawthings.tls import TlsPolicy
 
 BACKENDS = ("fake", "local", "cloud")
 SHARED_SECRET = "DRAWTHINGS_SHARED_SECRET"
@@ -72,6 +72,12 @@ class OwnerCloudAuth:
             client = CloudAuth(PinnedCredential())
             self._clients[key] = client
         return client
+
+    async def invalidate_inventory(self) -> None:
+        """An explicit Connection check retires cached observations for future dispatches."""
+        for client in tuple(self._clients.values()):
+            async with client.inventory_lock:
+                client.inventories.clear()
 
     async def aclose(self) -> None:
         import asyncio
