@@ -84,6 +84,10 @@ def add_commands(commands, add_request_options):
                 help="Explicit Union mode; official controls infer their native input type.",
             )
             child.add_argument(
+                "-sm", "--seg-method", choices=("yolo", "clothes"), default="yolo",
+                help="Segmentation photo preprocessing: YOLO silhouettes or YOLO + configured SegFormer clothes.",
+            )
+            child.add_argument(
                 "-dm", "--depth-model", type=Path,
                 help="Local pinned Depth Anything V2 Small ONNX for depth photo extraction.",
             )
@@ -140,7 +144,7 @@ def prepare_canny_probe(path: Path, width: int, height: int, *, photo: bool):
     return pixels.prepare_image_bytes(map_content.encoded, width, height), tuple(sorted(evidence.items()))
 
 
-def prepare_spatial_probe(path: Path, width: int, height: int, *, input_type: str, photo: bool, depth_model: Path | None, state: Path):
+def prepare_spatial_probe(path: Path, width: int, height: int, *, input_type: str, photo: bool, depth_model: Path | None, state: Path, seg_method: str = "yolo"):
     """Fit depth or semantic maps; preserve class colours with nearest-neighbour resampling."""
     import hashlib
 
@@ -184,16 +188,23 @@ def prepare_spatial_probe(path: Path, width: int, height: int, *, input_type: st
             from dtflow.persistence.person_models import load_person_models
             from dtflow.services.person_selection import control_segmentation
 
-            model = load_person_models(state).segmentation
+            models = load_person_models(state)
+            model = models.segmentation
             if model is None:
                 raise ValidationError("Choose or install the YOLO segmentation model in Inpaint first, or use --image.")
-            image, count = control_segmentation(content, model)
+            clothes = models.clothes if seg_method == "clothes" else None
+            if seg_method == "clothes" and clothes is None:
+                raise ValidationError("Choose the existing SegFormer clothes model in Inpaint first.")
+            image, count = control_segmentation(content, model, clothes)
+            if clothes is not None:
+                evidence.update({"clothes_sha256": clothes.sha256, "clothes_model": "Configured SegFormer human parsing"})
             evidence.update({
                 "origin": "seg_photo",
                 "detector": "Configured YOLO segmentation",
                 "detector_sha256": model.sha256,
                 "instances": str(count),
                 "palette": "ADE20K sparse COCO overlap; unknown black",
+                "seg_method": seg_method,
             })
         fitted = image.convert("RGB").resize((fit.fitted_width, fit.fitted_height), Image.Resampling.NEAREST)
     canvas = Image.new("RGB", (width, height), "black")
@@ -279,6 +290,8 @@ async def run(args):
         request = resolve_generation(args)
         # Validate the checkpoint family before reading a photograph or running ONNX.
         _require_pose_family(args.state, request.model_id, control_checkpoint=control.checkpoint)
+        if args.seg_method != "yolo" and (control.input_type != "seg" or args.photo is None):
+            raise ValidationError("--seg-method clothes requires a source photo and Segmentation control.")
         if args.depth_model is not None and (control.input_type != "depth" or args.photo is None):
             raise ValidationError("--depth-model is only used with a source photo and Depth control.")
         if control.input_type != "pose" and args.person is not None:
@@ -293,6 +306,7 @@ async def run(args):
                 photo=args.photo is not None,
                 depth_model=args.depth_model,
                 state=args.state,
+                seg_method=args.seg_method,
             )
         elif control.input_type == "canny":
             prepared, evidence = await asyncio.to_thread(
