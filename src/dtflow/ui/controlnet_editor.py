@@ -650,7 +650,12 @@ class ControlnetEditor(QObject):
             self.controller._inventory_snapshot, model, base_model, modes, self._input_type
         )
         self._control_index = next((i for i, c in enumerate(self._controls) if c.checkpoint == chosen), 0)
-        self._follow_defaults()
+        if self._settings_key == "fresh" or (
+            self._controls and self._controls[self._control_index].checkpoint != chosen
+        ):
+            # Only the first selection, or a change that dropped the previous control (a family switch), starts from
+            # the new control's defaults; an inventory or catalogue refresh never resets the user's values.
+            self._follow_defaults()
         self.refresh()
 
     def _follow_defaults(self):
@@ -682,6 +687,8 @@ class ControlnetEditor(QObject):
         self._pending_person = None
         self.sync_mode()
         self.refresh_controls()
+        self._follow_defaults()  # an explicit type change starts from that type's defaults
+        self.refresh()
         remembered = self._paths.get(self._path_key())
         if remembered and Path(remembered).is_file():
             self.load_source(remembered)

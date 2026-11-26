@@ -11,9 +11,11 @@ from PySide6.QtUiTools import QUiLoader
 from dtflow.core.models import ValidationError
 from dtflow.core.pose import CONTROL_MODES, INPUT_LABELS, retired_controls
 from dtflow.core.tasks import settle
+from dtflow.services.randomness import RandomSpec
 from dtflow.ui.controlnet_editor import IMAGE_FILTER, PoseJob
 from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.ui.generation_presenter import FormError
+from dtflow.ui.planning_presenter import build_plan
 from dtflow.ui.inline_feedback import feedback
 
 
@@ -167,10 +169,14 @@ class QueuePoseEditor(QObject):
         # A new queue or template uses what desktop Controlnet offers for every model it would run: the draft's and
         # each one listed in the plan (S2, S3). A retired control needs an explicit replacement (#635). Existing
         # queues and Retry keep their exact request.
-        form = self.queue._plan_form()
         models = [self.queue._draft[0].model_id]
-        if form.mode != "Repeat":
-            models += [name.strip() for name in form.models.split(";") if name.strip()]
+        try:  # the planner's own model dimension (lines, ";" and random draws); Repeat runs the draft's model only
+            plan = build_plan(self.queue._plan_form()) if self.queue._planned() else None
+        except ValidationError:
+            plan = None  # the plan area reports its own error
+        for name, values in plan.dimensions if plan is not None else ():
+            if name == "model":
+                models += (values.candidates or ()) if isinstance(values, RandomSpec) else values
         for model in dict.fromkeys(models):
             if problem := self._control_problem(model, control.checkpoint, control.input_type):
                 raise FormError(problem, None)
