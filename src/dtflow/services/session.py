@@ -53,7 +53,7 @@ from dtflow.diagnostics import event as diagnostic_event
 from dtflow.logging_setup import dev_enabled
 from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per_name
 from dtflow.persistence.gallery_snapshot import schedule_publish
-from dtflow.persistence.inventory_cache import load_inventory_with_reason, save_inventory
+from dtflow.persistence.inventory_cache import BUSY, load_inventory_with_reason, save_inventory
 from dtflow.persistence.settings import load_dtplus_concurrency
 from dtflow.persistence.queues import read_attempt_record
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts, StateBusyError
@@ -836,7 +836,7 @@ async def cached_inventory(
         snapshot, reason = await asyncio.to_thread(
             load_inventory_with_reason, state, kind, endpoint=endpoint, credential=credential
         )
-        if reason != "io_error: CacheBusyError":
+        if reason != BUSY:
             break
         data["busy_attempts"] = attempt + 1
     if reason is not None and dev_enabled():
