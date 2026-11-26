@@ -133,9 +133,12 @@ class GenerationService:
         self.preview_images = preview_images
         # With provider admission, calls past their sampling phase overlap the active ones; each holds its reservation.
         self._explicit_budget = budget is not None
-        self.budget = budget or BufferBudget(
-            backend.capabilities.limits.buffer_budget * (OVERLAP if admission is not None else 1)
-        )
+        if budget is None and admission is not None:
+            # One expensive-operation budget for all queues on the same provider owner.
+            if admission.pool.buffer_budget is None:
+                admission.pool.buffer_budget = BufferBudget(backend.capabilities.limits.buffer_budget * OVERLAP)
+            budget = admission.pool.buffer_budget
+        self.budget = budget or BufferBudget(backend.capabilities.limits.buffer_budget)
 
     async def _bounded(self, operation, deadline: float, phase: str):
         try:
@@ -466,7 +469,7 @@ class GenerationService:
             and (prepared_inputs is None or (request.pose_control is not None and prepared_inputs.mask is None))
             and request.num_frames is None
             and raw_bytes <= caps.limits.artifact_bytes
-            and reservation <= self.budget.limit
+            and (prepared_inputs is None or reservation <= 128 * 1024 * 1024)
         ):
             # Ordinary remote images are bounded by selected concurrency and per-output limits.
             # Ordinary control maps share this policy; retain admission for large inputs, edits and video.

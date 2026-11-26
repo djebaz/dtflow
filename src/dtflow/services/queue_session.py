@@ -155,7 +155,7 @@ async def create_script_queue(
     )
     store = SQLiteAttempts(state)
     try:
-        await store.open()
+        await store.open(recover=False)
         return await store.create_script_queue(backend, record), run_id
     except StateBusyError:
         return await asyncio.to_thread(insert_script_queue, state, backend, record, up_next=up_next), run_id
@@ -197,7 +197,7 @@ async def create_queue(
         raise ValidationError("The local backend requires --endpoint HOST:PORT.")
     store = SQLiteAttempts(state)
     try:
-        await store.open()
+        await store.open(recover=False)
         return await store.create_queue(
             backend, STORED_CAP, requests, composer_source=composer_source, origin=origin, queue_id=queue_id
         )
