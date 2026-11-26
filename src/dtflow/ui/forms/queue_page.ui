@@ -1041,7 +1041,7 @@
                         </property>
                        </item>
                        <property name="toolTip">
-                        <string>Repeat: the Generate settings N times with incrementing seeds. Cross: every combination of the values. Pair: the n-th values together. Cross LoRA weights: every combination of the sweep weights (0, 0.5 and 1 by default) across the Swept LoRAs, with optional Constant LoRAs.</string>
+                        <string>Repeat: the Generate settings N times with incrementing seeds. Cross: every combination of the values. Pair: the n-th values together. Cross LoRA weights: every combination of the sweep weights (0, 0.5 and 1 by default) across the Swept LoRAs, with optional Fixed LoRAs.</string>
                        </property>
                       </widget>
                      </item>
@@ -1261,7 +1261,7 @@
                      <item row="10" column="0">
                       <widget class="QLabel" name="planConstantLorasLabel">
                        <property name="text">
-                        <string>Constant LoRAs</string>
+                        <string>Fixed LoRAs</string>
                        </property>
                        <property name="textRole" stdset="0">
                         <string>caption</string>
@@ -1271,7 +1271,7 @@
                      <item row="10" column="1">
                       <widget class="ValueChips" name="planConstantLorasEdit">
                        <property name="accessibleName">
-                        <string>Constant LoRAs</string>
+                        <string>Fixed LoRAs beside the swept LoRAs</string>
                        </property>
                        <property name="toolTip">
                         <string>LoRAs every item uses at the weight shown, beside the swept LoRAs: Edit… opens the LoRA editor; click a LoRA to remove it. A LoRA that is also swept is swept only.</string>

@@ -1927,14 +1927,14 @@ class QueuePage:
         )
         page.planConstantLorasEdit.configure(
             "search",
-            "Constant LoRA",
+            "Fixed LoRA",
             weights=self._offered_loras,
             families=lambda: self._choices().get("lora_families", {}),
             notice=self._loras_notice,
             initial=self._constant_loras,
             convert=self._lora_weight_chips,
             label=self._lora_set_label,
-            editor_title="Constant LoRAs",
+            editor_title="Fixed LoRAs",
             replace_all=True,
             editor_hint="Check the LoRAs every item of the new queue uses and set their weights. Apply replaces the list.",
         )
@@ -1988,7 +1988,7 @@ class QueuePage:
         page.planSweepWeightsEdit.setText(weights)
 
     def _constant_loras(self) -> tuple[LoRASelection, ...]:
-        """The Constant LoRAs row (Cross LoRA weights only) as selections, in the order shown."""
+        """The Fixed LoRAs row beside the Swept LoRAs (Cross LoRA weights only) as selections, in the order shown."""
         return self._chip_loras(self.page.planConstantLorasEdit)
 
     def _fixed_loras(self) -> tuple[LoRASelection, ...]:
