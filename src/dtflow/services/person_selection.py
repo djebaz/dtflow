@@ -579,6 +579,14 @@ def _letterbox(image: Image.Image):
 
 
 def _instances(session, image: Image.Image, threshold: float, *, mask_threshold: float = 0.5):
+    return [(score, mask, box) for _, score, mask, box in _class_instances(
+        session, image, threshold, mask_threshold=mask_threshold
+    )]
+
+
+def _class_instances(session, image: Image.Image, threshold: float, *, mask_threshold: float = 0.5,
+                     class_ids=(0,)):
+    """Decode selected YOLO classes using the existing person-mask geometry."""
     import numpy as np
 
     if not math.isfinite(mask_threshold) or not 0 < mask_threshold < 1:
@@ -589,7 +597,7 @@ def _instances(session, image: Image.Image, threshold: float, *, mask_threshold:
     if not np.isfinite(detections).all() or not np.isfinite(prototypes).all():
         raise ValidationError("Segmentation model returned non-finite values.")
     rows = detections[0]
-    people = rows[(rows[:, 5] == 0) & (rows[:, 4] >= threshold)]
+    people = rows[np.isin(rows[:, 5], class_ids) & (rows[:, 4] >= threshold)]
     people = people[np.argsort(-people[:, 4])][:MAX_PEOPLE]
     proto = prototypes[0].reshape(32, -1)
     yy, xx = np.ogrid[:SIDE, :SIDE]
@@ -612,8 +620,44 @@ def _instances(session, image: Image.Image, threshold: float, *, mask_threshold:
         ys, xs = np.nonzero(mask)
         if not len(xs):
             continue
-        found.append((float(row[4]), mask, (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)))
+        found.append(
+            (int(row[5]), float(row[4]), mask, (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1))
+        )
     return found
+
+
+# Exact overlapping COCO/ADE20K categories only. Unmapped pixels remain black (unknown).
+# ADE20K RGB values: OpenMMLab mmsegmentation/mmseg/datasets/ade.py.
+_CONTROL_SEG_COLORS = {
+    "person": (150, 5, 61),
+    "bicycle": (255, 245, 0),
+    "car": (0, 102, 200),
+    "bus": (255, 0, 255),
+    "truck": (255, 173, 0),
+    "boat": (10, 0, 255),
+    "bench": (255, 102, 0),
+    "chair": (204, 70, 3),
+    "bed": (204, 5, 255),
+    "bottle": (0, 122, 255),
+}
+
+
+def control_segmentation(source: ImageContent, segmentation: ModelRef):
+    """Build an experimental sparse ADE20K RGB map from the configured YOLO model."""
+    import numpy as np
+
+    image = Image.open(io.BytesIO(source.encoded)).convert("RGB")
+    session = _verified_session(segmentation, _segmentation_session)
+    names = ast.literal_eval(session.get_modelmeta().custom_metadata_map["names"])
+    colors = {key: _CONTROL_SEG_COLORS[name] for key, name in names.items() if name in _CONTROL_SEG_COLORS}
+    instances = _class_instances(session, image, 0.25, class_ids=tuple(colors))
+    if not instances:
+        raise ValidationError("No supported semantic objects were detected for the segmentation control.")
+    canvas = np.zeros((source.height, source.width, 3), dtype=np.uint8)
+    # Highest-confidence instance wins overlaps, matching the editor's ordering.
+    for class_id, _, mask, _ in reversed(instances):
+        canvas[mask > 0] = colors[class_id]
+    return Image.fromarray(canvas), len(instances)
 
 
 def _clothes_layers(session, image: Image.Image, mask, box):
