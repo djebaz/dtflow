@@ -105,7 +105,7 @@ def add_commands(commands, add_request_options):
                 "-cs",
                 "--strength",
                 type=float,
-                help="Control weight (0,2]; defaults to 0.9 for fast-model Pose, otherwise required.",
+                help="Control weight (0,2]; defaults to 0.9 for fast-model Pose, 1 for official SD 1.5 Pose, otherwise required.",
             )
 
 
@@ -304,11 +304,15 @@ async def run(args):
             or (key in ("flux_1_schnell", "pixelwave_flux_1_schnell_04")
                 and args.control in CONTROLS and "_2.0_" in args.control)
         )
-        if args.strength is None and not fast_pose:
-            raise ValidationError("--strength is required outside the fast-model Pose presets.")
+        sd15_pose = input_type == "pose" and (
+            request.model_id == SD15_POSE_PROBE_MODEL and args.control == SD15_POSE_PROBE_CONTROL
+        )
+        default_strength = 0.9 if fast_pose else (1.0 if sd15_pose else None)
+        if args.strength is None and default_strength is None:
+            raise ValidationError("--strength is required outside the fast-model and official SD 1.5 Pose presets.")
         control = PoseControl(
             args.control,
-            args.strength if args.strength is not None else 0.9,
+            args.strength if args.strength is not None else default_strength,
             input_type=input_type,
             control_mode=args.control_mode,
             guidance_start=args.start,
