@@ -15,6 +15,7 @@ from drawthings_py.generated.dt_grpc import image_service
 from grpclib.client import Channel
 from grpclib.config import Configuration
 from grpclib.const import Cardinality
+from grpclib.encoding.proto import ProtoCodec
 
 from dtflow.backends.drawthings.codec import (
     TensorRejected,
@@ -63,6 +64,23 @@ log = logging.getLogger(__name__)
 GENERATE_METHOD = "/ImageGenerationService/GenerateImage"
 
 BACKEND_ID = "drawthings-grpc"
+
+
+class _TimingProtoCodec(ProtoCodec):
+    """Observe the actual generation serialization without a second encoding pass."""
+
+    def encode(self, message, message_type) -> bytes:
+        if not isinstance(message, image_service.ImageGenerationRequest):
+            return super().encode(message, message_type)
+        started = time.monotonic()
+        encoded = super().encode(message, message_type)
+        elapsed_ms = (time.monotonic() - started) * 1000
+        diagnostic_event(
+            log,
+            "backend.grpc_serialized",
+            data={"elapsed_ms": elapsed_ms, "message_bytes": len(encoded)},
+        )
+        return encoded
 
 
 def now() -> str:
@@ -209,6 +227,9 @@ class DrawThingsBackend:
             tls = self.endpoint.tls
             config = Configuration(ssl_target_name_override=tls.server_name) if tls.server_name else None
             self._channel = Channel(self.endpoint.host, self.endpoint.port, ssl=tls.build_context(), config=config)
+            if timing_enabled():
+                # Preserve Channel's default status-details codec and all other channel options.
+                self._channel._codec = _TimingProtoCodec()
 
     async def check_connection(self) -> ConnectionStatus:
         """Non-generative evidence; transport, authentication and inventory stay distinct."""
@@ -584,6 +605,7 @@ class DrawThingsBackend:
                         timeout=remaining(),
                         metadata=metadata,
                     ) as stream:
+                        send_started = time.monotonic()
                         await stream.send_message(wire.message, end=True)
                         request_sent_at = time.monotonic()
                         emit("preparing", stage="waiting_backend_response")
@@ -591,7 +613,11 @@ class DrawThingsBackend:
                             log,
                             "backend.generation_request_sent",
                             level=logging.INFO,
-                            data={"transport": "grpc", "backend": self.backend_id},
+                            data={
+                                "transport": "grpc",
+                                "backend": self.backend_id,
+                                **({"send_ms": (request_sent_at - send_started) * 1000} if timing_enabled() else {}),
+                            },
                         )
                         first_response = True
                         first_content = timing_enabled()
