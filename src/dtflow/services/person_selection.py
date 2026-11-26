@@ -642,8 +642,8 @@ _CONTROL_SEG_COLORS = {
 }
 
 
-def control_segmentation(source: ImageContent, segmentation: ModelRef):
-    """Build an experimental sparse ADE20K RGB map from the configured YOLO model."""
+def control_segmentation(source: ImageContent, segmentation: ModelRef, clothes: ModelRef | None = None):
+    """Build a sparse ADE20K map, optionally refining person masks with human parsing."""
     import numpy as np
 
     image = Image.open(io.BytesIO(source.encoded)).convert("RGB")
@@ -654,9 +654,24 @@ def control_segmentation(source: ImageContent, segmentation: ModelRef):
     if not instances:
         raise ValidationError("No supported semantic objects were detected for the segmentation control.")
     canvas = np.zeros((source.height, source.width, 3), dtype=np.uint8)
+    clothes_session = _verified_session(clothes, _clothes_session) if clothes is not None else None
+    # ADE20K has apparel and bag, but no separate face, hair or limb classes.
+    apparel = (0, 112, 255)
+    clothing_ids = tuple(CLOTHES_LABELS.index(name) + 1 for name in (
+        "Hat", "Sunglasses", "Upper-clothes", "Skirt", "Pants", "Dress",
+        "Belt", "Left-shoe", "Right-shoe", "Scarf",
+    ))
     # Highest-confidence instance wins overlaps, matching the editor's ordering.
-    for class_id, _, mask, _ in reversed(instances):
+    for class_id, _, mask, box in reversed(instances):
         canvas[mask > 0] = colors[class_id]
+        if class_id == 0 and clothes_session is not None:
+            x0, y0, x1, y1 = box
+            labels = np.frombuffer(_clothes_layers(clothes_session, image, mask, box), dtype=np.uint8)
+            labels = labels.reshape(y1 - y0, x1 - x0)
+            region = canvas[y0:y1, x0:x1]
+            # Stored labels are class index + 1; background/hair/skin stay person.
+            region[np.isin(labels, clothing_ids)] = apparel
+            region[labels == CLOTHES_LABELS.index("Bag") + 1] = (70, 184, 160)
     return Image.fromarray(canvas), len(instances)
 
 
