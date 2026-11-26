@@ -319,6 +319,21 @@ uv run dtflow pose generate -b cloud -m sd_v1.5_f16.ckpt -co controlnet_seg_1.x_
 
 For official SD 1.5 Depth/Canny, use `controlnet_depth_1.x_v1.1_f16.ckpt` or `controlnet_canny_1.x_v1.1_f16.ckpt` with the SD 1.5 model and settings above. For official Turbo Canny use `controlnet_canny_sdxl_v1.0_mid_f16.ckpt`. The pinned depth model is available at https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/4472b7362082ad9968fee890ca0f1e5aca36b93d/onnx/model.onnx (SHA-256 `afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c`); obtain it explicitly if needed. These new combinations have not been run. The owner confirmed SDXL Turbo Xinsir Pose, SD 1.5 Pose, and SDXL Base official Canny; SDXL Base Xinsir Pose returned noise even with the successful Turbo settings. Compare against an uncontrolled same-seed baseline before claiming acceptance.
 
+### FLUX.1 Union spatial control probes
+
+The existing FLUX.1 Union Pro 1.0 and 2.0 controls now accept `-ct canny`, `-ct depth` and `-ct seg` through the CLI. Existing Pose remains the default. Upstream FLUX.1 Union 1.0 maps Canny to mode 0, Depth to 2 and Segmentation to 1 (the shared tile/custom mode, not a dedicated segmentation mode); Union 2.0 is a regular ControlNet without the mode embedding. Segmentation is therefore exploratory, not established checkpoint training compatibility. The existing signed RGB custom hint and signed single-channel depth hint match the upstream FLUX.1 paths, which do not apply SDXL's RGB range conversion. Desktop choices remain pose-only.
+
+```powershell
+$Model = "flux_1_dev_q5p.ckpt"
+$Union = "controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt"
+$Prompt = "a girl in a bikini at the beach"
+uv run --with opencv-python-headless==4.11.0.86 dtflow pose generate -b cloud -m $Model -co $Union -ct canny -ph .\tmp\pose.png -p $Prompt -s 1234455 -w 640 -y 960 -i 24 -g 3.5 -a euler_a -cs 0.7 -o .\tmp\flux-canny
+uv run dtflow pose generate -b cloud -m $Model -co $Union -ct depth -ph .\tmp\pose.png -dm .\tmp\models\depth-anything-v2-small.onnx -p $Prompt -s 1234455 -w 640 -y 960 -i 24 -g 3.5 -a euler_a -cs 0.7 -o .\tmp\flux-depth
+uv run dtflow pose generate -b cloud -m $Model -co $Union -ct seg -sm clothes -ph .\tmp\pose.png -p $Prompt -s 1234455 -w 640 -y 960 -i 24 -g 3.5 -a euler_a -cs 0.7 -o .\tmp\flux-seg
+```
+
+These settings are starting points, not verified configurations. Use `-sm yolo` for a silhouette-only map or `-im` for a prepared semantic map. Each command is an explicit cloud submission. The official SD 1.5 Canny, Depth and Segmentation commands in the preceding section are also available; neither the new FLUX.1 nor SD 1.5 combinations have been executed by the agent.
+
 ## Single-shot image-operation owner probe
 
 `edit` is the explicit acceptance harness for PR #64, not general image-operation support. Without `-r/--probe` it refuses before backend selection, file preparation or authentication. Each invocation requests one real generation, with no queue, plan, batch or retry. Generic `generate`, configuration reuse and `queue add` remain txt2img-only.
