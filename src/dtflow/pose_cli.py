@@ -327,12 +327,9 @@ async def run(args):
 
 async def compare_models(args, request, prepared, policy):
     """Stage one map, expand the existing model plan and dispatch one durable queue."""
-    from dataclasses import replace
     from dtflow.services import queue_session, session
-    from dtflow.services.image_inputs import snapshot_image_inputs
-    from dtflow.services.planning import Plan
     from dtflow.services.body_pose import write_comparison_collage
-    from dtflow.core.tasks import settle
+    from dtflow.services.planning import Plan
 
     if request.pose_control.checkpoint not in SD1_PROBE_CONTROLS:
         raise ValidationError("Model comparison currently requires one official SD 1.x control.")
@@ -340,16 +337,12 @@ async def compare_models(args, request, prepared, policy):
         raise ValidationError("Model comparison does not yet accept explicit asset receipts.")
     plan = Plan("cross", dimensions=(("model", tuple(args.models)),), seed_policy="fixed")
     selection = session.selection_for("cloud", None, args.state)
-    staged = await settle(
-        asyncio.to_thread(
-            snapshot_image_inputs, args.state, request.image_inputs.attempt_id, prepared, preserve_outside=False
-        )
-    )
     queue_id = await queue_session.create_saved_pose_queue(
         args.state,
         {"name": "cloud"},
         selection,
-        replace(request, schema_version=3, image_inputs=staged),
+        request,
+        prepared=prepared,
         plan=plan,
         origin="pose-comparison",
     )
