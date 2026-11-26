@@ -71,7 +71,7 @@ def encode_image_inputs(
     image = ImageBuffer(pixels_rgb, width, height, 3).to_tensor()
     _check_tensor(image, width, height, mask=False)
     if unit_rgb:
-        # Direct SD 1.5 pose hints bypass the server's custom RGB range conversion.
+        # Direct SD 1.5/SDXL pose hints bypass the server's custom RGB range conversion.
         # Preserve the SDK's CCV header and NHWC layout; normalize from the original RGB bytes.
         payload = (np.frombuffer(pixels_rgb, dtype=np.uint8).astype(np.float32) / 255.0).astype("<f2")
         image = image[:HEADER_BYTES] + payload.tobytes()
