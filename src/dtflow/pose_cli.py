@@ -69,7 +69,7 @@ def add_commands(commands, add_request_options):
                 "-ph",
                 "--photo",
                 type=Path,
-                help="Source photo: local pose, Canny or depth extraction; segmentation requires a prepared map.",
+                help="Source photo: local pose, Canny, depth or YOLO semantic-map extraction.",
             )
             child.add_argument("-pn", "--person", type=int, help="Person number when the photo shows several people.")
             child.add_argument(
@@ -140,7 +140,7 @@ def prepare_canny_probe(path: Path, width: int, height: int, *, photo: bool):
     return pixels.prepare_image_bytes(map_content.encoded, width, height), tuple(sorted(evidence.items()))
 
 
-def prepare_spatial_probe(path: Path, width: int, height: int, *, input_type: str, photo: bool, depth_model: Path | None):
+def prepare_spatial_probe(path: Path, width: int, height: int, *, input_type: str, photo: bool, depth_model: Path | None, state: Path):
     """Fit depth or semantic maps; preserve class colours with nearest-neighbour resampling."""
     import hashlib
 
@@ -180,6 +180,21 @@ def prepare_spatial_probe(path: Path, width: int, height: int, *, input_type: st
             image = image.convert("L")
         fitted = image.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.BILINEAR).convert("RGB")
     else:
+        if photo:
+            from dtflow.persistence.person_models import load_person_models
+            from dtflow.services.person_selection import control_segmentation
+
+            model = load_person_models(state).segmentation
+            if model is None:
+                raise ValidationError("Choose or install the YOLO segmentation model in Inpaint first, or use --image.")
+            image, count = control_segmentation(content, model)
+            evidence.update({
+                "origin": "seg_photo",
+                "detector": "Configured YOLO segmentation",
+                "detector_sha256": model.sha256,
+                "instances": str(count),
+                "palette": "ADE20K sparse COCO overlap; unknown black",
+            })
         fitted = image.convert("RGB").resize((fit.fitted_width, fit.fitted_height), Image.Resampling.NEAREST)
     canvas = Image.new("RGB", (width, height), "black")
     canvas.paste(fitted, (fit.left, fit.top))
@@ -269,8 +284,6 @@ async def run(args):
         if control.input_type != "pose" and args.person is not None:
             raise ValidationError("Person selection is only used for pose extraction.")
         if control.input_type in ("depth", "seg"):
-            if control.input_type == "seg" and args.photo is not None:
-                raise ValidationError("Segmentation requires a prepared semantic colour map (--image).")
             prepared, evidence = await asyncio.to_thread(
                 prepare_spatial_probe,
                 args.photo or args.image,
@@ -279,6 +292,7 @@ async def run(args):
                 input_type=control.input_type,
                 photo=args.photo is not None,
                 depth_model=args.depth_model,
+                state=args.state,
             )
         elif control.input_type == "canny":
             prepared, evidence = await asyncio.to_thread(
