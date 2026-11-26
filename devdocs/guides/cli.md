@@ -271,6 +271,8 @@ The official [Draw Things ControlNetZoo specification](https://github.com/drawth
 
 The owner supplied two equivalent successful app configuration exports: 640 × 1024, 16 steps, guidance 5, sampler 12 (DPM++ 2M AYS), seed 1580038928, Clip Skip 1, seed mode 2, strength 1, control weight 1, Balanced, range 0–1, no LoRAs. The commands match exposed settings; exact equivalence of the app's seed mode, preprocessing and remaining defaults is not established.
 
+The owner reported noise from the initial DTFlow SD 1.5 probe. This revision changes only the SD 1.5 pose hint RGB normalization to 0–1, preserving float16 NHWC and the tensor reference. The [upstream generator](https://github.com/drawthingsai/draw-things-community/blob/cb2d4c61d1b58816ce1843481e74293a240e5bf4/Libraries/LocalImageGenerator/Sources/LocalImageGenerator.swift#L2720-L2985) converts custom RGB to 0–1 for SD 1.5 but passes a direct pose hint through unchanged. This is a source-supported diagnostic, not a confirmed fix. FLUX.1, SDXL and ordinary image operations keep their existing encoding.
+
 From the repository root in PowerShell, check the inventory before submitting:
 
 ```powershell
