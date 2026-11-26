@@ -211,7 +211,7 @@ def sweep_from_lines(text: str) -> tuple[tuple[str, ...], str]:
 def queue_edit_from_source(source: dict) -> QueueEdit:
     """The stored composer input; a Cross over base LoRAs at the same several weights reopens as Cross LoRA weights.
 
-    The mode stores its plan as plain Cross lines, so Edit as new would otherwise show the Fixed LoRAs and the same
+    The mode stores its plan as plain Cross lines, so Edit as new would otherwise show the Constant LoRAs and the same
     weights again as a LoRA weights row. Base LoRAs that are not swept reopen as its constants.
     """
     edit = _stored_edit(source)

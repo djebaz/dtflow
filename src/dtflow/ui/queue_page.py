@@ -1914,27 +1914,27 @@ class QueuePage:
         page.planStrengthsEdit.configure("float", "Strength", minimum=0, maximum=1, step=0.05, decimals=2)
         page.planFixedLorasEdit.configure(
             "search",
-            "Fixed LoRA",
+            "Constant LoRA",
             weights=self._offered_loras,
             families=lambda: self._choices().get("lora_families", {}),
             notice=self._loras_notice,
             initial=self._fixed_loras,
             convert=self._lora_weight_chips,
             label=self._lora_set_label,
-            editor_title="Fixed LoRAs",
+            editor_title="Constant LoRAs",
             replace_all=True,
             editor_hint="Check the LoRAs every item of the new queue uses and set their weights. Apply replaces the list.",
         )
         page.planConstantLorasEdit.configure(
             "search",
-            "Fixed LoRA",
+            "Constant LoRA",
             weights=self._offered_loras,
             families=lambda: self._choices().get("lora_families", {}),
             notice=self._loras_notice,
             initial=self._constant_loras,
             convert=self._lora_weight_chips,
             label=self._lora_set_label,
-            editor_title="Fixed LoRAs",
+            editor_title="Constant LoRAs",
             replace_all=True,
             editor_hint="Check the LoRAs every item of the new queue uses and set their weights. Apply replaces the list.",
         )
@@ -1988,11 +1988,11 @@ class QueuePage:
         page.planSweepWeightsEdit.setText(weights)
 
     def _constant_loras(self) -> tuple[LoRASelection, ...]:
-        """The Fixed LoRAs row beside the Swept LoRAs (Cross LoRA weights only) as selections, in the order shown."""
+        """The Constant LoRAs row beside the Swept LoRAs (Cross LoRA weights only) as selections, in the order shown."""
         return self._chip_loras(self.page.planConstantLorasEdit)
 
     def _fixed_loras(self) -> tuple[LoRASelection, ...]:
-        """The Fixed LoRAs row (the Swept LoRAs row in Cross LoRA weights) as selections, in the order shown."""
+        """The Constant LoRAs row (the Swept LoRAs row in Cross LoRA weights) as selections, in the order shown."""
         return self._chip_loras(self.page.planFixedLorasEdit)
 
     @staticmethod
@@ -2105,7 +2105,7 @@ class QueuePage:
             getattr(page, name).setVisible(planned)
         page.planIncrementCheck.setVisible(planned)
         sweep = page.planModeCombo.currentText() == LORA_WEIGHTS_MODE
-        if self._sweeping and not sweep:  # leaving the mode: the constants are Fixed LoRAs again
+        if self._sweeping and not sweep:  # leaving the mode: both rows are one Constant LoRAs row again
             merged = {item.identifier: item for item in (*self._constant_loras(), *self._fixed_loras())}
             fixed = page.planFixedLorasEdit
             fixed.blockSignals(True)
@@ -2126,7 +2126,7 @@ class QueuePage:
             "planSweepWeightsEdit",
         ):
             getattr(page, name).setVisible(sweep)
-        page.planFixedLorasLabel.setText("Swept LoRAs" if sweep else "Fixed LoRAs")
+        page.planFixedLorasLabel.setText("Swept LoRAs" if sweep else "Constant LoRAs")
         page.planFixedLorasLabel.setToolTip(
             "Every LoRA here is taken at each of the sweep weights in every combination; the weight shown on its chip "
             "is not used."
@@ -3080,7 +3080,7 @@ class QueuePage:
                 resolution_evidence=tuple(pair for pair in request.resolution_evidence if pair[0] != "prepared_assets"),
             )
             if backend["name"] == "cloud":
-                # LoRA sets replace the draft; weight sweeps add to its fixed LoRAs.
+                # LoRA sets replace the draft; weight sweeps add to its constant LoRAs.
                 names = {item.identifier for item in request.loras}
                 if sets is not None:
                     names = {identifier for chosen in sets for identifier, _ in chosen} | (
@@ -3292,7 +3292,7 @@ class QueuePage:
 
     def _show_table(self, table: PlanTable) -> None:
         self.plan_model.clear()
-        # The planner provides each item's full effective stack; fixed LoRAs must not
+        # The planner provides each item's full effective stack; constant LoRAs must not
         # disappear from the preview just because only another LoRA's weight varies.
         show_stack = "loras" not in table.columns and any(stack != "none" for stack in table.lora_stacks)
         columns = (*table.columns, *(("Effective LoRAs",) if show_stack else ()))
