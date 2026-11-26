@@ -62,12 +62,22 @@ def add_commands(commands, add_request_options):
             child.add_argument("-c", "--config", type=Path, help="Ordinary txt2img configuration (not pose metadata).")
             add_request_options(child)
             child.set_defaults(endpoint=None, prefix=False)
-            child.add_argument("-ms", "--models", nargs="+", help="Compare checkpoints in one durable queue; overrides --model only when it is omitted.")
-            child.add_argument("-hf", "--hires-factor", type=float, help="Experimental official SD 1.x Pose HiRes factor.")
+            child.add_argument(
+                "-ms",
+                "--models",
+                nargs="+",
+                help="Compare checkpoints in one durable queue; overrides --model only when it is omitted.",
+            )
+            child.add_argument(
+                "-hf", "--hires-factor", type=float, help="Experimental official SD 1.x Pose HiRes factor."
+            )
             child.add_argument("-hs", "--hires-strength", type=float, help="HiRes second-pass strength, 0..1.")
             source = child.add_mutually_exclusive_group(required=True)
             source.add_argument(
-                "-im", "--image", type=Path, help="Prepared pose, Canny, grayscale depth or palette-coloured semantic segmentation map."
+                "-im",
+                "--image",
+                type=Path,
+                help="Prepared pose, Canny, grayscale depth or palette-coloured semantic segmentation map.",
             )
             source.add_argument(
                 "-ph",
@@ -84,15 +94,22 @@ def add_commands(commands, add_request_options):
                 help="Exact control checkpoint; non-FLUX controls are CLI-only probes.",
             )
             child.add_argument(
-                "-ct", "--control-type", choices=XINSIR_PROBE_INPUTS,
+                "-ct",
+                "--control-type",
+                choices=XINSIR_PROBE_INPUTS,
                 help="Explicit Union mode; official controls infer their native input type.",
             )
             child.add_argument(
-                "-sm", "--seg-method", choices=("yolo", "clothes"), default="yolo",
+                "-sm",
+                "--seg-method",
+                choices=("yolo", "clothes"),
+                default="yolo",
                 help="Segmentation photo preprocessing: YOLO silhouettes or YOLO + configured SegFormer clothes.",
             )
             child.add_argument(
-                "-dm", "--depth-model", type=Path,
+                "-dm",
+                "--depth-model",
+                type=Path,
                 help="Local pinned Depth Anything V2 Small ONNX for depth photo extraction.",
             )
             child.add_argument(
@@ -103,7 +120,9 @@ def add_commands(commands, add_request_options):
                 help="Draw Things control force: Balanced, Prompt (prompt leads) or Control (pose leads).",
             )
             child.add_argument("-st", "--start", type=float, default=0.0, help="Control start, 0..1 of the steps.")
-            child.add_argument("-en", "--end", type=float, help="Control end, 0..1; defaults to 0.65 for fast-model Pose, otherwise 1.")
+            child.add_argument(
+                "-en", "--end", type=float, help="Control end, 0..1; defaults to 0.65 for fast-model Pose, otherwise 1."
+            )
             child.add_argument(
                 "-cs",
                 "--strength",
@@ -145,13 +164,21 @@ def prepare_canny_probe(path: Path, width: int, height: int, *, photo: bool):
         raise ValidationError("Canny map is empty; no guidance was submitted.")
     map_content = pixels._content(canvas)
     evidence["map_sha256"] = map_content.sha256
-    evidence["preparation"] = (
-        "aspect_fit_canny_before_black_padding" if photo else "aspect_fit_black_padding_no_crop"
-    )
+    evidence["preparation"] = "aspect_fit_canny_before_black_padding" if photo else "aspect_fit_black_padding_no_crop"
     return pixels.prepare_image_bytes(map_content.encoded, width, height), tuple(sorted(evidence.items()))
 
 
-def prepare_spatial_probe(path: Path, width: int, height: int, *, input_type: str, photo: bool, depth_model: Path | None, state: Path, seg_method: str = "yolo"):
+def prepare_spatial_probe(
+    path: Path,
+    width: int,
+    height: int,
+    *,
+    input_type: str,
+    photo: bool,
+    depth_model: Path | None,
+    state: Path,
+    seg_method: str = "yolo",
+):
     """Fit depth or semantic maps; preserve class colours with nearest-neighbour resampling."""
     import hashlib
 
@@ -171,7 +198,9 @@ def prepare_spatial_probe(path: Path, width: int, height: int, *, input_type: st
             model = depth_model or Path("tmp/models/depth-anything-v2-small.onnx")
             expected = "afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c"
             if not model.is_file():
-                raise ValidationError("Depth Anything V2 Small ONNX is missing; provide --depth-model or a prepared depth map.")
+                raise ValidationError(
+                    "Depth Anything V2 Small ONNX is missing; provide --depth-model or a prepared depth map."
+                )
             with model.open("rb") as stream:
                 digest = hashlib.file_digest(stream, "sha256").hexdigest()
             if digest != expected:
@@ -186,7 +215,9 @@ def prepare_spatial_probe(path: Path, width: int, height: int, *, input_type: st
             if depth.ndim != 2 or not np.isfinite(depth).all() or depth.max() <= depth.min():
                 raise ValidationError("Depth model did not produce a finite nonconstant depth map.")
             image = Image.fromarray(np.rint((depth - depth.min()) / (depth.max() - depth.min()) * 255).astype(np.uint8))
-            evidence.update({"origin": "depth_photo", "detector": "Depth Anything V2 Small ONNX", "detector_sha256": digest})
+            evidence.update(
+                {"origin": "depth_photo", "detector": "Depth Anything V2 Small ONNX", "detector_sha256": digest}
+            )
         else:
             image = image.convert("L")
         fitted = image.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.BILINEAR).convert("RGB")
@@ -204,24 +235,33 @@ def prepare_spatial_probe(path: Path, width: int, height: int, *, input_type: st
                 raise ValidationError("Choose the existing SegFormer clothes model in Inpaint first.")
             image, count = control_segmentation(content, model, clothes)
             if clothes is not None:
-                evidence.update({"clothes_sha256": clothes.sha256, "clothes_model": "Configured SegFormer human parsing"})
-            evidence.update({
-                "origin": "seg_photo",
-                "detector": "Configured YOLO segmentation",
-                "detector_sha256": model.sha256,
-                "instances": str(count),
-                "palette": "ADE20K sparse COCO overlap; unknown black",
-                "seg_method": seg_method,
-            })
+                evidence.update(
+                    {"clothes_sha256": clothes.sha256, "clothes_model": "Configured SegFormer human parsing"}
+                )
+            evidence.update(
+                {
+                    "origin": "seg_photo",
+                    "detector": "Configured YOLO segmentation",
+                    "detector_sha256": model.sha256,
+                    "instances": str(count),
+                    "palette": "ADE20K sparse COCO overlap; unknown black",
+                    "seg_method": seg_method,
+                }
+            )
         fitted = image.convert("RGB").resize((fit.fitted_width, fit.fitted_height), Image.Resampling.NEAREST)
     if input_type == "depth":
         # Continue the depth field outside the fitted photo without a false depth discontinuity.
-        canvas = Image.fromarray(np.pad(
-            np.asarray(fitted),
-            ((fit.top, height - fit.top - fit.fitted_height),
-             (fit.left, width - fit.left - fit.fitted_width), (0, 0)),
-            mode="edge",
-        ))
+        canvas = Image.fromarray(
+            np.pad(
+                np.asarray(fitted),
+                (
+                    (fit.top, height - fit.top - fit.fitted_height),
+                    (fit.left, width - fit.left - fit.fitted_width),
+                    (0, 0),
+                ),
+                mode="edge",
+            )
+        )
         preparation = "aspect_fit_edge_replicated_depth_no_crop"
     else:
         canvas = Image.new("RGB", (width, height), "black")
@@ -259,7 +299,10 @@ async def run(args):
                         "models": SDXL_POSE_PROBE_MODELS,
                         "cloud_application": "unverified; CLI-only feasibility probe",
                     },
-                    "sdxl_canny_probe": {"control": SDXL_CANNY_PROBE_CONTROL, "models": OFFICIAL_PROBE_CONTROLS[SDXL_CANNY_PROBE_CONTROL][1]},
+                    "sdxl_canny_probe": {
+                        "control": SDXL_CANNY_PROBE_CONTROL,
+                        "models": OFFICIAL_PROBE_CONTROLS[SDXL_CANNY_PROBE_CONTROL][1],
+                    },
                     "sd15_pose_probe": {
                         "control": SD15_POSE_PROBE_CONTROL,
                         "family": "sd_1",
@@ -313,20 +356,28 @@ async def run(args):
             if args.control != SD15_POSE_PROBE_CONTROL or input_type != "pose":
                 raise ValidationError("HiRes is experimental and only offered for official SD 1.x Pose.")
             advanced = request.advanced or AdvancedSettings()
-            request = replace(request, advanced=replace(
-                advanced,
-                hires_fix_factor=args.hires_factor if args.hires_factor is not None else (advanced.hires_fix_factor or 2.0),
-                hires_fix_strength=args.hires_strength if args.hires_strength is not None else advanced.hires_fix_strength,
-            ))
+            request = replace(
+                request,
+                advanced=replace(
+                    advanced,
+                    hires_fix_factor=args.hires_factor
+                    if args.hires_factor is not None
+                    else (advanced.hires_fix_factor or 2.0),
+                    hires_fix_strength=args.hires_strength
+                    if args.hires_strength is not None
+                    else advanced.hires_fix_strength,
+                ),
+            )
         key = model_key(request.model_id)
         fast_pose = input_type == "pose" and (
             (key == "sd_xl_turbo" and args.control == SDXL_POSE_PROBE_CONTROL)
-            or (key in ("flux_1_schnell", "pixelwave_flux_1_schnell_04")
-                and args.control in CONTROLS and "_2.0_" in args.control)
+            or (
+                key in ("flux_1_schnell", "pixelwave_flux_1_schnell_04")
+                and args.control in CONTROLS
+                and "_2.0_" in args.control
+            )
         )
-        sd15_pose = input_type == "pose" and (
-            args.control == SD15_POSE_PROBE_CONTROL
-        )
+        sd15_pose = input_type == "pose" and (args.control == SD15_POSE_PROBE_CONTROL)
         default_strength = 0.9 if fast_pose else (0.77 if sd15_pose else None)
         if args.strength is None and default_strength is None:
             raise ValidationError("--strength is required outside the fast-model and official SD 1.x Pose presets.")
@@ -423,12 +474,15 @@ async def compare_models(args, request, prepared, policy):
     items = expand_plan(request, plan)
     selection = session.selection_for("cloud", None, args.state)
     await queue_session._check_pose_queue(args.state, selection, items, request.pose_control, saved=None)
-    staged = await settle(asyncio.to_thread(
-        snapshot_image_inputs, args.state, request.image_inputs.attempt_id, prepared, preserve_outside=False
-    ))
+    staged = await settle(
+        asyncio.to_thread(
+            snapshot_image_inputs, args.state, request.image_inputs.attempt_id, prepared, preserve_outside=False
+        )
+    )
     items = [replace(item, image_inputs=staged) for item in items]
     queue_id = await queue_session.create_queue(args.state, {"name": "cloud"}, items, origin="pose-comparison")
     print(f"Comparison queue: {queue_id}", file=sys.stderr)
+
     def settled(item_id, state):
         print(f"[queue] {item_id[:8]}: {state}", file=sys.stderr)
 
@@ -438,6 +492,7 @@ async def compare_models(args, request, prepared, policy):
     target = await asyncio.to_thread(write_comparison_collage, final, args.out or args.state / "outputs")
     print(json.dumps({"queue": queue_id, "summary": final["summary"], "collage": str(target)}, indent=2))
     from dtflow.cli import queue_exit_code
+
     return queue_exit_code(final)
 
 
@@ -471,6 +526,7 @@ def write_comparison_collage(queue, root: Path) -> Path:
             draw.text((x + 12, y + height // 2), item["state"], fill="white", font=font)
         name = item["model"].removesuffix(".ckpt")
         import textwrap
+
         draw.multiline_text((x + 5, y + height + 5), "\n".join(textwrap.wrap(name, 40)), fill="white", font=font)
         duration = item.get("duration")
         timing = f"{duration:.2f} s" if duration is not None else "No recorded time"

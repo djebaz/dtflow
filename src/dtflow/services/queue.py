@@ -474,7 +474,9 @@ class QueueDispatcher:
                         if request.pose_control is not None:
                             await settle(
                                 asyncio.to_thread(
-                                    _require_pose_family, self.service.input_state, request.model_id,
+                                    _require_pose_family,
+                                    self.service.input_state,
+                                    request.model_id,
                                     control_checkpoint=request.pose_control.checkpoint,
                                 )
                             )

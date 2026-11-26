@@ -274,7 +274,9 @@ async def _check_pose_queue(
     if selection.name != "cloud":
         raise ValidationError("A pose queue requires DT+ Cloud.")
     for model_id in dict.fromkeys(item.model_id for item in items):
-        await settle(asyncio.to_thread(session._require_pose_family, state, model_id, control_checkpoint=control.checkpoint))
+        await settle(
+            asyncio.to_thread(session._require_pose_family, state, model_id, control_checkpoint=control.checkpoint)
+        )
     async with session.open_session(selection, state, durable=False, saved=saved) as service:
         inventory = await service.get_inventory(refresh=True)
     if not any(

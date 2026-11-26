@@ -36,7 +36,9 @@ class EncodedImageInputs:
 
 def _check_tensor(tensor: bytes, width: int, height: int, *, mask: bool, channels: int = 3) -> None:
     """Check the SDK's two distinct CCV layouts, dtype and exact uncompressed size."""
-    expected_header = (0, 1, 2, 0x01000, 0, height, width, 0, 0) if mask else (0, 1, 2, 0x20000, 0, 1, height, width, channels)
+    expected_header = (
+        (0, 1, 2, 0x01000, 0, height, width, 0, 0) if mask else (0, 1, 2, 0x20000, 0, 1, height, width, channels)
+    )
     expected_size = HEADER_BYTES + width * height * (1 if mask else 2 * channels)
     if (
         len(tensor) != expected_size

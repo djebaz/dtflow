@@ -28,7 +28,10 @@ SDXL_DEPTH_PROBE_CONTROL = "controlnet_depth_sdxl_v1.0_mid_f16.ckpt"
 
 # SD 1.x probes use the bundled catalogue family; SDXL probes retain exact model admission.
 SD1_PROBE_CONTROLS = (
-    SD15_POSE_PROBE_CONTROL, SD15_CANNY_PROBE_CONTROL, SD15_DEPTH_PROBE_CONTROL, SD15_SEG_PROBE_CONTROL,
+    SD15_POSE_PROBE_CONTROL,
+    SD15_CANNY_PROBE_CONTROL,
+    SD15_DEPTH_PROBE_CONTROL,
+    SD15_SEG_PROBE_CONTROL,
 )
 # Production controls remain in CONTROLS.
 OFFICIAL_PROBE_CONTROLS = {
@@ -50,6 +53,7 @@ def probe_models(checkpoint: str) -> tuple[str, ...] | None:
         return None  # family admission, not an exact checkpoint allowlist
     entry = OFFICIAL_PROBE_CONTROLS.get(checkpoint)
     return entry[1] if entry else None
+
 
 MODELS = ("flux_1_dev_f16.ckpt", "flux_1_dev_q5p.ckpt", "flux_1_dev_q8p.ckpt")
 # Only this checkpoint with Union Pro 1.0 q5p at 0.7 has been confirmed (#502). Other FLUX.1 variants may be tried and

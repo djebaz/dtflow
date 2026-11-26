@@ -565,7 +565,8 @@ class GenerationService:
                 permit is not None
                 and cloud
                 and event.kind == "progress"
-                and event.stage == (
+                and event.stage
+                == (
                     "second_pass_sampling"
                     if request.advanced is not None and request.advanced.hires_fix_active
                     else "sampling"

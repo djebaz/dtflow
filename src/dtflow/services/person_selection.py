@@ -579,13 +579,13 @@ def _letterbox(image: Image.Image):
 
 
 def _instances(session, image: Image.Image, threshold: float, *, mask_threshold: float = 0.5):
-    return [(score, mask, box) for _, score, mask, box in _class_instances(
-        session, image, threshold, mask_threshold=mask_threshold
-    )]
+    return [
+        (score, mask, box)
+        for _, score, mask, box in _class_instances(session, image, threshold, mask_threshold=mask_threshold)
+    ]
 
 
-def _class_instances(session, image: Image.Image, threshold: float, *, mask_threshold: float = 0.5,
-                     class_ids=(0,)):
+def _class_instances(session, image: Image.Image, threshold: float, *, mask_threshold: float = 0.5, class_ids=(0,)):
     """Decode selected YOLO classes using the existing person-mask geometry."""
     import numpy as np
 
@@ -657,10 +657,21 @@ def control_segmentation(source: ImageContent, segmentation: ModelRef, clothes: 
     clothes_session = _verified_session(clothes, _clothes_session) if clothes is not None else None
     # ADE20K has apparel and bag, but no separate face, hair or limb classes.
     apparel = (0, 112, 255)
-    clothing_ids = tuple(CLOTHES_LABELS.index(name) + 1 for name in (
-        "Hat", "Sunglasses", "Upper-clothes", "Skirt", "Pants", "Dress",
-        "Belt", "Left-shoe", "Right-shoe", "Scarf",
-    ))
+    clothing_ids = tuple(
+        CLOTHES_LABELS.index(name) + 1
+        for name in (
+            "Hat",
+            "Sunglasses",
+            "Upper-clothes",
+            "Skirt",
+            "Pants",
+            "Dress",
+            "Belt",
+            "Left-shoe",
+            "Right-shoe",
+            "Scarf",
+        )
+    )
     # Highest-confidence instance wins overlaps, matching the editor's ordering.
     for class_id, _, mask, box in reversed(instances):
         canvas[mask > 0] = colors[class_id]
