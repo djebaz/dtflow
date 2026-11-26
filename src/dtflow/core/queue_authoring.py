@@ -1,6 +1,6 @@
 """Backend-neutral authoring projection shared by queue history and durable templates."""
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, replace
 
 from dtflow.core.models import MAX_QUEUE_ITEMS, ValidationError
 from dtflow.core.request_records import request_from_record
@@ -31,6 +31,9 @@ class PlanForm:
     add: int = 0
     add_parts: str = ""  # ``;``-separated parts that may be inserted into each prompt
     rng_seed: str = ""  # the plan RNG seed as typed; empty until a random draw needs one
+    constant_loras: bool = (
+        False  # the draft's LoRAs stay on beside every LoRA set (queues stored before: a set replaced them)
+    )
 
     @property
     def uses_randomness(self) -> bool:
@@ -88,6 +91,11 @@ def queue_edit_from_source(source: dict) -> QueueEdit:
         count = source["count"]
         if type(count) is not int or not 1 <= count <= MAX_QUEUE_ITEMS:
             raise ValidationError("Stored queue count is unsupported.")
-        return QueueEdit(asdict(base), form, count, "")
+        base_record = asdict(base)
+        if form.lora_sets and not form.constant_loras:
+            # A set used to replace the draft's LoRAs, so those never applied: reopen without them, constants on.
+            base_record["loras"] = []
+            form = replace(form, constant_loras=True)
+        return QueueEdit(base_record, form, count, "")
     except (KeyError, TypeError, ValueError) as exc:
         raise ValidationError("Stored queue composer source is unreadable; recorded items are unchanged.") from exc
