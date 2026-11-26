@@ -62,6 +62,7 @@ def add_commands(commands, add_request_options):
             child.add_argument("-c", "--config", type=Path, help="Ordinary txt2img configuration (not pose metadata).")
             add_request_options(child)
             child.set_defaults(endpoint=None, prefix=False)
+            child.add_argument("-ms", "--models", nargs="+", help="Compare checkpoints in one durable queue; overrides --model only when it is omitted.")
             child.add_argument("-hf", "--hires-factor", type=float, help="Experimental official SD 1.x Pose HiRes factor.")
             child.add_argument("-hs", "--hires-strength", type=float, help="HiRes second-pass strength, 0..1.")
             source = child.add_mutually_exclusive_group(required=True)
@@ -298,6 +299,12 @@ async def run(args):
     else:
         native = OFFICIAL_PROBE_CONTROLS.get(args.control)
         input_type = args.control_type or (native[0] if native else "pose")
+        if args.models:
+            if args.model is not None:
+                raise ValidationError("Use --models or --model, not both.")
+            if len(set(args.models)) != len(args.models):
+                raise ValidationError("Comparison model identifiers must be distinct.")
+            args.model = args.models[0]
         request = resolve_generation(args)
         if args.hires_factor is not None or args.hires_strength is not None:
             from dataclasses import replace
@@ -370,6 +377,8 @@ async def run(args):
                 person=args.person,
             )
         request = pose_request(request, control, prepared, evidence)
+        if args.models:
+            return await compare_models(args, request, prepared, policy)
     selection = selection_for("cloud", None, args.state)
     options = {
         "output": args.out,
@@ -396,3 +405,78 @@ async def run(args):
         )
     )
     return 0
+
+
+async def compare_models(args, request, prepared, policy):
+    """Stage one map, expand the existing model plan and dispatch one durable queue."""
+    from dataclasses import replace
+    from dtflow.services import queue_session, session
+    from dtflow.services.image_inputs import snapshot_image_inputs
+    from dtflow.services.planning import Plan, expand_plan
+    from dtflow.core.tasks import settle
+
+    if request.pose_control.checkpoint not in SD1_PROBE_CONTROLS:
+        raise ValidationError("Model comparison currently requires one official SD 1.x control.")
+    if getattr(args, "asset", None):
+        raise ValidationError("Model comparison does not yet accept explicit asset receipts.")
+    plan = Plan("cross", dimensions=(("model", tuple(args.models)),), seed_policy="fixed")
+    items = expand_plan(request, plan)
+    selection = session.selection_for("cloud", None, args.state)
+    await queue_session._check_pose_queue(args.state, selection, items, request.pose_control, saved=None)
+    staged = await settle(asyncio.to_thread(
+        snapshot_image_inputs, args.state, request.image_inputs.attempt_id, prepared, preserve_outside=False
+    ))
+    items = [replace(item, image_inputs=staged) for item in items]
+    queue_id = await queue_session.create_queue(args.state, {"name": "cloud"}, items, origin="pose-comparison")
+    print(f"Comparison queue: {queue_id}", file=sys.stderr)
+    def settled(item_id, state):
+        print(f"[queue] {item_id[:8]}: {state}", file=sys.stderr)
+
+    final = await queue_session.dispatch_queue(
+        args.state, queue_id, timeouts=policy, out=args.out, on_settle=settled, auto_play=False
+    )
+    target = await asyncio.to_thread(write_comparison_collage, final, args.out or args.state / "outputs")
+    print(json.dumps({"queue": queue_id, "summary": final["summary"], "collage": str(target)}, indent=2))
+    from dtflow.cli import queue_exit_code
+    return queue_exit_code(final)
+
+
+def write_comparison_collage(queue, root: Path) -> Path:
+    """One labelled thumbnail per queue item, including unsuccessful items."""
+    from PIL import Image, ImageDraw, ImageFont, ImageOps
+    from dtflow.core.output_layout import group_name
+
+    items = queue["items"]
+    cols = min(4, len(items))
+    width, height, label, gap = 384, 512, 76, 12
+    rows = (len(items) + cols - 1) // cols
+    sheet = Image.new("RGB", (cols * (width + gap) + gap, rows * (height + label + gap) + gap), "#181818")
+    draw = ImageDraw.Draw(sheet)
+    try:
+        font = ImageFont.truetype("arial.ttf", 16)
+    except OSError:
+        font = ImageFont.load_default()
+    folder = Path(root) / group_name("queue", queue["queue_id"])
+    for index, item in enumerate(items):
+        x = gap + index % cols * (width + gap)
+        y = gap + index // cols * (height + label + gap)
+        # Only current queue attempts qualify; no recursive scan of unrelated outputs.
+        files = sorted(folder.glob(f"*{item['attempt_id']}*.png")) if item.get("attempt_id") else []
+        if files:
+            with Image.open(files[0]) as image:
+                thumb = ImageOps.contain(image.convert("RGB"), (width, height), Image.Resampling.LANCZOS)
+            sheet.paste(thumb, (x + (width - thumb.width) // 2, y + (height - thumb.height) // 2))
+        else:
+            draw.rectangle((x, y, x + width, y + height), fill="#303030")
+            draw.text((x + 12, y + height // 2), item["state"], fill="white", font=font)
+        name = item["model"].removesuffix(".ckpt")
+        import textwrap
+        draw.multiline_text((x + 5, y + height + 5), "\n".join(textwrap.wrap(name, 40)), fill="white", font=font)
+        duration = item.get("duration")
+        timing = f"{duration:.2f} s" if duration is not None else "No recorded time"
+        draw.text((x + 5, y + height + 53), f"{item['state']} | {timing}", fill="#aaaaaa", font=font)
+    folder.mkdir(parents=True, exist_ok=True)
+    target = folder / "comparison.jpg"
+    with target.open("xb") as stream:
+        sheet.save(stream, format="JPEG", quality=94)
+    return target
