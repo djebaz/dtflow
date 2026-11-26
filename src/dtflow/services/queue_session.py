@@ -856,8 +856,8 @@ async def _dispatch_one(
 
             # Applies to ordinary queues, Scripts, Workflows and their shared recovery checks.
             service.assets.on_resolution = show_asset_resolution
-        # Real adapters accept only inventory-listed models, so refresh once before dispatching.
-        await service.get_inventory(refresh=True)
+        # Cloud queues reuse the current owner's credential-scoped inventory; other backends refresh.
+        await service.get_inventory(refresh=not (selection.name == "cloud" and owner_auth is not None))
         diagnostic_event(
             log,
             "queue.command",

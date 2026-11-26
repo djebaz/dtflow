@@ -28,6 +28,7 @@ from dtflow.core.models import (
     BackendError,
     ConnectionStatus,
     FileIdentity,
+    InventorySnapshot,
     LoRABackendAvailability,
     StorageListing,
     ValidationError,
@@ -136,6 +137,25 @@ class DirectCloudBackend(DrawThingsBackend):
 
     async def _generation_metadata(self, message):
         return {"authorization": "bearer " + await self._auth.authorize(message)}
+
+    async def get_inventory(self, refresh: bool = False) -> InventorySnapshot:
+        if self._owns_auth:
+            return await super().get_inventory(refresh=refresh)
+        # Shared auth is scoped to the selected credential and dispatch owner.
+        # Keep Echo model descriptions with the snapshot; never share image permits.
+        endpoint = self.endpoint.label
+        async with self._auth.inventory_lock:
+            if refresh:
+                self._auth.inventories.pop(endpoint, None)
+            cached = self._auth.inventories.get(endpoint)
+            if cached is not None:
+                self._inventory, self._model_specs = cached
+                self._echoed = True
+                self._stale_reason = None
+                return self._with_staleness(self._inventory)
+            snapshot = await super().get_inventory(refresh=True)
+            self._auth.inventories[endpoint] = (snapshot, self._model_specs)
+            return snapshot
 
     async def _echo(self):
         await self._auth.token()

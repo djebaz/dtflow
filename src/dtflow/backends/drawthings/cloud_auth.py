@@ -19,6 +19,7 @@ from dtflow.core.models import (
     BackendError,
     CredentialProvider,
     ErrorCategory,
+    InventorySnapshot,
     RemoteOutcome,
     SubmissionStage,
     ValidationError,
@@ -123,6 +124,8 @@ class CloudAuth:
         self._expires = 0.0
         self._margin = 0.0
         self._lock = asyncio.Lock()
+        self.inventory_lock = asyncio.Lock()
+        self.inventories: dict[str, tuple[InventorySnapshot, dict[str, dict]]] = {}
         self._refresh: asyncio.Task[str] | None = None
         self._closed = False
         self._scope = uuid.uuid4().hex
@@ -426,6 +429,7 @@ class CloudAuth:
             return
         self._closed = True
         self._token = self._key = None
+        self.inventories.clear()
         try:
             if self._refresh is not None and not self._refresh.done():
                 self._refresh.cancel()
