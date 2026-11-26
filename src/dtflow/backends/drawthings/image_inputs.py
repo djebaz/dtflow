@@ -34,10 +34,10 @@ class EncodedImageInputs:
         return sum(map(len, self.contents))
 
 
-def _check_tensor(tensor: bytes, width: int, height: int, *, mask: bool) -> None:
+def _check_tensor(tensor: bytes, width: int, height: int, *, mask: bool, channels: int = 3) -> None:
     """Check the SDK's two distinct CCV layouts, dtype and exact uncompressed size."""
-    expected_header = (0, 1, 2, 0x01000, 0, height, width, 0, 0) if mask else (0, 1, 2, 0x20000, 0, 1, height, width, 3)
-    expected_size = HEADER_BYTES + width * height * (1 if mask else 6)
+    expected_header = (0, 1, 2, 0x01000, 0, height, width, 0, 0) if mask else (0, 1, 2, 0x20000, 0, 1, height, width, channels)
+    expected_size = HEADER_BYTES + width * height * (1 if mask else 2 * channels)
     if (
         len(tensor) != expected_size
         or struct.unpack_from("<9I", tensor) != expected_header
@@ -47,7 +47,7 @@ def _check_tensor(tensor: bytes, width: int, height: int, *, mask: bool) -> None
 
 
 def encode_image_inputs(
-    prepared: PreparedImageInputs, limits: ResourceLimits | None = None, *, unit_rgb: bool = False
+    prepared: PreparedImageInputs, limits: ResourceLimits | None = None, *, unit_rgb: bool = False, depth: bool = False
 ) -> EncodedImageInputs:
     """Encode fitted RGB float16 [-1,1] (or [0,1] for an explicit control probe) plus optional uint8 0/2 mask.
 
@@ -60,7 +60,8 @@ def encode_image_inputs(
     if not isinstance(prepared, PreparedImageInputs):
         raise ValidationError("Image preparation evidence is required.")
     width, height = prepared.fit.target_width, prepared.fit.target_height
-    image_size = HEADER_BYTES + width * height * 6
+    channels = 1 if depth else 3
+    image_size = HEADER_BYTES + width * height * 2 * channels
     mask_size = HEADER_BYTES + width * height if prepared.mask is not None else 0
     if image_size > limits.tensor_bytes or mask_size > limits.tensor_bytes:
         raise ValidationError("Image input tensor exceeds the decoded byte limit.")
@@ -68,10 +69,13 @@ def encode_image_inputs(
         raise ValidationError("Image input contents exceed the transport byte limit.")
     validate_prepared_inputs(prepared)
     pixels_rgb = image_content_pixels(prepared.image)
-    image = ImageBuffer(pixels_rgb, width, height, 3).to_tensor()
-    _check_tensor(image, width, height, mask=False)
+    if depth:
+        # Prepared depth maps are RGB snapshots of one grayscale plane.
+        pixels_rgb = pixels_rgb[::3]
+    image = ImageBuffer(pixels_rgb, width, height, channels).to_tensor()
+    _check_tensor(image, width, height, mask=False, channels=channels)
     if unit_rgb:
-        # Direct SD 1.5/SDXL pose hints bypass the server's custom RGB range conversion.
+        # Direct SD 1.5 pose hints bypass the server's custom RGB range conversion.
         # Preserve the SDK's CCV header and NHWC layout; normalize from the original RGB bytes.
         payload = (np.frombuffer(pixels_rgb, dtype=np.uint8).astype(np.float32) / 255.0).astype("<f2")
         image = image[:HEADER_BYTES] + payload.tobytes()
