@@ -1012,6 +1012,7 @@ class AssetService:
         blocked = self._refresh_failed.get(identity)
         if blocked is not None and time.monotonic() < blocked[0]:
             raise BackendError(blocked[1])
+
         async def check_and_refresh():
             path = await asyncio.to_thread(self.store.changed_origin, item.sha256, item.size, item.identifier)
             if path is None:
@@ -1401,6 +1402,7 @@ class AssetService:
             cached = self._selection_cache
             if cached is not None and time.monotonic() - cached[0] < NEWEST_TTL:
                 return cached[1], cached[2]
+            started = time.monotonic()
             registry = AssetRegistry(self.state)
             await registry.open()
             try:
@@ -1413,6 +1415,12 @@ class AssetService:
             known = {record["identifier"] for record in records}
             known.update(record["managed_identifier"] for record in records if record.get("managed_identifier"))
             self._selection_cache = (time.monotonic(), newest, known)
+            diagnostic_event(
+                log,
+                "assets.selection_catalogue_read",
+                level=logging.DEBUG,
+                data={"elapsed_ms": round((time.monotonic() - started) * 1000), "candidates": len(newest)},
+            )
             return newest, known
 
     async def resolve_selected(self, request: ResolvedGenerationRequest) -> ResolvedGenerationRequest:
