@@ -209,7 +209,7 @@ The fake backend returns the bundled illustrative lighthouse, cropped and resamp
 |---|---|
 | `-im/--image MAP` or `-ph/--photo PHOTO` | One required: a prepared OpenPose RGB body map on a black background, or a photograph extracted locally before submission |
 | `-co/--control NAME` | One pinned Union Pro control: `controlnet_union_pro_flux_1_dev_{1.0,2.0}_{q8p,q5p}.ckpt`, or the explicit Xinsir SDXL probe below |
-| `-cs/--strength` | Control weight in (0, 2]. This is not img2img denoising or text guidance |
+| `-cs/--strength` | Control weight in (0, 2]. Optional for fast-model Pose (default 0.9); otherwise required. Not img2img denoising or text guidance |
 | `-cm/--control-mode` | Draw Things control force: `Balanced` (default), `Prompt` or `Control` |
 | `-st/--start`, `-en/--end` | Where in the steps the control applies, 0 to 1 (default 0 and 1); the start must be before the end |
 | `-pn/--person N` | With `--photo`, the person to use when the photograph shows several |
@@ -318,6 +318,16 @@ uv run dtflow pose generate -b cloud -m sd_v1.5_f16.ckpt -co controlnet_seg_1.x_
 ```
 
 For official SD 1.5 Depth/Canny, use `controlnet_depth_1.x_v1.1_f16.ckpt` or `controlnet_canny_1.x_v1.1_f16.ckpt` with the SD 1.5 model and settings above. For official Turbo Canny use `controlnet_canny_sdxl_v1.0_mid_f16.ckpt`. The pinned depth model is available at https://huggingface.co/onnx-community/depth-anything-v2-small/resolve/4472b7362082ad9968fee890ca0f1e5aca36b93d/onnx/model.onnx (SHA-256 `afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c`); obtain it explicitly if needed. The owner has also visually confirmed Turbo Xinsir Canny, Depth and both sparse and clothes-refined Segmentation. The official SD 1.5 non-pose combinations remain untested. The owner confirmed SDXL Turbo Xinsir Pose, SD 1.5 Pose, and SDXL Base official Canny; SDXL Base Xinsir Pose returned noise even with the successful Turbo settings. Compare against an uncontrolled same-seed baseline before claiming acceptance.
+
+### Fast-model Pose defaults (owner comparison)
+
+New CLI Pose requests using SDXL Turbo + Xinsir, or FLUX.1 Schnell / PixelWave Schnell 04 + Union Pro 2.0, default to weight 0.9, Balanced, guidance start 0 and end 0.65. Explicit flags always win; other combinations retain their existing explicit-weight requirement and default end 1. Saved requests and Retry retain their recorded values. The desktop is unchanged during this CLI-only feasibility phase.
+
+The owner compared eight-step, 640×960, seed 1234455 generations with Turbo (CFG 0.7, Euler A) and official Schnell Q4P (CFG 1, Euler A Trailing). Weight 0.7 / Balanced / end 1 gave poor adherence; weight 1 / Balanced / end 1 and weight 0.9 / Balanced / end 0.65 gave very good adherence; weight 1 / Control / end 1 gave poor adherence. The final Schnell 0.9 result (attempt `6e7818d8886547c590402b126f304b1d`) completed in 30.90 s without warnings. PixelWave shares the proposed Schnell defaults but has not been validated at those weights. No detector or wire changes were needed. Single-seed visual evidence, not a controlled baseline or broad compatibility guarantee.
+
+```powershell
+uv run dtflow pose generate -b cloud -m flux_1_schnell_q4p.ckpt -co controlnet_union_pro_flux_1_dev_2.0_q5p.ckpt -ph .\tmp\pose.png -p "an adult woman in a bikini at the beach" -s 1234455 -w 640 -y 960 -i 8 -g 1 -a euler_a_trailing -o .\tmp\pose-fast
+```
 
 ### FLUX.1 Union spatial control probes
 
