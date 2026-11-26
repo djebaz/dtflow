@@ -252,6 +252,19 @@ uv run dtflow generate -b cloud -m $Model -p $Prompt -s 12345 -w 1024 -y 1024 -i
 
 Inspect the generated image, output metadata and the provider error if the request fails. An accepted request does not establish pose adherence; compare the controlled image against the supplied map and the uncontrolled baseline. No automatic retry, provider switch or UI integration is introduced. Do not proceed to desktop integration until owner observation establishes feasibility.
 
+### Official SDXL Canny feasibility probe (#632)
+
+This CLI-only diagnostic uses the built-in `controlnet_canny_sdxl_v1.0_mid_f16.ckpt` rather than community Union metadata. It sends a Canny input override and Canny hint using the existing durable generation path. The provider must advertise the exact control. The production desktop and queue composer do not offer this probe.
+
+Use a source photo with `-ph`; OpenCV generates edges locally at the fitted target resolution (thresholds 100/200). OpenCV is an optional, invocation-scoped dependency, not an addition to the project lockfile. Alternatively use `-im` with an already prepared edge map, without OpenCV.
+
+```powershell
+uv run dtflow models -b cloud -r
+uv run --with opencv-python-headless==4.11.0.86 dtflow pose generate -b cloud -m sd_xl_base_1.0_f16.ckpt -co controlnet_canny_sdxl_v1.0_mid_f16.ckpt -ph .\tmp\pose.png -p "a person in a red coat in a park, full body shot" -s 12345 -w 1024 -y 1024 -i 25 -g 6 -a euler_a -cs 0.7 -o .\tmp\sdxl-canny
+```
+
+This sends one real request and may consume credits. Compare the result to the existing baseline and the retained edge map. The Canny probe does not establish pose support or satisfy AC-1 by itself. No automatic retries or provider substitutions are added.
+
 ## Single-shot image-operation owner probe
 
 `edit` is the explicit acceptance harness for PR #64, not general image-operation support. Without `-r/--probe` it refuses before backend selection, file preparation or authentication. Each invocation requests one real generation, with no queue, plan, batch or retry. Generic `generate`, configuration reuse and `queue add` remain txt2img-only.
