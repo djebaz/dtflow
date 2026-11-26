@@ -202,6 +202,7 @@ class AssetService:
         # Outdated receipts already re-prepared from their changed file, shared by concurrent items (#361).
         self._refresh_failed: dict[tuple, tuple[float, BackendFailure]] = {}
         self._newest_cache: tuple[float, dict[str, PreparedAsset]] | None = None
+        self._newest_lock = asyncio.Lock()
         # The UI can receive individual names without adding them to diagnostic records.
         self.on_resolution: Callable[[dict], None] | None = None
 
@@ -751,15 +752,13 @@ class AssetService:
         outcome = "inconclusive"
         error_message = ""
         try:
-            prepared_assets = await self._current(prepared_assets, on_stage)
+            prepared_assets = await self._current(prepared_assets, on_stage, credential=credential_id)
             identities = {self._identity(self._content(item)): item for item in prepared_assets}
             names = {key: PureWindowsPath(item.identifier).name for key, item in identities.items()}
             registry = AssetRegistry(self.state)
             await registry.open()
             try:
-                existing = [
-                    await registry.scoped(item.receipt_id, credential_id, item.identifier) for item in prepared_assets
-                ]
+                existing = await registry.scoped_many(prepared_assets, credential_id)
             finally:
                 await registry.aclose()
             missing = []
@@ -783,7 +782,8 @@ class AssetService:
             current = None
             if not missing:
                 outcome = "completed"
-                return await self._with_families(tuple(existing))
+                # Scoped reads already join the canonical family metadata.
+                return tuple(existing)
 
             pending = tuple(dict.fromkeys(self._identity(self._content(item)) for _, item, _ in missing))
             contents = tuple(dict.fromkeys(self._content(item) for _, item, _ in missing))
@@ -925,22 +925,27 @@ class AssetService:
 
     async def _newest_map(self) -> dict[str, PreparedAsset]:
         """The current receipt of every LoRA name, read at most every ``NEWEST_TTL`` seconds."""
-        cached = self._newest_cache
-        if cached is not None and time.monotonic() - cached[0] < NEWEST_TTL:
-            return cached[1]
-        registry = AssetRegistry(self.state)
-        await registry.open()
-        try:
-            choices = await registry.choices()
-        finally:
-            await registry.aclose()
-        current = await asyncio.to_thread(self.store.current_by_name) if self.store is not None else {}
-        newest = {item.identifier: item for item in newest_per_name(choices, current)}
-        self._newest_cache = (time.monotonic(), newest)
-        return newest
+        async with self._newest_lock:
+            cached = self._newest_cache
+            if cached is not None and time.monotonic() - cached[0] < NEWEST_TTL:
+                return cached[1]
+            registry = AssetRegistry(self.state)
+            await registry.open()
+            try:
+                choices = await registry.choices()
+            finally:
+                await registry.aclose()
+            current = await asyncio.to_thread(self.store.current_by_name) if self.store is not None else {}
+            newest = {item.identifier: item for item in newest_per_name(choices, current)}
+            self._newest_cache = (time.monotonic(), newest)
+            return newest
 
     async def _current(
-        self, prepared_assets: tuple[PreparedAsset, ...], on_stage: Callable[[str], None] | None = None
+        self,
+        prepared_assets: tuple[PreparedAsset, ...],
+        on_stage: Callable[[str], None] | None = None,
+        *,
+        credential: str | None = None,
     ) -> tuple[PreparedAsset, ...]:
         """Swap each receipt for the current one of its name before anything is checked or sent (#361).
 
@@ -949,7 +954,8 @@ class AssetService:
         source file now holds different bytes is prepared again from that file (a real upload when DT+ asks for
         one). A refresh that cannot finish fails the request with the reason instead of sending the old bytes."""
         newest = await self._newest_map()
-        credential = await self._credential_id()
+        if credential is None:
+            credential = await self._credential_id()
         current = []
         for item in prepared_assets:
             latest = newest.get(item.identifier)
@@ -1005,16 +1011,15 @@ class AssetService:
         blocked = self._refresh_failed.get(identity)
         if blocked is not None and time.monotonic() < blocked[0]:
             raise BackendError(blocked[1])
-        path = await asyncio.to_thread(self.store.changed_origin, item.sha256, item.size, item.identifier)
-        if path is None:
-            return item
-        # Concurrent queue slots share one measurement, copy and upload, and the last one to leave cancels it.
-        # Nothing is cached on success: the source stamp and the current-version marker are re-written by the refresh,
-        # so the next look at the file answers from them, and putting an older file back is seen like any change.
+        async def check_and_refresh():
+            path = await asyncio.to_thread(self.store.changed_origin, item.sha256, item.size, item.identifier)
+            if path is None:
+                return item
+            return await self._refresh(item, path, on_stage)
+
+        # Share even the unchanged-source read among overlapping callers; later requests check again.
         try:
-            fresh = await self._shared(
-                "refresh", item, lambda: self._refresh(item, path, on_stage), scope_id=credential
-            )
+            fresh = await self._shared("refresh", item, check_and_refresh, scope_id=credential)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
