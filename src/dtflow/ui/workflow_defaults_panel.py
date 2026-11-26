@@ -1,7 +1,7 @@
 """Connection tab card: the workflow concurrency defaults (#286), kept in the shared app settings.
 
-A workflow file or node that sets its own concurrency overrides these. Changes are saved as they are made and apply to
-the next workflow run."""
+Cloud workflows can narrow the DT+ ceiling. Changes are saved as they are made and apply to
+the next dispatch owner or workflow run."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from PySide6.QtCore import QObject, QSignalBlocker
 from PySide6.QtWidgets import QWidget
 
 from dtflow.persistence.settings import (
+    MAX_CLOUD_CONCURRENCY,
     WORKFLOW_DEFAULTS,
     SettingsError,
     load_workflow_defaults,
@@ -32,6 +33,8 @@ class WorkflowDefaultsPanel(QObject):
             "local": form.workflowLocalSpin,
             "segmentation": form.workflowSegmentationSpin,
         }
+        # Keep the live widget aligned with the shared policy, including older form resources.
+        self._spins["cloud"].setRange(1, MAX_CLOUD_CONCURRENCY)
         try:
             values = load_workflow_defaults(self.state_dir)
         except SettingsError:
