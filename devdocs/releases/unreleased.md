@@ -16,6 +16,8 @@ Changes through 6.5.5 are consolidated in [DTFlow 6.5.5](v6.5.5.md). The publish
 
 ## Fixed
 
+- Controlnet keeps its own checkpoint, LoRAs and settings (size, steps, guidance, sampler, seed and Advanced generation), apart from Text to image and Inpaint. A preset or a LoRA chosen in one mode no longer lands in the other, so a Text to image LoRA from another model family no longer blocks a Controlnet generation, and the sampler stays as you chose it when you go back and forth. Prompts stay shared. The first time you open Controlnet it starts from your current settings without LoRAs.
+
 - The Compute Units estimate in Generate now follows HiRes: it adds the second pass to the smaller first pass, so turning HiRes on changes the number. The result is an approximation (Draw Things' own estimate ignores HiRes), and the "excludes the second pass" note is gone. The wording is now "HiRes" everywhere, and the HiRes factor goes up to 10 instead of 4.
 
 ## Upgrade and compatibility
@@ -28,6 +30,7 @@ Changes through 6.5.5 are consolidated in [DTFlow 6.5.5](v6.5.5.md). The publish
 - [ ] HiRes 2× on text-to-image and Inpaint: returned size equals the requested Size and the image looks refined.
 - [ ] Seed mode and tiled decoding on one checkpoint; seed mode on one video; tiled decoding with a Controlnet pose.
 - [ ] Reuse settings and Regenerate from a saved image restore the advanced values.
+- [ ] Controlnet and Text to image keep separate checkpoint, LoRAs, size, steps, guidance, sampler and seed when switching back and forth and after a restart; Use settings on a pose image fills Controlnet.
 - [ ] A queue item and a template with HiRes keep it across a restart and Retry.
 - [ ] HiRes on, then off, at factor 2 and 4: the Compute Units meter and the checkpoint details change with it, and no "excludes the second pass" note remains.
 - [ ] Cross LoRA weights with a Constant LoRA and two Swept LoRAs: 9 items, each with the Constant LoRA; reopen with Edit as new. Change the Sweep weights and check the count.
