@@ -403,6 +403,7 @@ class ResolvedGenerationRequest:
             raise ValidationError("Prepared assets must be an immutable tuple.")
         if self.advanced is not None:
             from dtflow.core.advanced import (
+                HIRES_FIELDS,
                 SCOPE_NAMES,
                 AdvancedSettings,
                 check_first_pass,
@@ -416,10 +417,12 @@ class ResolvedGenerationRequest:
             from dtflow.core.pose import SD15_POSE_PROBE_CONTROL
 
             sd1_pose_probe = self.pose_control is not None and self.pose_control.checkpoint == SD15_POSE_PROBE_CONTROL
-            scope = scope_for(
-                video=self.num_frames is not None, pose=self.pose_control is not None and not sd1_pose_probe
+            scope = scope_for(video=self.num_frames is not None, pose=self.pose_control is not None)
+            unsupported = tuple(
+                name for name in unsupported_fields(self.advanced, scope)
+                if not (sd1_pose_probe and name in HIRES_FIELDS)
             )
-            if unsupported := unsupported_fields(self.advanced, scope):
+            if unsupported:
                 raise ValidationError(
                     f"{unsupported[0]} is not available for {SCOPE_NAMES[scope]} requests; "
                     f"clear {', '.join(unsupported)} or change mode."
