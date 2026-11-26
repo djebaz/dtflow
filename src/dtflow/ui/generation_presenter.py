@@ -43,6 +43,7 @@ ERROR_FIELDS = {
     "loras": "loraList",
     "lora": "loraList",
     "hires_fix": "hiresFixCheck",
+    "hires": "hiresFixCheck",  # "HiRes factor must be ...": the user-facing name since #626
     "hires_fix_width": "hiresFixWidthSpin",
     "hires_fix_height": "hiresFixHeightSpin",
     "seed_mode": "seedModeCombo",
