@@ -235,7 +235,7 @@ uv run dtflow pose retry -b cloud -c <metadata.json of a pose run> -o .\tmp\retr
 
 ### SDXL pose feasibility probe (#632)
 
-This is an unverified CLI-only experiment, not SDXL support in the desktop or queue composer. The exact [pinned Xinsir Union ProMax metadata](https://github.com/drawthingsai/community-models/blob/ce4b2ae34a2ef7899fa014f019d04f2632dabe6f/controlnets/xinsir-union-promax-sdxl-1.0/metadata.json) is sent through the existing control override and semantic Pose hint path. The provider must advertise the control. The probe accepts only `sd_xl_base_1.0_f16.ckpt` or `sd_xl_base_1.0_q6p_q8p.ckpt`; neither is claimed to be available until checked.
+This is an unverified CLI-only experiment, not SDXL support in the desktop or queue composer. The exact [pinned Xinsir Union ProMax metadata](https://github.com/drawthingsai/community-models/blob/ce4b2ae34a2ef7899fa014f019d04f2632dabe6f/controlnets/xinsir-union-promax-sdxl-1.0/metadata.json) is sent through the existing control override and semantic Pose hint path. The provider must advertise the control. The Pose probe accepts `sd_xl_base_1.0_f16.ckpt`, `sd_xl_base_1.0_q6p_q8p.ckpt`, or `sd_xl_turbo_f16.ckpt`; cloud availability must be checked.
 
 After the owner confirmed SD 1.5 pose adherence with unit-range RGB, SDXL was retested with the same direct-pose normalization but returned an entirely white image. The current diagnostic sends the Xinsir pose map as a custom RGB hint in −1–1, retaining Pose as the control input override. The upstream Pose branch converts and fits custom RGB when a direct pose hint is absent. This is a diagnostic alternative, not a confirmed fix; the metadata and Union mode mapping match upstream. The official SDXL Canny custom-hint path was confirmed to produce visible guidance by the owner. Use a source photograph with `-ph` (or an extracted pose map with `-im`) and the normal CLI environment credential (`DRAWTHINGS_API_KEY`). From the repository root in PowerShell:
 
@@ -251,6 +251,15 @@ uv run dtflow generate -b cloud -m $Model -p $Prompt -s 12345 -w 1024 -y 1024 -i
 ```
 
 Inspect the generated image, output metadata and the provider error if the request fails. An accepted request does not establish pose adherence; compare the controlled image against the supplied map and the uncontrolled baseline. No automatic retry, provider switch or UI integration is introduced. Do not proceed to desktop integration until owner observation establishes feasibility.
+
+#### SDXL Turbo app-configuration comparison
+
+The owner supplied an SDXL Turbo Xinsir configuration with 448 × 576, 24 steps, CFG 5, DPM++ 2M AYS (sampler 12), seed 444714817, weight 0.8, Balanced and control range 0–0.66. The probe retains the current custom RGB hint path (−1–1 on the wire, converted internally by Draw Things); the prior direct unit-range SDXL pose attempt returned white. The exact app preprocessing, seed mode, Clip Skip and SDXL size/negative-prompt fields are not necessarily reproduced by these commands.
+
+```powershell
+uv run dtflow pose generate -b cloud -m sd_xl_turbo_f16.ckpt -co controlnet_xinsir_union_promax_sdxl_1.0_f16.ckpt -ph .\tmp\pose.png -p $Prompt -s 444714817 -w 448 -y 576 -i 24 -g 5 -a dpmpp_2m_ays -cs 0.8 -cm Balanced -st 0 -en 0.66 -o .\tmp\sdxl-turbo-pose
+uv run dtflow generate -b cloud -m sd_xl_turbo_f16.ckpt -p $Prompt -s 444714817 -w 448 -y 576 -i 24 -g 5 -a dpmpp_2m_ays -o .\tmp\sdxl-turbo-baseline
+```
 
 ### Official SDXL Canny feasibility probe (#632)
 
