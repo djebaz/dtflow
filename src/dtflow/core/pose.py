@@ -19,7 +19,8 @@ SDXL_POSE_PROBE_CONTROL = "controlnet_xinsir_union_promax_sdxl_1.0_f16.ckpt"
 SD15_POSE_PROBE_CONTROL = "controlnet_openpose_1.x_v1.1_f16.ckpt"
 SD15_POSE_PROBE_MODEL = "sd_v1.5_f16.ckpt"
 SDXL_CANNY_PROBE_CONTROL = "controlnet_canny_sdxl_v1.0_mid_f16.ckpt"
-SDXL_POSE_PROBE_MODELS = ("sd_xl_base_1.0_f16.ckpt", "sd_xl_base_1.0_q6p_q8p.ckpt")
+SDXL_CANNY_PROBE_MODELS = ("sd_xl_base_1.0_f16.ckpt", "sd_xl_base_1.0_q6p_q8p.ckpt")
+SDXL_POSE_PROBE_MODELS = (*SDXL_CANNY_PROBE_MODELS, "sd_xl_turbo_f16.ckpt")
 
 MODELS = ("flux_1_dev_f16.ckpt", "flux_1_dev_q5p.ckpt", "flux_1_dev_q8p.ckpt")
 # Only this checkpoint with Union Pro 1.0 q5p at 0.7 has been confirmed (#502). Other FLUX.1 variants may be tried and
