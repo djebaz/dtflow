@@ -2818,11 +2818,21 @@ class GenerationPage:
     def _load(self, path: Path) -> None:
         self._mark(None)
         name, _ = self._backend()
+        pose = self.controlnet.active
         self._runner.submit(
-            read_configuration(path, backend=name), lambda request, failure: self._loaded(path, request, failure)
+            read_configuration(path, backend=name),
+            lambda request, failure: self._loaded(path, request, failure, pose=pose),
         )
 
-    def _loaded(self, path: Path, request, failure) -> None:
+    def _loaded(self, path: Path, request, failure, *, pose: bool | None = None) -> None:
+        if pose is not None and pose != self.controlnet.active:
+            # The file was read for the other mode's settings; applying it now would overwrite these (#630).
+            self._status(
+                Presentation(
+                    "warning", "Configuration not applied", f"The mode changed while {path.name} loaded. Load it again."
+                )
+            )
+            return
         if failure is not None:
             if isinstance(failure, FormError):
                 self._mark(failure.widget)
