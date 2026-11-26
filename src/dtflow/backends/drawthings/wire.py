@@ -168,11 +168,8 @@ def build_generation_message(
             raise _reject(request, "pose_not_configured", "Pose requires cloud and retained prepared inputs.")
         models = probe_models(request.pose_control.checkpoint)
         if request.pose_control.checkpoint in SD1_PROBE_CONTROLS:
-            from dtflow.backends.drawthings.versions import bundled_base_version
-
-            if bundled_base_version(request.model_id) != "sd_1" or (
-                (model_spec or {}).get("version") not in (None, "v1")
-            ):
+            version = (model_spec or {}).get("version")
+            if version not in (None, "v1") or (base_version not in ("sd_1", "v1") and version != "v1"):
                 raise _reject(request, "control_probe_model", "Official SD 1.x controls require an SD 1.x checkpoint.")
         if models is not None and request.model_id not in models:
             raise _reject(request, "control_probe_model", "The control probe requires an admitted checkpoint.")
