@@ -265,6 +265,25 @@ uv run --with opencv-python-headless==4.11.0.86 dtflow pose generate -b cloud -m
 
 This sends one real request and may consume credits. Compare the result to the existing baseline and the retained edge map. The Canny probe does not establish pose support or satisfy AC-1 by itself. No automatic retries or provider substitutions are added.
 
+### Official SD 1.5 Pose feasibility probe
+
+The official [Draw Things ControlNetZoo specification](https://github.com/drawthingsai/draw-things-community/blob/cb2d4c61d1b58816ce1843481e74293a240e5bf4/Libraries/ModelZoo/Sources/ControlNetZoo.swift) identifies `controlnet_openpose_1.x_v1.1_f16.ckpt` as Pose (SD v1.x, ControlNet 1.1), modifier Pose, version v1, regular ControlNet. The CLI probe accepts only `sd_v1.5_f16.ckpt`. It uses the existing semantic Pose override and float tensor hint, without community metadata. The owner reported good pose results in the official app; DTFlow adherence remains unverified. Neither the production desktop nor queue composer is extended.
+
+From the repository root in PowerShell, check the inventory before submitting:
+
+```powershell
+uv run dtflow models -b cloud -r
+$Model = "sd_v1.5_f16.ckpt"
+$Control = "controlnet_openpose_1.x_v1.1_f16.ckpt"
+$Prompt = "a person in a red coat in a park, full body shot"
+# Source photo: local ONNX extraction; only the prepared pose map is submitted.
+uv run dtflow pose generate -b cloud -m $Model -co $Control -ph .\tmp\pose.png -p $Prompt -s 12345 -w 512 -y 768 -i 25 -g 5 -a euler_a -cs 1.0 -o .\tmp\sd15-pose
+# Same seed/settings, without control, for visual comparison.
+uv run dtflow generate -b cloud -m $Model -p $Prompt -s 12345 -w 512 -y 768 -i 25 -g 5 -a euler_a -o .\tmp\sd15-baseline
+```
+
+Use `-im` instead of `-ph` for an already extracted pose map. Each generation is an explicit cloud submission and may consume credits. Compare the actual pose against the retained map and baseline; a final image alone is not evidence of conditioning. No automatic retry or provider substitution is added. This separate diagnostic does not satisfy the SDXL acceptance criteria of #632.
+
 ## Single-shot image-operation owner probe
 
 `edit` is the explicit acceptance harness for PR #64, not general image-operation support. Without `-r/--probe` it refuses before backend selection, file preparation or authentication. Each invocation requests one real generation, with no queue, plan, batch or retry. Generic `generate`, configuration reuse and `queue add` remain txt2img-only.
