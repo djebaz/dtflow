@@ -397,7 +397,9 @@ class _Execution:
         self.plan = None
         self.prompt_counts: dict[int, int] = {}
         self.slots: dict[int, asyncio.Semaphore] = {}  # per node: steps of that node running together
-        self.total = asyncio.Semaphore(limit)  # all steps together (the global limit); set from the workflow at run start
+        self.total = asyncio.Semaphore(
+            limit
+        )  # all steps together (the global limit); set from the workflow at run start
         self.in_flight: dict[str, list[Key]] = {}  # attempt id -> steps whose generation may have been sent
         self.closed = False  # the run settled; a step abandoned at Stop may not write over it
 

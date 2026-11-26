@@ -163,7 +163,9 @@ def load_workflow_defaults(state: Path) -> dict[str, int]:
     """The workflow concurrency defaults (DT+, local, local segmentation nodes); a missing value is the built-in one."""
     document = _read(state)
     return {
-        name: validate_concurrency(document.get(key, WORKFLOW_DEFAULTS[name]), MAX_CLOUD_CONCURRENCY if name == "cloud" else 10)
+        name: validate_concurrency(
+            document.get(key, WORKFLOW_DEFAULTS[name]), MAX_CLOUD_CONCURRENCY if name == "cloud" else 10
+        )
         for name, key in WORKFLOW_DEFAULT_KEYS.items()
     }
 

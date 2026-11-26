@@ -64,6 +64,7 @@ class OwnerCloudAuth:
         key = (credential.source, hashlib.sha256(credential.secret.encode()).digest(), credential.alias)
         client = self._clients.get(key)
         if client is None:
+
             class PinnedCredential:
                 async def get(self) -> Credential:
                     return credential
