@@ -1,6 +1,6 @@
 """Advanced section of the Generate page: optional Draw Things values, collapsed by default (#539).
 
-The panel owns only the controls and the first-pass preview. Validation, Hires Fix sizing and the provider mapping stay
+The panel owns only the controls and the first-pass preview. Validation, HiRes sizing and the provider mapping stay
 in ``dtflow.core.advanced`` and the Draw Things backend, so every mode that later offers these values shares one rule.
 """
 
@@ -133,7 +133,7 @@ class AdvancedPanel(QObject):
             return str(exc)
         size = rules.first_pass_size(width, height, settings)
         if size is None:
-            return "Hires Fix is off." if self.hires.isChecked() else ""
+            return "HiRes is off." if self.hires.isChecked() else ""
         return f"First pass {size[0]}x{size[1]} → final {width}x{height}"
 
     def set_scope(self, scope: str | None) -> None:
@@ -142,8 +142,8 @@ class AdvancedPanel(QObject):
         self._scope = scope
         allowed = rules.SCOPE_FIELDS.get(scope, ())
         notes = {
-            "pose": "Hires Fix is not sent with a Controlnet pose; the other settings are.",
-            "video": "Only seed mode is sent for video; Hires Fix and tiled decoding are image settings.",
+            "pose": "HiRes is not sent with a Controlnet pose; the other settings are.",
+            "video": "Only seed mode is sent for video; HiRes and tiled decoding are image settings.",
             None: "Advanced settings are not sent in this mode.",
         }
         self.scope.setText(notes.get(scope, ""))

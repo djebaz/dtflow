@@ -66,7 +66,7 @@
       </item>
       <item row="1" column="0">
        <widget class="QLabel" name="hiresFixLabel">
-        <property name="text"><string>Hires Fix</string></property>
+        <property name="text"><string>HiRes</string></property>
         <property name="textRole" stdset="0"><string>caption</string></property>
        </widget>
       </item>
@@ -74,7 +74,7 @@
        <widget class="QCheckBox" name="hiresFixCheck">
         <property name="text"><string>Generate smaller first, then upscale to Size</string></property>
         <property name="toolTip"><string>Size stays the final output. The first pass is Size divided by the factor, rounded to 64 px. Whether DT+ honors it for a checkpoint is not checked.</string></property>
-        <property name="accessibleName"><string>Hires Fix</string></property>
+        <property name="accessibleName"><string>HiRes</string></property>
        </widget>
       </item>
       <item row="2" column="0">
@@ -92,13 +92,13 @@
         <property name="maximum"><double>4.000000000000000</double></property>
         <property name="singleStep"><double>0.250000000000000</double></property>
         <property name="value"><double>2.000000000000000</double></property>
-        <property name="toolTip"><string>1 turns Hires Fix off; 2 is the default; up to 4, fractions allowed.</string></property>
-        <property name="accessibleName"><string>Hires Fix factor</string></property>
+        <property name="toolTip"><string>1 turns HiRes off; 2 is the default; up to 4, fractions allowed.</string></property>
+        <property name="accessibleName"><string>HiRes factor</string></property>
        </widget>
       </item>
       <item row="3" column="0">
        <widget class="QLabel" name="hiresFixStrengthLabel">
-        <property name="text"><string>Hires strength</string></property>
+        <property name="text"><string>HiRes strength</string></property>
         <property name="textRole" stdset="0"><string>caption</string></property>
        </widget>
       </item>
@@ -112,7 +112,7 @@
         <property name="singleStep"><double>0.050000000000000</double></property>
         <property name="value"><double>-0.010000000000000</double></property>
         <property name="toolTip"><string>Share of the steps spent at the final size. This is not the image-to-image denoise strength.</string></property>
-        <property name="accessibleName"><string>Hires Fix strength</string></property>
+        <property name="accessibleName"><string>HiRes strength</string></property>
        </widget>
       </item>
       <item row="4" column="0">
@@ -130,7 +130,7 @@
         <property name="maximum"><number>2048</number></property>
         <property name="singleStep"><number>64</number></property>
         <property name="toolTip"><string>Auto derives it from Size and the factor. Choose a value only to override it.</string></property>
-        <property name="accessibleName"><string>Hires Fix first pass width</string></property>
+        <property name="accessibleName"><string>HiRes first pass width</string></property>
        </widget>
       </item>
       <item row="5" column="0">
@@ -148,7 +148,7 @@
         <property name="maximum"><number>2048</number></property>
         <property name="singleStep"><number>64</number></property>
         <property name="toolTip"><string>Auto derives it from Size and the factor. Choose a value only to override it.</string></property>
-        <property name="accessibleName"><string>Hires Fix first pass height</string></property>
+        <property name="accessibleName"><string>HiRes first pass height</string></property>
        </widget>
       </item>
       <item row="6" column="1">
