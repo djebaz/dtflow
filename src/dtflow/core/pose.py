@@ -21,6 +21,29 @@ SD15_POSE_PROBE_MODEL = "sd_v1.5_f16.ckpt"
 SDXL_CANNY_PROBE_CONTROL = "controlnet_canny_sdxl_v1.0_mid_f16.ckpt"
 SDXL_CANNY_PROBE_MODELS = ("sd_xl_base_1.0_f16.ckpt", "sd_xl_base_1.0_q6p_q8p.ckpt")
 SDXL_POSE_PROBE_MODELS = (*SDXL_CANNY_PROBE_MODELS, "sd_xl_turbo_f16.ckpt")
+SD15_CANNY_PROBE_CONTROL = "controlnet_canny_1.x_v1.1_f16.ckpt"
+SD15_DEPTH_PROBE_CONTROL = "controlnet_depth_1.x_v1.1_f16.ckpt"
+SD15_SEG_PROBE_CONTROL = "controlnet_seg_1.x_v1.1_f16.ckpt"
+SDXL_DEPTH_PROBE_CONTROL = "controlnet_depth_sdxl_v1.0_mid_f16.ckpt"
+
+# Exact CLI-only combinations. Production controls remain in CONTROLS.
+OFFICIAL_PROBE_CONTROLS = {
+    SD15_POSE_PROBE_CONTROL: ("pose", (SD15_POSE_PROBE_MODEL,)),
+    SD15_CANNY_PROBE_CONTROL: ("canny", (SD15_POSE_PROBE_MODEL,)),
+    SD15_DEPTH_PROBE_CONTROL: ("depth", (SD15_POSE_PROBE_MODEL,)),
+    SD15_SEG_PROBE_CONTROL: ("seg", (SD15_POSE_PROBE_MODEL,)),
+    SDXL_CANNY_PROBE_CONTROL: ("canny", SDXL_POSE_PROBE_MODELS),
+    SDXL_DEPTH_PROBE_CONTROL: ("depth", SDXL_POSE_PROBE_MODELS),
+}
+XINSIR_PROBE_INPUTS = ("pose", "canny", "depth", "seg")
+
+
+def probe_models(checkpoint: str) -> tuple[str, ...] | None:
+    """Return the exact model allowlist for a CLI-only control, or None for production controls."""
+    if checkpoint == SDXL_POSE_PROBE_CONTROL:
+        return SDXL_POSE_PROBE_MODELS
+    entry = OFFICIAL_PROBE_CONTROLS.get(checkpoint)
+    return entry[1] if entry else None
 
 MODELS = ("flux_1_dev_f16.ckpt", "flux_1_dev_q5p.ckpt", "flux_1_dev_q8p.ckpt")
 # Only this checkpoint with Union Pro 1.0 q5p at 0.7 has been confirmed (#502). Other FLUX.1 variants may be tried and
@@ -95,14 +118,14 @@ class PoseControl:
     guidance_end: float = 1.0
 
     def __post_init__(self):
-        if self.checkpoint == SDXL_CANNY_PROBE_CONTROL:
-            if self.input_type != "canny":
-                raise ValidationError("The official SDXL Canny probe requires a Canny edge map.")
-        elif (
-            self.checkpoint not in (*CONTROLS, SDXL_POSE_PROBE_CONTROL, SD15_POSE_PROBE_CONTROL)
-            or self.input_type != "pose"
-        ):
-            raise ValidationError("Only pinned pose controls are offered by this experiment.")
+        if self.checkpoint == SDXL_POSE_PROBE_CONTROL:
+            if self.input_type not in XINSIR_PROBE_INPUTS:
+                raise ValidationError("Unsupported Xinsir control input.")
+        elif self.checkpoint in OFFICIAL_PROBE_CONTROLS:
+            if self.input_type != OFFICIAL_PROBE_CONTROLS[self.checkpoint][0]:
+                raise ValidationError("The input type must match the official control checkpoint.")
+        elif self.checkpoint not in CONTROLS or self.input_type != "pose":
+            raise ValidationError("Only pinned controls are offered by this experiment.")
         # A conservative POC subset of the native weight control, not denoising strength.
         if not is_finite_number(self.strength) or not 0 < self.strength <= 2:
             raise ValidationError(
