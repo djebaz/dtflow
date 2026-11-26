@@ -30,12 +30,11 @@ from dtflow.core.image_operations import ImageOperationPermit
 from dtflow.core.model_profiles import exact_model_description_digest, exact_model_spec, profile_for
 from dtflow.core.models import ErrorCategory, Metadata, ResolvedGenerationRequest, ResourceLimits, Sampler
 from dtflow.core.pose import (
+    OFFICIAL_PROBE_CONTROLS,
     SD15_POSE_PROBE_CONTROL,
-    SD15_POSE_PROBE_MODEL,
     SDXL_CANNY_PROBE_CONTROL,
-    SDXL_CANNY_PROBE_MODELS,
     SDXL_POSE_PROBE_CONTROL,
-    SDXL_POSE_PROBE_MODELS,
+    probe_models,
 )
 from dtflow.core.video import video_profile
 
@@ -166,23 +165,16 @@ def build_generation_message(
     if request.pose_control is not None:
         if backend_id != "drawthings-cloud" or prepared is None or image_permit is not None:
             raise _reject(request, "pose_not_configured", "Pose requires cloud and retained prepared inputs.")
-        if request.pose_control.checkpoint == SD15_POSE_PROBE_CONTROL and request.model_id != SD15_POSE_PROBE_MODEL:
-            raise _reject(request, "sd15_pose_probe_model", "The SD 1.5 pose probe requires Stable Diffusion v1.5 F16.")
-        if (
-            request.pose_control.checkpoint == SDXL_POSE_PROBE_CONTROL
-            and request.model_id not in SDXL_POSE_PROBE_MODELS
-        ) or (
-            request.pose_control.checkpoint == SDXL_CANNY_PROBE_CONTROL
-            and request.model_id not in SDXL_CANNY_PROBE_MODELS
-        ):
-            raise _reject(request, "sdxl_pose_probe_model", "The SDXL control probe requires an admitted checkpoint.")
+        models = probe_models(request.pose_control.checkpoint)
+        if models is not None and request.model_id not in models:
+            raise _reject(request, "control_probe_model", "The control probe requires an admitted checkpoint.")
         if (
             ImageInputSnapshot.from_prepared(request.image_inputs.attempt_id, prepared, preserve_outside=False)
             != request.image_inputs
         ):
             raise _reject(request, "pose_input_mismatch", "Pose input differs from the recorded snapshot.")
         transport = encode_image_inputs(
-            prepared, limits, unit_rgb=_unit_control_rgb(request)
+            prepared, limits, unit_rgb=_unit_control_rgb(request), depth=request.pose_control.input_type == "depth"
         )
     elif image_operation:
         if not isinstance(image_permit, ImageOperationPermit) or prepared is None or request.image_inputs is None:
@@ -266,10 +258,7 @@ def build_generation_message(
         message.contents = [video_tensor]
     override = custom_lora_override(request)
     control_nets = b""
-    if request.pose_control is not None and request.pose_control.checkpoint not in (
-        SDXL_CANNY_PROBE_CONTROL,
-        SD15_POSE_PROBE_CONTROL,
-    ):
+    if request.pose_control is not None and request.pose_control.checkpoint not in OFFICIAL_PROBE_CONTROLS:
         from dtflow.core.pose import control_spec
 
         control_nets = json.dumps([control_spec(request.pose_control.checkpoint)]).encode()
@@ -304,6 +293,7 @@ def build_generation_message(
                 (f"{request.pose_control.input_type}_tensor_sha256", transport.image.hex()),
                 (f"{request.pose_control.input_type}_cloud_acceptance", "unverified_owner_experiment"),
                 ("control_hint_type", _control_hint_type(request)),
+                ("control_tensor_channels", "1" if request.pose_control.input_type == "depth" else "3"),
                 (
                     "control_tensor_rgb_range",
                     "0..1" if _unit_control_rgb(request) else "-1..1",
@@ -330,7 +320,9 @@ def _control_hint_type(request: ResolvedGenerationRequest) -> str:
     """For SDXL probes use the upstream custom RGB conversion and fitting path."""
     control = request.pose_control
     assert control is not None
-    if control.checkpoint in (SDXL_CANNY_PROBE_CONTROL, SDXL_POSE_PROBE_CONTROL):
+    if control.input_type == "depth":
+        return "depth"
+    if control.input_type in ("canny", "seg") or control.checkpoint == SDXL_POSE_PROBE_CONTROL:
         return "custom"
     return control.input_type
 
@@ -339,9 +331,9 @@ def _control_input_override(request: ResolvedGenerationRequest) -> str:
     """Use the official SD 1.5 control's native Pose modifier, matching the app export."""
     control = request.pose_control
     assert control is not None
-    if control.checkpoint == SD15_POSE_PROBE_CONTROL:
+    if control.checkpoint in OFFICIAL_PROBE_CONTROLS and control.checkpoint != SDXL_CANNY_PROBE_CONTROL:
         return "Unspecified"
-    return "Canny" if control.input_type == "canny" else "Pose"
+    return {"pose": "Pose", "canny": "Canny", "depth": "Depth", "seg": "Seg"}[control.input_type]
 
 
 def verify_wire_configuration(
