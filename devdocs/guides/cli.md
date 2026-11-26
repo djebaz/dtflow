@@ -193,7 +193,7 @@ The fake backend returns the bundled illustrative lighthouse, cropped and resamp
 
 ## Experimental body pose (DT+ Cloud)
 
-`dtflow pose` is an experimental FLUX.1 body-pose path. It runs on DT+ Cloud only; there is no local or fallback backend. The desktop offers the same path as [Controlnet mode](desktop.md#controlnet-mode-pose-guidance) and shares its code (`prepare_pose`, `pose_request` and `generate_pose_once`).
+`dtflow pose` is a FLUX.1 body-pose path with a CLI-only experimental SDXL Base 1.0 feasibility probe (#632). It runs on DT+ Cloud only; there is no local or fallback backend. The desktop offers the same path as [Controlnet mode](desktop.md#controlnet-mode-pose-guidance) and shares its code (`prepare_pose`, `pose_request` and `generate_pose_once`).
 
 | Command | Effect |
 |---|---|
@@ -208,13 +208,13 @@ The fake backend returns the bundled illustrative lighthouse, cropped and resamp
 | Option | Meaning |
 |---|---|
 | `-im/--image MAP` or `-ph/--photo PHOTO` | One required: a prepared OpenPose RGB body map on a black background, or a photograph extracted locally before submission |
-| `-co/--control NAME` | One pinned Union Pro control: `controlnet_union_pro_flux_1_dev_{1.0,2.0}_{q8p,q5p}.ckpt` |
+| `-co/--control NAME` | One pinned Union Pro control: `controlnet_union_pro_flux_1_dev_{1.0,2.0}_{q8p,q5p}.ckpt`, or the explicit Xinsir SDXL probe below |
 | `-cs/--strength` | Control weight in (0, 2]. This is not img2img denoising or text guidance |
 | `-cm/--control-mode` | Draw Things control force: `Balanced` (default), `Prompt` or `Control` |
 | `-st/--start`, `-en/--end` | Where in the steps the control applies, 0 to 1 (default 0 and 1); the start must be before the end |
 | `-pn/--person N` | With `--photo`, the person to use when the photograph shows several |
 
-`-m` must be a FLUX.1 family checkpoint (by the catalogue's family; a checkpoint the catalogue does not classify falls back to the `flux_1_` name prefix). Only FLUX.1 Dev q5p with Union Pro 1.0 q5p is verified; other FLUX.1 checkpoints are accepted for testing and are unverified. A map or photograph whose aspect differs from the target size is fitted with centred black padding, never cropped or stretched. Extraction needs exactly one body (or `--person N`) and shoulders and hips found with enough confidence (0.5); other uncertain joints are omitted and named in the extraction evidence (`omitted_joints`); the map is a body-only OpenPose skeleton with no hands, feet or detailed face. Submission is refused before anything is sent if the control is not in the DT+ inventory under its exact name. JSON goes to stdout and progress to stderr; output metadata retains the control, strength and input map so `pose retry` does not depend on the original file path.
+For the existing FLUX.1 controls, `-m` must be a FLUX.1 family checkpoint (by the catalogue's family; a checkpoint the catalogue does not classify falls back to the `flux_1_` name prefix). Only FLUX.1 Dev q5p with Union Pro 1.0 q5p is verified; other FLUX.1 checkpoints are accepted for testing and are unverified. A map or photograph whose aspect differs from the target size is fitted with centred black padding, never cropped or stretched. Extraction needs exactly one body (or `--person N`) and shoulders and hips found with enough confidence (0.5); other uncertain joints are omitted and named in the extraction evidence (`omitted_joints`); the map is a body-only OpenPose skeleton with no hands, feet or detailed face. Submission is refused before anything is sent if the control is not in the DT+ inventory under its exact name. JSON goes to stdout and progress to stderr; output metadata retains the control, strength and input map so `pose retry` does not depend on the original file path.
 
 Owner observation (single seed and prompt): with FLUX.1 Dev q5p and `controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt`, strength 0.7 followed the pose very well, 0.5 did not, and 1.0 followed it but looked washed out. Union Pro 2.0 (q5p and q8p) did not follow the pose at 0.7 and is unverified. Pose adherence is never measured by dtflow; it needs owner observation.
 
@@ -232,6 +232,25 @@ uv run dtflow pose retry -b cloud -c <metadata.json of a pose run> -o .\tmp\retr
 ```
 
 `tools/pose_smoke.py` runs the extraction, the baseline and several strengths in parallel and builds a side-by-side `sheet.png`; it submits nothing without `--submit`, which starts paid DT+ generations.
+
+### SDXL pose feasibility probe (#632)
+
+This is an unverified CLI-only experiment, not SDXL support in the desktop or queue composer. The exact [pinned Xinsir Union ProMax metadata](https://github.com/drawthingsai/community-models/blob/ce4b2ae34a2ef7899fa014f019d04f2632dabe6f/controlnets/xinsir-union-promax-sdxl-1.0/metadata.json) is sent through the existing control override and semantic Pose hint path. The provider must advertise the control. The probe accepts only `sd_xl_base_1.0_f16.ckpt` or `sd_xl_base_1.0_q6p_q8p.ckpt`; neither is claimed to be available until checked.
+
+Use an existing body-map PNG and the normal CLI environment credential (`DRAWTHINGS_API_KEY`). From the repository root in PowerShell:
+
+```powershell
+uv run dtflow models -b cloud -r
+$Model = "sd_xl_base_1.0_f16.ckpt" # use the quantized Base 1.0 variant instead if only that one is listed
+$Control = "controlnet_xinsir_union_promax_sdxl_1.0_f16.ckpt"
+$Prompt = "a person in a red coat in a park, full body shot, natural light"
+# Owner-approved submission: sends the map to DT+ Cloud and may consume credits.
+uv run dtflow pose generate -b cloud -m $Model -p $Prompt -s 12345 -w 1024 -y 1024 -i 25 -g 6 -a euler_a -im .\tmp\pose.png -co $Control -cs 0.7 -o .\tmp\sdxl-pose
+# Only if the controlled request works: optional second paid generation for same-seed comparison.
+uv run dtflow generate -b cloud -m $Model -p $Prompt -s 12345 -w 1024 -y 1024 -i 25 -g 6 -a euler_a -o .\tmp\sdxl-baseline
+```
+
+Inspect the generated image, output metadata and the provider error if the request fails. An accepted request does not establish pose adherence; compare the controlled image against the supplied map and the uncontrolled baseline. No automatic retry, provider switch or UI integration is introduced. Do not proceed to desktop integration until owner observation establishes feasibility.
 
 ## Single-shot image-operation owner probe
 
