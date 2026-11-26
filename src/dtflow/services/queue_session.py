@@ -15,7 +15,7 @@ from typing import Any
 from uuid import uuid4
 
 from dtflow.composition import BackendSelection
-from dtflow.core.image_inputs import ImageContent, PreparedImageInputs
+from dtflow.core.image_inputs import ImageContent, ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.models import (
     MAX_QUEUE_CONCURRENCY,
     SEED_LIMIT,
@@ -370,6 +370,10 @@ async def create_saved_pose_queue(
     items = expand_items(base, count) if plan is None else expand_plan(base, plan, receipts=receipts)
     await _check_pose_queue(state, selection, items, base.pose_control, saved=saved)
     if prepared is not None:
+        if ImageInputSnapshot.from_prepared(
+            base.image_inputs.attempt_id, prepared, preserve_outside=False
+        ) != base.image_inputs:
+            raise ValidationError("The prepared pose map differs from the recorded input.")
         staged = await settle(
             asyncio.to_thread(snapshot_image_inputs, state, base.image_inputs.attempt_id, prepared, preserve_outside=False)
         )
