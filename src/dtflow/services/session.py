@@ -601,26 +601,13 @@ def pose_request(
 
 def _require_pose_family(state: Path, model_id: str, *, control_checkpoint: str | None = None) -> None:
     """Check production pose families or explicitly selected CLI-only SDXL and SD 1.5 probes."""
-    from dtflow.core.pose import (
-        POSE_FAMILY_LABEL,
-        SD15_POSE_PROBE_CONTROL,
-        SD15_POSE_PROBE_MODEL,
-        SDXL_CANNY_PROBE_CONTROL,
-        SDXL_CANNY_PROBE_MODELS,
-        SDXL_POSE_PROBE_CONTROL,
-        SDXL_POSE_PROBE_MODELS,
-        supports_pose,
-    )
+    from dtflow.core.pose import POSE_FAMILY_LABEL, probe_models, supports_pose
     from dtflow.services.catalogue import Catalogue
 
-    if control_checkpoint == SD15_POSE_PROBE_CONTROL:
-        if model_id != SD15_POSE_PROBE_MODEL:
-            raise ValidationError("The SD 1.5 pose probe requires Stable Diffusion v1.5 F16.")
-        return
-    if control_checkpoint in (SDXL_POSE_PROBE_CONTROL, SDXL_CANNY_PROBE_CONTROL):
-        models = SDXL_POSE_PROBE_MODELS if control_checkpoint == SDXL_POSE_PROBE_CONTROL else SDXL_CANNY_PROBE_MODELS
+    models = probe_models(control_checkpoint) if control_checkpoint else None
+    if models is not None:
         if model_id not in models:
-            raise ValidationError("The SDXL control probe requires one of: " + ", ".join(models))
+            raise ValidationError("The control probe requires one of: " + ", ".join(models))
         return
     entry = Catalogue(state).checkpoint(model_id, include_unavailable=True)
     if not supports_pose(model_id, entry.base_model if entry else None):
