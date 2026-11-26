@@ -1,17 +1,20 @@
 {
   "version": 2,
-  "about": "Controls desktop Controlnet offers (#635): request semantics, compatibility and the settings a new pick starts from. 'family' is the catalogue base_model of the checkpoints a control admits; 'models' narrows it only where a concrete result justifies it. 'types' maps each offered input type to its defaults [strength, start, end, force], applied on an explicit pick or switch, never to restored or saved values. Tested checkpoints and owner evidence are in devdocs/guides/desktop.md, not here. Every entry needs a request encoding in core/pose.py and the wire module.",
-  "retired": ["controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt", "controlnet_union_pro_flux_1_dev_1.0_q8p.ckpt"],
+  "about": "Desktop controls (#635): compatible model family, implemented input types and suggested settings [strength, start, end, force] for explicit new picks. Saved values are retained. Quality observations are documented in the desktop guide, not used for admission.",
+  "retired": [
+    "controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt",
+    "controlnet_union_pro_flux_1_dev_1.0_q8p.ckpt"
+  ],
   "controls": [
     {
       "checkpoint": "controlnet_union_pro_flux_1_dev_2.0_q5p.ckpt",
       "label": "Union Pro 2.0 q5p",
       "family": "flux_1",
-      "why": "Segmentation not offered: it did not follow the map with Union Pro 2.0 (#633).",
       "types": {
         "pose": [0.9, 0, 0.65, "Balanced"],
         "canny": [0.7, 0, 1, "Balanced"],
-        "depth": [0.7, 0, 1, "Balanced"]
+        "depth": [0.7, 0, 1, "Balanced"],
+        "seg": [0.7, 0, 1, "Balanced"]
       }
     },
     {
@@ -21,7 +24,8 @@
       "types": {
         "pose": [0.9, 0, 0.65, "Balanced"],
         "canny": [0.7, 0, 1, "Balanced"],
-        "depth": [0.7, 0, 1, "Balanced"]
+        "depth": [0.7, 0, 1, "Balanced"],
+        "seg": [0.7, 0, 1, "Balanced"]
       }
     },
     {
@@ -58,10 +62,8 @@
     },
     {
       "checkpoint": "controlnet_xinsir_union_promax_sdxl_1.0_f16.ckpt",
-      "label": "Xinsir Union ProMax (SDXL Turbo)",
+      "label": "Xinsir Union ProMax (SDXL)",
       "family": "sdxl",
-      "models": ["sd_xl_turbo_f16.ckpt"],
-      "why": "Turbo only: SDXL Base produced noise with this control (#633).",
       "types": {
         "pose": [0.9, 0, 0.65, "Balanced"],
         "canny": [0.7, 0, 1, "Balanced"],
@@ -75,6 +77,14 @@
       "family": "sdxl",
       "types": {
         "canny": [0.7, 0, 1, "Balanced"]
+      }
+    },
+    {
+      "checkpoint": "controlnet_depth_sdxl_v1.0_mid_f16.ckpt",
+      "label": "Depth (SDXL)",
+      "family": "sdxl",
+      "types": {
+        "depth": [0.7, 0, 1, "Balanced"]
       }
     }
   ]

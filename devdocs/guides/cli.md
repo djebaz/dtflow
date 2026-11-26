@@ -193,7 +193,7 @@ The fake backend returns the bundled illustrative lighthouse, cropped and resamp
 
 ## Experimental body pose (DT+ Cloud)
 
-`dtflow pose` is a FLUX.1 body-pose path with a CLI-only experimental SDXL Base 1.0 feasibility probe (#632). It runs on DT+ Cloud only; there is no local or fallback backend. The desktop offers the same path as [Controlnet mode](desktop.md#controlnet-mode-pose-guidance) and shares its code (`prepare_pose`, `pose_request` and `generate_pose_once`).
+`dtflow pose` supports ControlNet on FLUX.1, SDXL and SD 1.x text-to-image checkpoints. It runs on DT+ Cloud only; there is no local or fallback backend. The desktop offers the same path as [Controlnet mode](desktop.md#controlnet-mode-pose-guidance) and shares its code (`prepare_pose`, `pose_request` and `generate_pose_once`).
 
 | Command | Effect |
 |---|---|
@@ -235,7 +235,7 @@ uv run dtflow pose retry -b cloud -c <metadata.json of a pose run> -o .\tmp\retr
 
 ### SDXL pose feasibility probe (#632)
 
-This is an unverified CLI-only experiment, not SDXL support in the desktop or queue composer. The exact [pinned Xinsir Union ProMax metadata](https://github.com/drawthingsai/community-models/blob/ce4b2ae34a2ef7899fa014f019d04f2632dabe6f/controlnets/xinsir-union-promax-sdxl-1.0/metadata.json) is sent through the existing control override and semantic Pose hint path. The provider must advertise the control. The Pose probe accepts `sd_xl_base_1.0_f16.ckpt`, `sd_xl_base_1.0_q6p_q8p.ckpt`, or `sd_xl_turbo_f16.ckpt`; cloud availability must be checked.
+This uses the same SDXL family admission as the desktop and queues; quality is not guaranteed. The exact [pinned Xinsir Union ProMax metadata](https://github.com/drawthingsai/community-models/blob/ce4b2ae34a2ef7899fa014f019d04f2632dabe6f/controlnets/xinsir-union-promax-sdxl-1.0/metadata.json) is sent through the existing control override and semantic Pose hint path. The provider must advertise the control. All compatible SDXL text-to-image checkpoints are admitted; cloud availability must be checked.
 
 After the owner confirmed SD 1.5 pose adherence with unit-range RGB, SDXL was retested with the same direct-pose normalization but returned an entirely white image. The current diagnostic sends the Xinsir pose map as a custom RGB hint in −1–1, retaining Pose as the control input override. The upstream Pose branch converts and fits custom RGB when a direct pose hint is absent. This is a diagnostic alternative, not a confirmed fix; the metadata and Union mode mapping match upstream. The official SDXL Canny custom-hint path was confirmed to produce visible guidance by the owner. Use a source photograph with `-ph` (or an extracted pose map with `-im`) and the normal CLI environment credential (`DRAWTHINGS_API_KEY`). From the repository root in PowerShell:
 
@@ -263,7 +263,7 @@ uv run dtflow generate -b cloud -m sd_xl_turbo_f16.ckpt -p $Prompt -s 444714817 
 
 ### Official SDXL Canny feasibility probe (#632)
 
-This CLI-only diagnostic uses the built-in `controlnet_canny_sdxl_v1.0_mid_f16.ckpt` rather than community Union metadata. It sends a Canny input override and a `custom` RGB hint in −1–1 using the existing durable generation path. The upstream Canny branch reads custom RGB when no initial image is present and converts it internally to 0–1; the previous `canny` hint was not consumed by that branch. The provider must advertise the exact control. The production desktop and queue composer do not offer this probe.
+This diagnostic uses the built-in `controlnet_canny_sdxl_v1.0_mid_f16.ckpt` rather than community Union metadata. It sends a Canny input override and a `custom` RGB hint in −1–1 using the existing durable generation path. The upstream Canny branch reads custom RGB when no initial image is present and converts it internally to 0–1; the previous `canny` hint was not consumed by that branch. The provider must advertise the exact control. The desktop and queue composer also offer this control for SDXL.
 
 Use a source photo with `-ph`; OpenCV generates edges locally at the fitted target resolution (thresholds 100/200). OpenCV (`opencv-python-headless`) is a project dependency since #635. Alternatively use `-im` with an already prepared edge map.
 
@@ -352,7 +352,7 @@ The owner observed good control adherence on Realistic Vision but weak faces at 
 
 ### Fast-model Pose defaults (owner comparison)
 
-New CLI Pose requests using SDXL Turbo + Xinsir, or FLUX.1 Schnell / PixelWave Schnell 04 + Union Pro 2.0, default to weight 0.9, Balanced, guidance start 0 and end 0.65. Explicit flags always win; official SD 1.x Pose instead defaults to weight 0.77 and end 1; other combinations retain their explicit-weight requirement and default end 1. Saved requests and Retry retain their recorded values. The desktop is unchanged during this CLI-only feasibility phase.
+New CLI Pose requests using SDXL Turbo + Xinsir, or FLUX.1 Schnell / PixelWave Schnell 04 + Union Pro 2.0, default to weight 0.9, Balanced, guidance start 0 and end 0.65. Explicit flags always win; official SD 1.x Pose instead defaults to weight 0.77 and end 1; other combinations retain their explicit-weight requirement and default end 1. Saved requests and Retry retain their recorded values. The desktop uses its own suggested settings for new selections.
 
 The owner compared eight-step, 640×960, seed 1234455 generations with Turbo (CFG 0.7, Euler A) and official Schnell Q4P (CFG 1, Euler A Trailing). Weight 0.7 / Balanced / end 1 gave poor adherence; weight 1 / Balanced / end 1 and weight 0.9 / Balanced / end 0.65 gave very good adherence; weight 1 / Control / end 1 gave poor adherence. The final Schnell 0.9 result (attempt `6e7818d8886547c590402b126f304b1d`) completed in 30.90 s without warnings. PixelWave shares the proposed Schnell defaults but has not been validated at those weights. No detector or wire changes were needed. Single-seed visual evidence, not a controlled baseline or broad compatibility guarantee.
 
@@ -362,7 +362,7 @@ uv run dtflow pose generate -b cloud -m flux_1_schnell_q4p.ckpt -co controlnet_u
 
 ### FLUX.1 Union spatial control probes
 
-The existing FLUX.1 Union Pro 1.0 and 2.0 controls now accept `-ct canny`, `-ct depth` and `-ct seg` through the CLI. Existing Pose remains the default. Upstream FLUX.1 Union 1.0 maps Canny to mode 0, Depth to 2 and Segmentation to 1 (the shared tile/custom mode, not a dedicated segmentation mode); Union 2.0 is a regular ControlNet without the mode embedding. Segmentation is therefore exploratory, not established checkpoint training compatibility. The existing signed RGB custom hint and signed single-channel depth hint match the upstream FLUX.1 paths, which do not apply SDXL's RGB range conversion. The desktop offers only the owner-observed combinations listed in `resources/catalogue/controlnet_desktop.json` (#635); see the desktop guide.
+The existing FLUX.1 Union Pro 1.0 and 2.0 controls now accept `-ct canny`, `-ct depth` and `-ct seg` through the CLI. Existing Pose remains the default. Upstream FLUX.1 Union 1.0 maps Canny to mode 0, Depth to 2 and Segmentation to 1 (the shared tile/custom mode, not a dedicated segmentation mode); Union 2.0 is a regular ControlNet without the mode embedding. Segmentation is therefore exploratory, not established checkpoint training compatibility. The existing signed RGB custom hint and signed single-channel depth hint match the upstream FLUX.1 paths, which do not apply SDXL's RGB range conversion. The desktop offers all implemented input types for compatible model families, including exploratory Segmentation; see the desktop guide for quality observations.
 
 ```powershell
 $Model = "flux_1_dev_q5p.ckpt"
