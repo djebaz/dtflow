@@ -323,8 +323,9 @@ class GenerationPage:
         self._forms: dict[str, dict] = {}  # provider -> its remembered form fields (prompts are shared, not stored)
         # Controlnet keeps its own checkpoint and LoRAs (#630): the pose selection while another mode is shown, the
         # other modes' selection while Controlnet is shown. Each is a (model, loras, receipts) triple or None.
-        self._pose_slot: tuple[str, tuple, dict] | None = None
-        self._text_slot: tuple[str, tuple, dict] | None = None
+        # (values, receipts, preset name): everything but the prompts, so a preset loaded in one mode stays there.
+        self._pose_slot: tuple[FormValues, dict, str | None] | None = None
+        self._text_slot: tuple[FormValues, dict, str | None] | None = None
         self._provider: str | None = None
         self._previewed_seed: int | None = None
         # Set by the window: queue_behind(request, backend, endpoint, receipts, edit) adds a one-item up-next queue.
@@ -647,9 +648,13 @@ class GenerationPage:
 
     def _draft_values(self) -> FormValues:
         """The form as remembered or saved: advanced choices kept even in a mode that does not send them."""
+        values = self._current_draft()
+        if self._text_slot is not None:  # Controlnet is shown: the remembered form is the other modes' settings
+            values = replace(self._text_slot[0], prompt=values.prompt, negative_prompt=values.negative_prompt)
+        return values
+
+    def _current_draft(self) -> FormValues:
         values = self._values()
-        if self._text_slot is not None:  # Controlnet is shown: the remembered form is the other modes' selection
-            values = replace(values, model=self._text_slot[0], loras=self._text_slot[1])
         advanced = getattr(self, "advanced", None)
         return replace(values, advanced=self._advanced_draft(advanced)) if advanced is not None else values
 
@@ -773,7 +778,7 @@ class GenerationPage:
         """The fields that belong to the provider in use: everything but the prompts, plus bound receipts."""
         document = form_to_document(self._draft_values())
         form = {name: document[name] for name in self.PROVIDER_FIELDS}
-        form["receipts"] = self._text_slot[2] if self._text_slot is not None else self.lora.receipts()
+        form["receipts"] = self._text_slot[1] if self._text_slot is not None else self.lora.receipts()
         video = getattr(self, "video", None)
         if video is not None:
             # Keep the video draft even if the user temporarily browses image checkpoints.
@@ -843,52 +848,50 @@ class GenerationPage:
                 },
             )
 
-    def _selection(self) -> tuple[str, tuple, dict]:
-        return self.page.modelCombo.currentText(), self.lora.loras, self.lora.receipts()
+    def _selection(self) -> tuple[FormValues, dict, str | None]:
+        return self._current_draft(), self.lora.receipts(), self._config_name
 
-    def _apply_selection(self, selection: tuple[str, tuple, dict]) -> None:
-        model, loras, receipts = selection
-        self.page.modelCombo.setCurrentText(model)
-        self.lora.set_loras(loras, receipts=receipts)
+    def _apply_selection(self, selection: tuple[FormValues, dict, str | None]) -> None:
+        values, receipts, config = selection
+        current = self._values()
+        self._apply(replace(values, prompt=current.prompt, negative_prompt=current.negative_prompt))
+        self.lora.set_loras(values.loras, receipts=receipts)
+        self._config_name = config
 
     def _pose_mode_toggled(self, checked: bool) -> None:
-        """Controlnet has its own checkpoint and LoRAs, apart from Text to image and Inpaint (#630). Entering stores
-        the current selection and shows the pose one (the checkpoint stays, LoRAs start empty the first time);
-        leaving stores the pose one and brings the other back."""
+        """Controlnet has its own checkpoint, LoRAs and settings, apart from Text to image and Inpaint (#630), so a
+        preset loaded in one never lands in the other. Entering stores the current settings and shows the pose ones
+        (the first time the same settings without LoRAs); leaving stores the pose ones and brings the others back."""
         if checked and self._text_slot is None:
             self._text_slot = self._selection()
-            model, loras, receipts = self._pose_slot or (self._text_slot[0], (), {})
-            self._apply_selection((model, loras, receipts))
+            values, receipts, _ = self._text_slot
+            self._apply_selection(self._pose_slot or (replace(values, loras=()), {}, None))
         elif not checked and self._text_slot is not None:
             self._pose_slot = self._selection()
             stashed, self._text_slot = self._text_slot, None
             self._apply_selection(stashed)
 
     def pose_selection_document(self) -> dict | None:
-        """The Controlnet checkpoint and LoRAs the next launch restores, whichever mode is shown."""
+        """The Controlnet settings the next launch restores, whichever mode is shown."""
         selection = self._selection() if self._text_slot is not None else self._pose_slot
         if selection is None:
             return None
-        model, loras, receipts = selection
-        document = form_to_document(replace(self._values(), model=model, loras=loras))
-        return {"model": document["model"], "loras": document["loras"], "receipts": dict(receipts)}
+        values, receipts, _ = selection
+        document = form_to_document(values)
+        return {**{name: document[name] for name in self.PROVIDER_FIELDS}, "receipts": dict(receipts)}
 
     def restore_pose_selection(self, document: object) -> None:
-        """Restore the remembered Controlnet selection; anything unusable leaves Controlnet without its own yet."""
+        """Restore the remembered Controlnet settings; anything unusable leaves Controlnet without its own yet."""
         self._pose_slot = None
-        if not isinstance(document, dict) or self._text_slot is not None:
+        if not isinstance(document, dict) or self._text_slot is not None or not isinstance(document.get("model"), str):
             return
-        model = document.get("model")
-        if not isinstance(model, str):
-            return
-        values = form_from_document({"model": model, "loras": document.get("loras", [])})
         receipts = document.get("receipts")
         valid = (
             {k: v for k, v in receipts.items() if type(k) is str and type(v) is str}
             if isinstance(receipts, dict)
             else {}
         )
-        self._pose_slot = (values.model, values.loras, valid)
+        self._pose_slot = (form_from_document(document), valid, None)
 
     def form_document(self) -> dict:
         """The remembered form values (credential-free, unvalidated)."""
