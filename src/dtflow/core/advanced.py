@@ -14,7 +14,7 @@ from typing import Any
 from dtflow.core.models import ValidationError, integer, is_finite_number
 
 HIRES_MIN_FACTOR = 1.0  # a factor of 1 is "no HiRes"
-HIRES_MAX_FACTOR = 4.0
+HIRES_MAX_FACTOR = 10.0
 HIRES_DEFAULT_FACTOR = 2.0  # what switching HiRes on without a choice means
 DIMENSION_STEP = 64  # the provider stores first-pass dimensions in 64-pixel units
 FIRST_PASS_MIN = 128
