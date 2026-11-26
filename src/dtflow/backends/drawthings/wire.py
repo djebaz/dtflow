@@ -29,7 +29,13 @@ from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.image_operations import ImageOperationPermit
 from dtflow.core.model_profiles import exact_model_description_digest, exact_model_spec, profile_for
 from dtflow.core.models import ErrorCategory, Metadata, ResolvedGenerationRequest, ResourceLimits, Sampler
-from dtflow.core.pose import SDXL_CANNY_PROBE_CONTROL, SDXL_POSE_PROBE_CONTROL, SDXL_POSE_PROBE_MODELS
+from dtflow.core.pose import (
+    SD15_POSE_PROBE_CONTROL,
+    SD15_POSE_PROBE_MODEL,
+    SDXL_CANNY_PROBE_CONTROL,
+    SDXL_POSE_PROBE_CONTROL,
+    SDXL_POSE_PROBE_MODELS,
+)
 from dtflow.core.video import video_profile
 
 # Provider sampler names; drawthings-py silently substitutes a default for unknown names, so the result is verified.
@@ -159,6 +165,8 @@ def build_generation_message(
     if request.pose_control is not None:
         if backend_id != "drawthings-cloud" or prepared is None or image_permit is not None:
             raise _reject(request, "pose_not_configured", "Pose requires cloud and retained prepared inputs.")
+        if request.pose_control.checkpoint == SD15_POSE_PROBE_CONTROL and request.model_id != SD15_POSE_PROBE_MODEL:
+            raise _reject(request, "sd15_pose_probe_model", "The SD 1.5 pose probe requires Stable Diffusion v1.5 F16.")
         if (
             request.pose_control.checkpoint in (SDXL_POSE_PROBE_CONTROL, SDXL_CANNY_PROBE_CONTROL)
             and request.model_id not in SDXL_POSE_PROBE_MODELS
@@ -252,7 +260,10 @@ def build_generation_message(
         message.contents = [video_tensor]
     override = custom_lora_override(request)
     control_nets = b""
-    if request.pose_control is not None and request.pose_control.checkpoint != SDXL_CANNY_PROBE_CONTROL:
+    if request.pose_control is not None and request.pose_control.checkpoint not in (
+        SDXL_CANNY_PROBE_CONTROL,
+        SD15_POSE_PROBE_CONTROL,
+    ):
         from dtflow.core.pose import control_spec
 
         control_nets = json.dumps([control_spec(request.pose_control.checkpoint)]).encode()
