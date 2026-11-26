@@ -29,6 +29,7 @@ from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.image_operations import ImageOperationPermit
 from dtflow.core.model_profiles import exact_model_description_digest, exact_model_spec, profile_for
 from dtflow.core.models import ErrorCategory, Metadata, ResolvedGenerationRequest, ResourceLimits, Sampler
+from dtflow.core.pose import SDXL_POSE_PROBE_CONTROL, SDXL_POSE_PROBE_MODELS
 from dtflow.core.video import video_profile
 
 # Provider sampler names; drawthings-py silently substitutes a default for unknown names, so the result is verified.
@@ -158,6 +159,11 @@ def build_generation_message(
     if request.pose_control is not None:
         if backend_id != "drawthings-cloud" or prepared is None or image_permit is not None:
             raise _reject(request, "pose_not_configured", "Pose requires cloud and retained prepared inputs.")
+        if (
+            request.pose_control.checkpoint == SDXL_POSE_PROBE_CONTROL
+            and request.model_id not in SDXL_POSE_PROBE_MODELS
+        ):
+            raise _reject(request, "sdxl_pose_probe_model", "The SDXL pose probe requires SDXL Base 1.0.")
         if (
             ImageInputSnapshot.from_prepared(request.image_inputs.attempt_id, prepared, preserve_outside=False)
             != request.image_inputs
