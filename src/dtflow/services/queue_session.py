@@ -370,12 +370,15 @@ async def create_saved_pose_queue(
     items = expand_items(base, count) if plan is None else expand_plan(base, plan, receipts=receipts)
     await _check_pose_queue(state, selection, items, base.pose_control, saved=saved)
     if prepared is not None:
-        if ImageInputSnapshot.from_prepared(
-            base.image_inputs.attempt_id, prepared, preserve_outside=False
-        ) != base.image_inputs:
+        if (
+            ImageInputSnapshot.from_prepared(base.image_inputs.attempt_id, prepared, preserve_outside=False)
+            != base.image_inputs
+        ):
             raise ValidationError("The prepared pose map differs from the recorded input.")
         staged = await settle(
-            asyncio.to_thread(snapshot_image_inputs, state, base.image_inputs.attempt_id, prepared, preserve_outside=False)
+            asyncio.to_thread(
+                snapshot_image_inputs, state, base.image_inputs.attempt_id, prepared, preserve_outside=False
+            )
         )
         items = [replace(item, schema_version=3, image_inputs=staged) for item in items]
     else:
