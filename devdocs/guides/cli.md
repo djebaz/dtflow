@@ -267,7 +267,9 @@ This sends one real request and may consume credits. Compare the result to the e
 
 ### Official SD 1.5 Pose feasibility probe
 
-The official [Draw Things ControlNetZoo specification](https://github.com/drawthingsai/draw-things-community/blob/cb2d4c61d1b58816ce1843481e74293a240e5bf4/Libraries/ModelZoo/Sources/ControlNetZoo.swift) identifies `controlnet_openpose_1.x_v1.1_f16.ckpt` as Pose (SD v1.x, ControlNet 1.1), modifier Pose, version v1, regular ControlNet. The CLI probe accepts only `sd_v1.5_f16.ckpt`. It uses the existing semantic Pose override and float tensor hint, without community metadata. The owner reported good pose results in the official app; DTFlow adherence remains unverified. Neither the production desktop nor queue composer is extended.
+The official [Draw Things ControlNetZoo specification](https://github.com/drawthingsai/draw-things-community/blob/cb2d4c61d1b58816ce1843481e74293a240e5bf4/Libraries/ModelZoo/Sources/ControlNetZoo.swift) identifies `controlnet_openpose_1.x_v1.1_f16.ckpt` as Pose (SD v1.x, ControlNet 1.1), modifier Pose, version v1, regular ControlNet. The CLI probe accepts only `sd_v1.5_f16.ckpt`. It leaves the input override Unspecified (the app exports an empty string) and sends the existing semantic `pose` float tensor hint, without community metadata. The official control declares its native Pose modifier. The owner reported good pose results in the official app; DTFlow adherence remains unverified. Neither the production desktop nor queue composer is extended.
+
+The owner supplied two equivalent successful app configuration exports: 640 × 1024, 16 steps, guidance 5, sampler 12 (DPM++ 2M AYS), seed 1580038928, Clip Skip 1, seed mode 2, strength 1, control weight 1, Balanced, range 0–1, no LoRAs. The commands match exposed settings; exact equivalence of the app's seed mode, preprocessing and remaining defaults is not established.
 
 From the repository root in PowerShell, check the inventory before submitting:
 
@@ -277,9 +279,9 @@ $Model = "sd_v1.5_f16.ckpt"
 $Control = "controlnet_openpose_1.x_v1.1_f16.ckpt"
 $Prompt = "a person in a red coat in a park, full body shot"
 # Source photo: local ONNX extraction; only the prepared pose map is submitted.
-uv run dtflow pose generate -b cloud -m $Model -co $Control -ph .\tmp\pose.png -p $Prompt -s 12345 -w 512 -y 768 -i 25 -g 5 -a euler_a -cs 1.0 -o .\tmp\sd15-pose
+uv run dtflow pose generate -b cloud -m $Model -co $Control -ph .\tmp\pose.png -p $Prompt -s 1580038928 -w 640 -y 1024 -i 16 -g 5 -a dpmpp_2m_ays -cs 1.0 -cm Balanced -st 0 -en 1 -o .\tmp\sd15-pose
 # Same seed/settings, without control, for visual comparison.
-uv run dtflow generate -b cloud -m $Model -p $Prompt -s 12345 -w 512 -y 768 -i 25 -g 5 -a euler_a -o .\tmp\sd15-baseline
+uv run dtflow generate -b cloud -m $Model -p $Prompt -s 1580038928 -w 640 -y 1024 -i 16 -g 5 -a dpmpp_2m_ays -o .\tmp\sd15-baseline
 ```
 
 Use `-im` instead of `-ph` for an already extracted pose map. Each generation is an explicit cloud submission and may consume credits. Compare the actual pose against the retained map and baseline; a final image alone is not evidence of conditioning. No automatic retry or provider substitution is added. This separate diagnostic does not satisfy the SDXL acceptance criteria of #632.
