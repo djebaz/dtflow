@@ -63,7 +63,7 @@ PR #533 supports five explicit Windows FFmpeg packaging choices: Gyan 8.1.2 Esse
 
 ## Unreleased: Controlnet mode (#503, PR #504)
 
-- Generate Controlnet mode: pose guidance from a photograph (local YOLO26n-pose ONNX) or a body map with Union Pro 1.0 on DT+ Cloud; control force, apply from / to, person pick, Gallery Use settings restore. Verified only for `flux_1_dev_q5p` with Union Pro 1.0 q5p at 0.7; other FLUX.1 checkpoints are "not verified". Queueing a pose is implemented in PR #513 (#505), pending owner smoke and review.
+- Generate Controlnet mode: pose guidance from a photograph (local YOLO26n-pose ONNX) or a body map with Union Pro 2.0 on DT+ Cloud (Union Pro 1.0 is retired from new desktop selections; saved records naming it are reported and need an explicit replacement, #635); control force, apply from / to, person pick, Gallery Use settings restore. Verified for `flux_1_dev_q5p` with Union Pro 2.0 q5p (owner-observed on DT+ in #633: weight 0.9, Balanced, range 0–0.65, also with HiRes); Union Pro 1.0 q5p at 0.7 was the earlier observation (#502); other FLUX.1 checkpoints are "not verified". Queueing a pose is implemented in PR #513 (#505), pending owner smoke and review.
 
 ## Unreleased: Controlnet pose queues (#505, PR #513)
 

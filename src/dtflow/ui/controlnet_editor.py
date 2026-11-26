@@ -35,15 +35,18 @@ DETECTOR_NOTE = "YOLO26n-pose · about 11.6 MiB · AGPL-3.0 · runs on this comp
 NO_BACKEND = "Controlnet needs DT+ Cloud. Choose DT+ Cloud under Provider."
 NO_CHECKPOINT = f"Controlnet needs a {POSE_FAMILY_LABEL} checkpoint; the selected one is not."
 UNVERIFIED_CHECKPOINT = "Not verified with this checkpoint: only FLUX.1 Dev q5p has been confirmed."
-VERIFIED_CONTROL = "controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt"
+VERIFIED_CONTROL = "controlnet_union_pro_flux_1_dev_2.0_q5p.ckpt"
 IMAGE_FILTER = "Images (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.bmp)"
 
 
-DESKTOP_CONTROLS = frozenset(name for name in CONTROLS if "_1.0_" in name)
+DESKTOP_CONTROLS = frozenset(name for name in CONTROLS if "_2.0_" in name)
+# Union Pro 1.0 is retired from new desktop selections (#635); saved records that name it are reported, never replaced.
+RETIRED_CONTROLS = frozenset(name for name in CONTROLS if "_1.0_" in name)
+RETIRED_CONTROL_NOTE = "The saved control, Union Pro 1.0, is retired. Choose Union Pro 2.0 to continue."
 
 
 def control_choices(snapshot) -> tuple["PoseControlChoice", ...]:
-    """Union Pro 1.0 controls the DT+ inventory lists, q5p first; Union Pro 2 stays hidden (unverified in #502)."""
+    """Union Pro 2.0 controls the DT+ inventory lists, q5p first; Union Pro 1.0 is retired from new selections."""
     if snapshot is None:
         return ()
     listed = {entry.identifier for entry in snapshot.entries}
@@ -53,7 +56,7 @@ def control_choices(snapshot) -> tuple["PoseControlChoice", ...]:
 
 def _control_label(checkpoint: str) -> str:
     quant = checkpoint.rsplit("_", 1)[-1].removesuffix(".ckpt")
-    return f"Union Pro 1.0 {quant}"
+    return f"Union Pro 2.0 {quant}"
 
 
 @dataclass(frozen=True, slots=True)
@@ -96,8 +99,8 @@ class PoseView:
     map_note: str = ""
     extraction_error: str = ""
     controls: tuple[PoseControlChoice, ...] = (
-        PoseControlChoice("Union Pro 1.0 q5p", True),
-        PoseControlChoice("Union Pro 1.0 q8p", False),
+        PoseControlChoice("Union Pro 2.0 q5p", True),
+        PoseControlChoice("Union Pro 2.0 q8p", False),
     )
     control_index: int = 0
     strength: float = 0.7
@@ -363,12 +366,12 @@ class ControlnetEditor(QObject):
             note = (
                 "Choose an available control, or refresh the inventory to restore the saved control."
                 if view.controls
-                else "No Union Pro 1.0 control is in your DT+ inventory. Generate cannot start without one."
+                else "No Union Pro 2.0 control is in your DT+ inventory. Generate cannot start without one."
             )
         elif chosen.verified:
             note = "Verified together with FLUX.1 Dev q5p on DT+ Cloud."
         else:
-            note = "Not verified: only Union Pro 1.0 q5p with FLUX.1 Dev q5p has been confirmed."
+            note = "Not verified: only Union Pro 2.0 q5p with FLUX.1 Dev q5p and Schnell q4p has been confirmed."
         form.poseControlCombo.setToolTip(note)
         form.poseStrengthSpin.blockSignals(True)
         form.poseStrengthSpin.setValue(view.strength)
@@ -447,7 +450,9 @@ class ControlnetEditor(QObject):
         if self._pose_pixmap is None:
             return "Preparing the map for this size…"
         if not self._controls:
-            return "No Union Pro 1.0 control is in your DT+ inventory. Refresh the models."
+            return "No Union Pro 2.0 control is in your DT+ inventory. Refresh the models."
+        if self._wanted_control in RETIRED_CONTROLS:
+            return RETIRED_CONTROL_NOTE
         if self._wanted_control and self._controls[self._control_index].checkpoint != self._wanted_control:
             return "The saved control is not in your DT+ inventory. Refresh models or choose another control."
         return ""
@@ -499,7 +504,7 @@ class ControlnetEditor(QObject):
         self.present(view)
 
     def refresh_controls(self, *_):
-        """The Union Pro 1.0 controls the active DT+ inventory lists."""
+        """The Union Pro 2.0 controls the active DT+ inventory lists."""
         if self.controller is None:
             return
         chosen = self._wanted_control or (self._controls[self._control_index].checkpoint if self._controls else None)
@@ -877,6 +882,8 @@ class ControlnetEditor(QObject):
         pose = document.get("pose_control")
         if not isinstance(pose, dict) or pose.get("input_type", "pose") != "pose":
             return "This saved control type is not supported in desktop Controlnet."
+        if pose.get("checkpoint") in RETIRED_CONTROLS:
+            return RETIRED_CONTROL_NOTE
         if pose.get("checkpoint") not in DESKTOP_CONTROLS:
             return "The saved control checkpoint is not supported in desktop Controlnet."
         if not document.get("image_inputs"):

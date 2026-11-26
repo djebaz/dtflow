@@ -77,7 +77,7 @@
     <property name="state" stdset="0"><string>error</string></property>
    </widget></item>
    <item><widget class="QLabel" name="queuePoseNote">
-    <property name="text"><string>Queue draft only. Save/Update explicitly to change a template. Start sends the map to DT+ and may consume credits. Only Union Pro 1.0 q5p with FLUX.1 Dev q5p has been confirmed; other combinations are not verified. Photographs require extraction in Generate.</string></property>
+    <property name="text"><string>Queue draft only. Save/Update explicitly to change a template. Start sends the map to DT+ and may consume credits. Only Union Pro 2.0 q5p with FLUX.1 Dev q5p has been confirmed; other combinations are not verified. Photographs require extraction in Generate.</string></property>
     <property name="wordWrap"><bool>true</bool></property>
     <property name="textRole" stdset="0"><string>secondary</string></property>
    </widget></item>
