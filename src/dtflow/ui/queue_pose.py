@@ -9,19 +9,22 @@ from PySide6.QtGui import QImage, QPixmap
 from PySide6.QtUiTools import QUiLoader
 
 from dtflow.core.models import ValidationError
-from dtflow.core.pose import CONTROL_MODES
+from dtflow.core.pose import CONTROL_MODES, INPUT_LABELS, retired_controls
 from dtflow.core.tasks import settle
+from dtflow.services.randomness import RandomSpec
 from dtflow.ui.controlnet_editor import IMAGE_FILTER, PoseJob
 from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.ui.generation_presenter import FormError
+from dtflow.ui.planning_presenter import build_plan
 from dtflow.ui.inline_feedback import feedback
 
 
 class QueuePoseEditor(QObject):
-    def __init__(self, queue, controls_source):
+    def __init__(self, queue, controls_source, control_problem=lambda _model, _checkpoint, _kind: ""):
         super().__init__(queue.page)
         self.queue = queue
         self._controls_source = controls_source
+        self._control_problem = control_problem
         self._epoch = 0
         self._busy = False
         self._shown_control = None
@@ -91,7 +94,11 @@ class QueuePoseEditor(QObject):
             form.queuePoseModeCombo.setCurrentText(control.control_mode)
             del blocker
         # Already cached data only; another connection's inventory never replaces this draft's choices.
-        choices = tuple(self._controls_source()) if q._draft[1:3] == q._backend() else ()
+        choices = (
+            tuple(self._controls_source(q._draft[0].model_id, control.input_type))
+            if q._draft[1:3] == q._backend()
+            else ()
+        )
         choices_key = (choices, control.checkpoint)
         if choices_key != self._choices_key:
             self._choices_key = choices_key
@@ -101,24 +108,35 @@ class QueuePoseEditor(QObject):
             for choice in choices:
                 combo.addItem(choice.label, choice.checkpoint)
             if combo.findData(control.checkpoint) < 0:
-                combo.addItem(f"Saved, not in current inventory: {control.checkpoint}", control.checkpoint)
+                saved = (
+                    "Retired, choose a replacement"
+                    if control.checkpoint in retired_controls()
+                    else ("Saved, not in current inventory or not offered for this checkpoint")
+                )
+                combo.addItem(f"{saved}: {control.checkpoint}", control.checkpoint)
             combo.setCurrentIndex(combo.findData(control.checkpoint))
             del blocker
         form.setEnabled(not self._busy and not q._runner.closed)
-        form.replaceQueuePoseButton.setText("Preparing map…" if self._busy else "Replace pose map…")
+        form.queuePoseTitle.setText(f"Controlnet · {INPUT_LABELS.get(control.input_type, control.input_type)}")
+        form.replaceQueuePoseButton.setText("Preparing map…" if self._busy else "Replace map…")
         form.queuePoseError.setText(self._error)
         form.queuePoseError.setVisible(bool(self._error))
         if not form.isVisible() or q._runner.closed:
             return
         request = q._draft[0]
-        key = (content.sha256 if content is not None else None, request.width_px, request.height_px)
+        key = (
+            content.sha256 if content is not None else None,
+            request.width_px,
+            request.height_px,
+            control.input_type,
+        )
         if key != self._preview_key:
             self._preview_key = key
             form.queuePosePreview.clear()
             if content is None:
                 form.queuePosePreview.setText("Retained map unavailable; choose a replacement.")
             else:
-                self._preview(content, request.width_px, request.height_px)
+                self._preview(content, request.width_px, request.height_px, control.input_type)
 
     def _read_control(self):
         _, control = self._pose()
@@ -145,7 +163,23 @@ class QueuePoseEditor(QObject):
             return
         if self._busy:
             raise FormError("Wait for the replacement pose map to finish preparing.", None)
-        self._read_control()  # Invalid in-progress text must never queue/save the previous valid settings.
+        control = self._read_control()  # Invalid in-progress text must never queue/save the previous valid settings.
+        if control is None:
+            return
+        # A new queue or template uses what desktop Controlnet offers for every model it would run: the draft's and
+        # each one listed in the plan (S2, S3). A retired control needs an explicit replacement (#635). Existing
+        # queues and Retry keep their exact request.
+        models = [self.queue._draft[0].model_id]
+        try:  # the planner's own model dimension (lines, ";" and random draws); Repeat runs the draft's model only
+            plan = build_plan(self.queue._plan_form()) if self.queue._planned() else None
+        except ValidationError:
+            plan = None  # the plan area reports its own error
+        for name, values in plan.dimensions if plan is not None else ():
+            if name == "model":
+                models += (values.candidates or ()) if isinstance(values, RandomSpec) else values
+        for model in dict.fromkeys(models):
+            if problem := self._control_problem(model, control.checkpoint, control.input_type):
+                raise FormError(problem, None)
 
     def _changed(self, *_):
         q = self.queue
@@ -168,13 +202,13 @@ class QueuePoseEditor(QObject):
         self.sync()
         q._plan_changed()
 
-    def _preview(self, content, width, height):
+    def _preview(self, content, width, height, input_type="pose"):
         epoch = self._epoch
 
         def worker():
-            from dtflow.services.body_pose import fit_pose_map
+            from dtflow.services.body_pose import fit_control_map
 
-            prepared, _ = fit_pose_map(content, {}, width, height)
+            prepared, _ = fit_control_map(content, {}, input_type, width, height)
             image = QImage.fromData(prepared.image.encoded)
             if image.isNull():
                 raise ValidationError("Map preview unavailable.")
@@ -210,7 +244,8 @@ class QueuePoseEditor(QObject):
         backend = q._backend()
         previous_epoch = self._epoch
         control = self._read_control()
-        path = QFileDialog.getOpenFileName(q.page, "Replace Queue pose map (prepared body map only)", "", IMAGE_FILTER)[
+        label = "body" if control.input_type == "pose" else INPUT_LABELS[control.input_type].lower()
+        path = QFileDialog.getOpenFileName(q.page, f"Replace Queue map (prepared {label} map only)", "", IMAGE_FILTER)[
             0
         ]
         if not path or q._runner.closed:
@@ -237,14 +272,16 @@ class QueuePoseEditor(QObject):
         self.sync()
 
         def worker():
-            from dtflow.services.body_pose import fit_pose_map, load_prepared_map
+            from dtflow.services.body_pose import fit_control_map, load_control_map, load_prepared_map
 
-            content, _ = load_prepared_map(Path(path))
-            prepared, evidence = fit_pose_map(
-                content,
-                {"origin": "queue_replacement", "topology": "owner_supplied_openpose_body"},
-                request.width_px,
-                request.height_px,
+            if control.input_type == "pose":
+                content, _ = load_prepared_map(Path(path))
+                origin = {"origin": "queue_replacement", "topology": "owner_supplied_openpose_body"}
+            else:
+                content, origin = load_control_map(Path(path), control.input_type)
+                origin["origin"] = "queue_replacement"
+            prepared, evidence = fit_control_map(
+                content, origin, control.input_type, request.width_px, request.height_px
             )
             return PoseJob(prepared.image, evidence, replace(control, evidence=()))
 

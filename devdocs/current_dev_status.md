@@ -63,7 +63,7 @@ PR #533 supports five explicit Windows FFmpeg packaging choices: Gyan 8.1.2 Esse
 
 ## Unreleased: Controlnet mode (#503, PR #504)
 
-- Generate Controlnet mode: pose guidance from a photograph (local YOLO26n-pose ONNX) or a body map with Union Pro 1.0 on DT+ Cloud; control force, apply from / to, person pick, Gallery Use settings restore. Verified only for `flux_1_dev_q5p` with Union Pro 1.0 q5p at 0.7; other FLUX.1 checkpoints are "not verified". Queueing a pose is implemented in PR #513 (#505), pending owner smoke and review.
+- Generate Controlnet mode: Pose, Canny, Depth and Segmentation guidance on DT+ Cloud from a photograph (local YOLO26n-pose, OpenCV Canny, Depth Anything V2 Small or Inpaint YOLO segmentation) or a prepared map, for compatible text-to-image checkpoints by model family and implemented input type (FLUX.1 Union Pro 2.0 including Segmentation, SD 1.x official controls, SDXL Xinsir and official Canny/Depth); prior quality observations from #633 are documented, not admission gates; control force, apply from / to, person pick, Gallery Use settings restore. Union Pro 1.0 is retired from new desktop selections; saved records naming it are reported and need an explicit replacement (#635, PR #636; owner reports acceptance of AC-1–5 and AC-7, 2026-11-26; CI and representative Preview passed at code head `cd5db92`). Depth + HiRes failures remain under investigation in #637; provider quality is not an admission gate. Queueing a pose is implemented in PR #513 (#505), pending owner smoke and review.
 
 ## Unreleased: Controlnet pose queues (#505, PR #513)
 

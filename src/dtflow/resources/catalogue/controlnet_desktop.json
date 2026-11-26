@@ -1,0 +1,91 @@
+{
+  "version": 2,
+  "about": "Desktop controls (#635): compatible model family, implemented input types and suggested settings [strength, start, end, force] for explicit new picks. Saved values are retained. Quality observations are documented in the desktop guide, not used for admission.",
+  "retired": [
+    "controlnet_union_pro_flux_1_dev_1.0_q5p.ckpt",
+    "controlnet_union_pro_flux_1_dev_1.0_q8p.ckpt"
+  ],
+  "controls": [
+    {
+      "checkpoint": "controlnet_union_pro_flux_1_dev_2.0_q5p.ckpt",
+      "label": "Union Pro 2.0 q5p",
+      "family": "flux_1",
+      "types": {
+        "pose": [0.9, 0, 0.65, "Balanced"],
+        "canny": [0.7, 0, 1, "Balanced"],
+        "depth": [0.7, 0, 1, "Balanced"],
+        "seg": [0.7, 0, 1, "Balanced"]
+      }
+    },
+    {
+      "checkpoint": "controlnet_union_pro_flux_1_dev_2.0_q8p.ckpt",
+      "label": "Union Pro 2.0 q8p",
+      "family": "flux_1",
+      "types": {
+        "pose": [0.9, 0, 0.65, "Balanced"],
+        "canny": [0.7, 0, 1, "Balanced"],
+        "depth": [0.7, 0, 1, "Balanced"],
+        "seg": [0.7, 0, 1, "Balanced"]
+      }
+    },
+    {
+      "checkpoint": "controlnet_openpose_1.x_v1.1_f16.ckpt",
+      "label": "Pose (SD 1.x, ControlNet 1.1)",
+      "family": "sd_1",
+      "types": {
+        "pose": [0.77, 0, 1, "Balanced"]
+      }
+    },
+    {
+      "checkpoint": "controlnet_canny_1.x_v1.1_f16.ckpt",
+      "label": "Canny (SD 1.x, ControlNet 1.1)",
+      "family": "sd_1",
+      "types": {
+        "canny": [0.7, 0, 1, "Balanced"]
+      }
+    },
+    {
+      "checkpoint": "controlnet_depth_1.x_v1.1_f16.ckpt",
+      "label": "Depth (SD 1.x, ControlNet 1.1)",
+      "family": "sd_1",
+      "types": {
+        "depth": [0.7, 0, 1, "Balanced"]
+      }
+    },
+    {
+      "checkpoint": "controlnet_seg_1.x_v1.1_f16.ckpt",
+      "label": "Segmentation (SD 1.x, ControlNet 1.1)",
+      "family": "sd_1",
+      "types": {
+        "seg": [0.7, 0, 1, "Balanced"]
+      }
+    },
+    {
+      "checkpoint": "controlnet_xinsir_union_promax_sdxl_1.0_f16.ckpt",
+      "label": "Xinsir Union ProMax (SDXL)",
+      "family": "sdxl",
+      "types": {
+        "pose": [0.9, 0, 0.65, "Balanced"],
+        "canny": [0.7, 0, 1, "Balanced"],
+        "depth": [0.7, 0, 1, "Balanced"],
+        "seg": [0.7, 0, 1, "Balanced"]
+      }
+    },
+    {
+      "checkpoint": "controlnet_canny_sdxl_v1.0_mid_f16.ckpt",
+      "label": "Canny (SDXL)",
+      "family": "sdxl",
+      "types": {
+        "canny": [0.7, 0, 1, "Balanced"]
+      }
+    },
+    {
+      "checkpoint": "controlnet_depth_sdxl_v1.0_mid_f16.ckpt",
+      "label": "Depth (SDXL)",
+      "family": "sdxl",
+      "types": {
+        "depth": [0.7, 0, 1, "Balanced"]
+      }
+    }
+  ]
+}

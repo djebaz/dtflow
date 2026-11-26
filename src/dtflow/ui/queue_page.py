@@ -26,6 +26,7 @@ from PySide6.QtGui import QDesktopServices, QIcon, QStandardItem, QStandardItemM
 from PySide6.QtWidgets import QApplication, QFormLayout, QListWidgetItem, QMenu, QPlainTextEdit, QWidget
 
 from dtflow.core.models import BackendEvent, Designation, LoRASelection, ValidationError
+from dtflow.core.pose import INPUT_LABELS
 from dtflow.core.advanced import scope_for, summary as advanced_summary
 from dtflow.core.request_records import request_from_record
 from dtflow.diagnostics import event as diagnostic_event
@@ -312,7 +313,8 @@ class QueuePage:
         models_source: Callable[[], dict] = dict,
         generate_hook: Callable[[], None] = lambda: None,
         reuse_hook: Callable[[dict], None] = lambda request: None,
-        pose_controls_source: Callable = tuple,
+        pose_controls_source: Callable = lambda _model, _kind: (),
+        pose_control_problem: Callable = lambda _model, _checkpoint, _kind: "",
     ):
         self.page = page
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
@@ -534,7 +536,7 @@ class QueuePage:
             else:
                 widget.currentTextChanged.connect(self._plan_changed)
         self.templates = QueueTemplates(self)
-        self.pose_editor = QueuePoseEditor(self, pose_controls_source)
+        self.pose_editor = QueuePoseEditor(self, pose_controls_source, pose_control_problem)
         self._mode_changed()
         activity.listen(self._sync)
         activity.listen(self._after_generation_ended)
@@ -2283,7 +2285,7 @@ class QueuePage:
         pose = self._draft_job.control if isinstance(self._draft_job, PoseJob) else request.pose_control
         if pose is not None:
             parts.append(
-                f"Pose · {pose.checkpoint} · strength {pose.strength:g} · {pose.control_mode} "
+                f"{INPUT_LABELS.get(pose.input_type, pose.input_type)} · {pose.checkpoint} · strength {pose.strength:g} · {pose.control_mode} "
                 f"· {pose.guidance_start:g}–{pose.guidance_end:g}"
             )
         elif self._draft_job is not None:

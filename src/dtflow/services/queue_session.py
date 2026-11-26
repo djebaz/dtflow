@@ -306,7 +306,8 @@ async def create_pose_queue(
 ) -> str:
     """Stage one verified pose map for a cloud queue; creation never uploads or generates.
 
-    Check the exact backend, pose model family and Union control inventory before writing staged inputs.
+    Check the exact backend, checkpoint family and control inventory before writing staged inputs; the map is fitted
+    by its control type (pose, Canny, depth or segmentation).
     Each item retains the same immutable map and control; Start is the generation/upload consent.
     """
     if selection.name != "cloud" or backend.get("name") != "cloud":
@@ -322,10 +323,10 @@ async def create_pose_queue(
     await _check_pose_queue(state, selection, items, control, saved=saved)
 
     # Only pose queue creation needs the image stack; ordinary queue imports remain light.
-    from dtflow.services.body_pose import fit_pose_map
+    from dtflow.services.body_pose import fit_control_map
 
     prepared, map_evidence = await settle(
-        asyncio.to_thread(fit_pose_map, content, dict(evidence), base.width_px, base.height_px)
+        asyncio.to_thread(fit_control_map, content, dict(evidence), control.input_type, base.width_px, base.height_px)
     )
     pose = session.pose_request(base, control, prepared, map_evidence)
     staged = await settle(

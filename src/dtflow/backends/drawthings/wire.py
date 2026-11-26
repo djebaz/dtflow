@@ -32,10 +32,10 @@ from dtflow.core.models import ErrorCategory, Metadata, ResolvedGenerationReques
 from dtflow.core.pose import (
     OFFICIAL_PROBE_CONTROLS,
     SD15_POSE_PROBE_CONTROL,
-    SD1_PROBE_CONTROLS,
     SDXL_CANNY_PROBE_CONTROL,
     SDXL_POSE_PROBE_CONTROL,
-    probe_models,
+    control_family,
+    supports_pose,
 )
 from dtflow.core.video import video_profile
 
@@ -166,13 +166,10 @@ def build_generation_message(
     if request.pose_control is not None:
         if backend_id != "drawthings-cloud" or prepared is None or image_permit is not None:
             raise _reject(request, "pose_not_configured", "Pose requires cloud and retained prepared inputs.")
-        models = probe_models(request.pose_control.checkpoint)
-        if request.pose_control.checkpoint in SD1_PROBE_CONTROLS:
-            version = (model_spec or {}).get("version")
-            if version not in (None, "v1") or (base_version not in ("sd_1", "v1") and version != "v1"):
-                raise _reject(request, "control_probe_model", "Official SD 1.x controls require an SD 1.x checkpoint.")
-        if models is not None and request.model_id not in models:
-            raise _reject(request, "control_probe_model", "The control probe requires an admitted checkpoint.")
+        family = control_family(request.pose_control.checkpoint)
+        version = (model_spec or {}).get("version") or base_version
+        if not supports_pose(request.model_id, version, families=(family,)):
+            raise _reject(request, "control_probe_model", "The control requires a compatible model family.")
         if (
             ImageInputSnapshot.from_prepared(request.image_inputs.attempt_id, prepared, preserve_outside=False)
             != request.image_inputs

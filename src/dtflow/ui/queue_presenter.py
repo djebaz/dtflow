@@ -13,6 +13,7 @@ from pathlib import Path
 from dtflow.core.advanced import AdvancedSettings, summary as advanced_summary
 from dtflow.core.models import ValidationError
 from dtflow.core.output_layout import identity_from_path, is_metadata_name
+from dtflow.core.pose import INPUT_LABELS
 from dtflow.core.queue_eta import estimate_queue_seconds
 from dtflow.services.connection import failure_reason, local_time
 from dtflow.services.dynamic_prompts import decode_runs
@@ -284,7 +285,8 @@ class ItemRow:
             strength = pose.get("strength")
             mode = pose.get("control_mode", "Balanced")
             start, end = pose.get("guidance_start", 0.0), pose.get("guidance_end", 1.0)
-            return f"Pose · {label} · strength {strength:g} · {mode} · {start:g}–{end:g}"
+            kind = INPUT_LABELS.get(pose.get("input_type", "pose"), "Controlnet")
+            return f"{kind} · {label} · strength {strength:g} · {mode} · {start:g}–{end:g}"
         return {
             "txt2img": "Text to image",
             "img2img": "Image to image",
@@ -331,7 +333,8 @@ class ItemRow:
 
             return f"Video · {duration_seconds(self.model, self.num_frames):.2f} s · {self.num_frames} frames"
         if self.pose_control is not None:
-            return f"Pose · {self.pose_control['strength']:g}"
+            kind = INPUT_LABELS.get(self.pose_control.get("input_type", "pose"), "Controlnet")
+            return f"{kind} · {self.pose_control['strength']:g}"
         if self.operation == "txt2img":
             return "—"
         name = "Inpaint" if self.operation == "inpaint" else "Image to image"

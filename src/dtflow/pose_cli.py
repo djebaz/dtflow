@@ -12,18 +12,16 @@ from dtflow.core.pose import (
     CONTROL_MODES,
     CONTROLS,
     OFFICIAL_PROBE_CONTROLS,
-    XINSIR_PROBE_INPUTS,
     SD15_POSE_PROBE_CONTROL,
-    SD1_PROBE_CONTROLS,
     SDXL_CANNY_PROBE_CONTROL,
     SDXL_POSE_PROBE_CONTROL,
-    SDXL_POSE_PROBE_MODELS,
+    XINSIR_PROBE_INPUTS,
     PoseControl,
 )
 
 
 def add_commands(commands, add_request_options):
-    pose = commands.add_parser("pose", help="Body pose on DT+ Cloud, including unverified SDXL and SD 1.5 probes.")
+    pose = commands.add_parser("pose", help="ControlNet on DT+ Cloud for FLUX.1, SDXL and SD 1.x.")
     actions = pose.add_subparsers(dest="pose_action", required=True)
     catalogue = actions.add_parser("catalogue", help="Show pinned detector/licence and control identifiers offline.")
     catalogue.set_defaults(state=Path(".dtflow"))
@@ -94,7 +92,7 @@ def add_commands(commands, add_request_options):
                 "--control",
                 choices=(*CONTROLS, SDXL_POSE_PROBE_CONTROL, *OFFICIAL_PROBE_CONTROLS),
                 required=True,
-                help="Exact control checkpoint; non-FLUX controls are CLI-only probes.",
+                help="Exact control checkpoint for the selected model family.",
             )
             child.add_argument(
                 "-ct",
@@ -166,24 +164,22 @@ async def run(args):
                     "controls": CONTROLS,
                     "sdxl_probe": {
                         "control": SDXL_POSE_PROBE_CONTROL,
-                        "models": SDXL_POSE_PROBE_MODELS,
-                        "cloud_application": "unverified; CLI-only feasibility probe",
+                        "family": "sdxl",
                     },
                     "sdxl_canny_probe": {
                         "control": SDXL_CANNY_PROBE_CONTROL,
-                        "models": OFFICIAL_PROBE_CONTROLS[SDXL_CANNY_PROBE_CONTROL][1],
+                        "family": "sdxl",
                     },
                     "sd15_pose_probe": {
                         "control": SD15_POSE_PROBE_CONTROL,
                         "family": "sd_1",
                         "models": "catalogue text-to-image checkpoints",
-                        "cloud_application": "unverified in DTFlow; CLI-only feasibility probe",
+                        "cloud_application": "Quality varies by checkpoint and input.",
                     },
                     "official_probes": OFFICIAL_PROBE_CONTROLS,
-                    "sd1_family_controls": SD1_PROBE_CONTROLS,
                     "xinsir_inputs": XINSIR_PROBE_INPUTS,
                     "detector": asdict(DETECTOR),
-                    "cloud_application": "unverified; requires Echo-listed control and owner smoke",
+                    "cloud_application": "Requires Echo-listed control; quality is not guaranteed.",
                     "selection": "one body (exactly one found, or --person); incomplete torso refused; missing joints omitted",
                     "fit": "aspect preserving, centered black padding; no crop",
                 },
@@ -332,8 +328,6 @@ async def compare_models(args, request, prepared, policy):
     from dtflow.services.body_pose import write_comparison_collage
     from dtflow.services.planning import Plan
 
-    if request.pose_control.checkpoint not in SD1_PROBE_CONTROLS:
-        raise ValidationError("Model comparison currently requires one official SD 1.x control.")
     if getattr(args, "asset", None):
         raise ValidationError("Model comparison does not yet accept explicit asset receipts.")
     plan = Plan("cross", dimensions=(("model", tuple(args.models)),), seed_policy="fixed")

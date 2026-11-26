@@ -57,7 +57,7 @@ from dtflow.services.image_quality import assess_file
 from dtflow.services.lora_naming import relabel_text
 from dtflow.services.preflight import checkpoint_exact_version, checkpoint_picker_versions
 from dtflow.services import lora_relink
-from dtflow.services.body_pose import fit_pose_map
+from dtflow.services.body_pose import fit_control_map
 from dtflow.services.presets import apply_preset, builtin_presets, load_presets, save_preset, update_preset_lora_names
 from dtflow.services.session import (
     InventoryDisplayMemory,
@@ -1717,7 +1717,12 @@ class GenerationPage:
         is the one the Pose view showed for it."""
         selection = await asyncio.to_thread(selection_for, name, endpoint, self._state, **simulation)
         prepared, evidence = await asyncio.to_thread(
-            fit_pose_map, job.content, dict(job.evidence), request.width_px, request.height_px
+            fit_control_map,
+            job.content,
+            dict(job.evidence),
+            job.control.input_type,
+            request.width_px,
+            request.height_px,
         )
         request = pose_request(request, job.control, prepared, evidence)
         return await generate_pose_once(
@@ -2293,6 +2298,8 @@ class GenerationPage:
         self._sync_checkpoint_steppers()
         self._sync_generate()
         self._show_catalogue_counts()
+        if hasattr(self, "controlnet"):
+            self.controlnet.refresh_controls()  # families are known now; a no-op outside Controlnet
 
     def _show_catalogue_counts(self) -> None:
         page = self.page
