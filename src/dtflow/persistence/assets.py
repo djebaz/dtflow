@@ -658,15 +658,11 @@ class AssetRegistry:
             return ()
         return await self._run(self._scoped_many, assets, credential_id)
 
-    def _scoped_many(
-        self, assets: tuple[PreparedAsset, ...], credential_id: str
-    ) -> tuple[PreparedAsset | None, ...]:
+    def _scoped_many(self, assets: tuple[PreparedAsset, ...], credential_id: str) -> tuple[PreparedAsset | None, ...]:
         if not self.path.exists():
             return (None,) * len(assets)
         with closing(self._connect()) as db:
-            return tuple(
-                self._scoped_read(db, item.receipt_id, credential_id, item.identifier) for item in assets
-            )
+            return tuple(self._scoped_read(db, item.receipt_id, credential_id, item.identifier) for item in assets)
 
     def _scoped_read(self, db, asset_id: str, credential_id: str, identifier: str) -> PreparedAsset | None:
         row = db.execute(
