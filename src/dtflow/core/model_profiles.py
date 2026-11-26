@@ -61,7 +61,11 @@ def _load() -> tuple[dict[str, ModelProfile], dict[str, ModelProfile]]:
 def profile_for(model_id: str, family: str | None = None) -> ModelProfile | None:
     """The checkpoint's own profile, else its family's default, else ``None``."""
     models, families = _load()
-    return models.get(model_key(model_id)) or (families.get(family) if family else None)
+    key = model_key(model_id)
+    # PixelWave Schnell 04 shares the Schnell architecture, not Dev's schedule.
+    if key == "pixelwave_flux_1_schnell_04":
+        return models.get(key) or models.get("flux_1_schnell") or (families.get(family) if family else None)
+    return models.get(key) or (families.get(family) if family else None)
 
 
 _SPECS = Path(__file__).parents[1] / "resources" / "catalogue" / "community_model_specs.json"
