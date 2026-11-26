@@ -66,6 +66,11 @@ def profile(preset: dict) -> dict:
     }
 
 
+# PixelWave Schnell 04 has no upstream preset; use the matching Schnell schedule,
+# not the generic FLUX Dev family default. An exact upstream preset wins.
+PROFILE_ALIASES = {"pixelwave_flux_1_schnell_04": "flux_1_schnell"}
+
+
 def build(source: Path) -> dict:
     catalogue = catalogue_families()
     models: dict[str, dict] = {}
@@ -84,6 +89,9 @@ def build(source: Path) -> dict:
                     # The family default is its fullest (most-steps) preset: Flux 1 dev, not the 4-step schnell.
                     if key not in families or entry["steps"] > families[key]["steps"]:
                         families[key] = entry
+    for alias, original in PROFILE_ALIASES.items():
+        if original in models:
+            models.setdefault(alias, models[original])
     return {
         "schema": "dtflow.model-profiles",
         "version": 1,
