@@ -388,10 +388,15 @@ class GenerationService:
                 )
             )
         if isinstance(self.assets, AssetService) and request.loras:
-            request = await self.assets.resolve_selected(request)
+            # Bound selections are resolved to current, key-scoped receipts below.
+            # Only unbound names need a full catalogue scan to discover local candidates.
+            bound = {item.identifier for item in request.prepared_assets}
+            if any(selection.identifier not in bound for selection in request.loras):
+                preparation("resolving_selected_assets")
+                request = await self.assets.resolve_selected(request)
         if request.prepared_assets:
             preparation("validating_assets")
-            # A fresh DT+ metadata check validates each bound LoRA before the attempt exists.
+            # Resolve each bound LoRA against current local receipts before the attempt exists.
             # Only a positive missing-file result may restore verified retained bytes; identical content may rebind
             # to a newer server reference. Unknown/authentication failures cannot authorize an upload.
             if self.assets is None or any(item.backend_id != caps.backend_id for item in request.prepared_assets):
