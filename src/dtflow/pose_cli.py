@@ -7,11 +7,11 @@ from dataclasses import asdict
 from pathlib import Path
 
 from dtflow.core.models import TimeoutPolicy, ValidationError
-from dtflow.core.pose import CONTROL_MODES, CONTROLS, PoseControl
+from dtflow.core.pose import CONTROL_MODES, CONTROLS, SDXL_POSE_PROBE_CONTROL, SDXL_POSE_PROBE_MODELS, PoseControl
 
 
 def add_commands(commands, add_request_options):
-    pose = commands.add_parser("pose", help="Experimental FLUX.1 Dev body pose; cloud application is unverified.")
+    pose = commands.add_parser("pose", help="Body pose on DT+ Cloud, including an unverified SDXL Base 1.0 probe.")
     actions = pose.add_subparsers(dest="pose_action", required=True)
     catalogue = actions.add_parser("catalogue", help="Show pinned detector/licence and control identifiers offline.")
     catalogue.set_defaults(state=Path(".dtflow"))
@@ -54,7 +54,13 @@ def add_commands(commands, add_request_options):
             source.add_argument("-im", "--image", type=Path, help="Prepared OpenPose RGB body map, black background.")
             source.add_argument("-ph", "--photo", type=Path, help="Explicit local ONNX extraction before submission.")
             child.add_argument("-pn", "--person", type=int, help="Person number when the photo shows several people.")
-            child.add_argument("-co", "--control", choices=CONTROLS, required=True)
+            child.add_argument(
+                "-co",
+                "--control",
+                choices=(*CONTROLS, SDXL_POSE_PROBE_CONTROL),
+                required=True,
+                help="Exact control checkpoint; Xinsir SDXL is an unverified CLI-only probe.",
+            )
             child.add_argument(
                 "-cm",
                 "--control-mode",
@@ -78,7 +84,7 @@ async def run(args):
     from dtflow.core.request_records import request_from_record
     from dtflow.services.body_pose import DETECTOR, extract_body, install_detector, prepare_pose, save_extraction
     from dtflow.services.config import read_json_file
-    from dtflow.services.session import generate_pose_once, pose_request, retry_pose_once, selection_for
+    from dtflow.services.session import _require_pose_family, generate_pose_once, pose_request, retry_pose_once, selection_for
 
     def progress(event):
         if event.kind in ("preparing", "progress", "terminal"):
@@ -89,6 +95,11 @@ async def run(args):
             json.dumps(
                 {
                     "controls": CONTROLS,
+                    "sdxl_probe": {
+                        "control": SDXL_POSE_PROBE_CONTROL,
+                        "models": SDXL_POSE_PROBE_MODELS,
+                        "cloud_application": "unverified; CLI-only feasibility probe",
+                    },
                     "detector": asdict(DETECTOR),
                     "cloud_application": "unverified; requires Echo-listed control and owner smoke",
                     "selection": "one body (exactly one found, or --person); incomplete torso refused; missing joints omitted",
@@ -126,13 +137,7 @@ async def run(args):
         )
         request = resolve_generation(args)
         # Validate the checkpoint family before reading a photograph or running ONNX.
-        from dtflow.core.pose import POSE_FAMILY_LABEL, supports_pose
-
-        from dtflow.services.catalogue import Catalogue
-
-        entry = Catalogue(args.state).checkpoint(request.model_id, include_unavailable=True)
-        if not supports_pose(request.model_id, entry.base_model if entry else None):
-            raise ValidationError(f"Pose is restricted to {POSE_FAMILY_LABEL} checkpoints.")
+        _require_pose_family(args.state, request.model_id, control_checkpoint=control.checkpoint)
         prepared, evidence = await asyncio.to_thread(
             prepare_pose,
             args.photo or args.image,
