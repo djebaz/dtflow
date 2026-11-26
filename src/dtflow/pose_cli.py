@@ -62,6 +62,8 @@ def add_commands(commands, add_request_options):
             child.add_argument("-c", "--config", type=Path, help="Ordinary txt2img configuration (not pose metadata).")
             add_request_options(child)
             child.set_defaults(endpoint=None, prefix=False)
+            child.add_argument("-hf", "--hires-factor", type=float, help="Experimental official SD 1.x Pose HiRes factor.")
+            child.add_argument("-hs", "--hires-strength", type=float, help="HiRes second-pass strength, 0..1.")
             source = child.add_mutually_exclusive_group(required=True)
             source.add_argument(
                 "-im", "--image", type=Path, help="Prepared pose, Canny, grayscale depth or palette-coloured semantic segmentation map."
@@ -128,15 +130,12 @@ def prepare_canny_probe(path: Path, width: int, height: int, *, photo: bool):
             ) from exc
         import numpy as np
 
-        # Replicate the source boundary before extracting edges; black photo padding
-        # would introduce a synthetic rectangular contour.
+        # Extract only within the fitted photograph. Replicating pixels before
+        # Canny extends boundary features into artificial horizontal/vertical lines.
         gray = cv2.cvtColor(np.asarray(fitted.convert("RGB")), cv2.COLOR_RGB2GRAY)
-        gray = cv2.copyMakeBorder(
-            gray, fit.top, height - fit.top - fit.fitted_height,
-            fit.left, width - fit.left - fit.fitted_width, cv2.BORDER_REPLICATE,
-        )
         edges = cv2.Canny(gray, 100, 200)
-        canvas = Image.fromarray(edges).convert("RGB")
+        canvas = Image.new("RGB", (width, height), "black")
+        canvas.paste(Image.fromarray(edges).convert("RGB"), (fit.left, fit.top))
         evidence.update({"canny_low": "100", "canny_high": "200", "opencv_version": cv2.__version__})
     else:
         canvas = Image.new("RGB", (width, height), "black")
@@ -146,7 +145,7 @@ def prepare_canny_probe(path: Path, width: int, height: int, *, photo: bool):
     map_content = pixels._content(canvas)
     evidence["map_sha256"] = map_content.sha256
     evidence["preparation"] = (
-        "aspect_fit_edge_replicated_photo_before_canny" if photo else "aspect_fit_black_padding_no_crop"
+        "aspect_fit_canny_before_black_padding" if photo else "aspect_fit_black_padding_no_crop"
     )
     return pixels.prepare_image_bytes(map_content.encoded, width, height), tuple(sorted(evidence.items()))
 
@@ -300,6 +299,18 @@ async def run(args):
         native = OFFICIAL_PROBE_CONTROLS.get(args.control)
         input_type = args.control_type or (native[0] if native else "pose")
         request = resolve_generation(args)
+        if args.hires_factor is not None or args.hires_strength is not None:
+            from dataclasses import replace
+            from dtflow.core.advanced import AdvancedSettings
+
+            if args.control != SD15_POSE_PROBE_CONTROL or input_type != "pose":
+                raise ValidationError("HiRes is experimental and only offered for official SD 1.x Pose.")
+            advanced = request.advanced or AdvancedSettings()
+            request = replace(request, advanced=replace(
+                advanced,
+                hires_fix_factor=args.hires_factor if args.hires_factor is not None else (advanced.hires_fix_factor or 2.0),
+                hires_fix_strength=args.hires_strength if args.hires_strength is not None else advanced.hires_fix_strength,
+            ))
         key = model_key(request.model_id)
         fast_pose = input_type == "pose" and (
             (key == "sd_xl_turbo" and args.control == SDXL_POSE_PROBE_CONTROL)
