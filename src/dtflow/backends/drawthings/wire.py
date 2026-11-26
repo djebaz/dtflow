@@ -279,7 +279,7 @@ def build_generation_message(
         if request.pose_control is not None:
             message.hints = [
                 image_service.HintProto(
-                    hint_type="custom" if request.pose_control.checkpoint == SDXL_CANNY_PROBE_CONTROL else request.pose_control.input_type,
+                    hint_type=_control_hint_type(request),
                     tensors=[image_service.TensorAndWeight(tensor=transport.image, weight=1.0)],
                 )
             ]
@@ -299,6 +299,7 @@ def build_generation_message(
                 *effective,
                 (f"{request.pose_control.input_type}_tensor_sha256", transport.image.hex()),
                 (f"{request.pose_control.input_type}_cloud_acceptance", "unverified_owner_experiment"),
+                ("control_hint_type", _control_hint_type(request)),
                 (
                     "control_tensor_rgb_range",
                     "0..1" if _unit_control_rgb(request) else "-1..1",
@@ -317,11 +318,17 @@ def build_generation_message(
 
 
 def _unit_control_rgb(request: ResolvedGenerationRequest) -> bool:
-    """Direct SD 1.5 and SDXL pose hints bypass the upstream RGB range conversion."""
-    return request.pose_control is not None and request.pose_control.checkpoint in (
-        SD15_POSE_PROBE_CONTROL,
-        SDXL_POSE_PROBE_CONTROL,
-    )
+    """Direct SD 1.5 pose hints bypass the upstream RGB range conversion."""
+    return request.pose_control is not None and request.pose_control.checkpoint == SD15_POSE_PROBE_CONTROL
+
+
+def _control_hint_type(request: ResolvedGenerationRequest) -> str:
+    """For SDXL probes use the upstream custom RGB conversion and fitting path."""
+    control = request.pose_control
+    assert control is not None
+    if control.checkpoint in (SDXL_CANNY_PROBE_CONTROL, SDXL_POSE_PROBE_CONTROL):
+        return "custom"
+    return control.input_type
 
 
 def _control_input_override(request: ResolvedGenerationRequest) -> str:
