@@ -177,7 +177,9 @@ def build_generation_message(
             != request.image_inputs
         ):
             raise _reject(request, "pose_input_mismatch", "Pose input differs from the recorded snapshot.")
-        transport = encode_image_inputs(prepared, limits)
+        transport = encode_image_inputs(
+            prepared, limits, unit_rgb=request.pose_control.checkpoint == SD15_POSE_PROBE_CONTROL
+        )
     elif image_operation:
         if not isinstance(image_permit, ImageOperationPermit) or prepared is None or request.image_inputs is None:
             raise _reject(request, "image_inputs_missing", "Image operations require owned inputs and an owner permit.")
@@ -297,6 +299,10 @@ def build_generation_message(
                 *effective,
                 (f"{request.pose_control.input_type}_tensor_sha256", transport.image.hex()),
                 (f"{request.pose_control.input_type}_cloud_acceptance", "unverified_owner_experiment"),
+                (
+                    "control_tensor_rgb_range",
+                    "0..1" if request.pose_control.checkpoint == SD15_POSE_PROBE_CONTROL else "-1..1",
+                ),
             )
         else:
             effective = (
