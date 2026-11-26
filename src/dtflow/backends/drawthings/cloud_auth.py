@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import copy
 import json
 import logging
 import math
 import time
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import httpx
 
@@ -223,8 +222,8 @@ class CloudAuth:
 
     async def authorize(self, message) -> str:
         token = await self.token()
-        auth_message = copy.deepcopy(message)
-        auth_message.contents = []
+        # Construct a contents-free message without copying the retained tensor payload.
+        auth_message = replace(message, contents=[])
         reply = await self._post(
             "/authenticate",
             {

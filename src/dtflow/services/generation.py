@@ -132,6 +132,7 @@ class GenerationService:
             raise ValidationError("Preview image policy must be a boolean or a preview gate.")
         self.preview_images = preview_images
         # With provider admission, calls past their sampling phase overlap the active ones; each holds its reservation.
+        self._explicit_budget = budget is not None
         self.budget = budget or BufferBudget(
             backend.capabilities.limits.buffer_budget * (OVERLAP if admission is not None else 1)
         )
@@ -460,6 +461,17 @@ class GenerationService:
             raise_if_blocked(request, await self.preflight(request))
         raw_bytes = request.height_px * (1 + request.width_px * 4)
         reservation = _buffer_reservation(request, caps, prepared_inputs)
+        if (
+            not self._explicit_budget
+            and caps.backend_id == "drawthings-cloud"
+            and request.operation == "txt2img"
+            and prepared_inputs is None
+            and request.num_frames is None
+            and raw_bytes <= caps.limits.artifact_bytes
+        ):
+            # Ordinary remote images are bounded by selected concurrency and per-output limits.
+            # Keep aggregate admission for large images, controls, edits and video.
+            reservation = 0
         if raw_bytes > caps.limits.tensor_bytes or reservation > self.budget.limit:
             raise BackendError(
                 BackendFailure(
@@ -580,8 +592,9 @@ class GenerationService:
         try:
             preparation("waiting_buffer_budget")
             buffer_wait_started = monotonic()
-            await self.budget.acquire(reservation)
-            reserved = True
+            if reservation:
+                await self.budget.acquire(reservation)
+                reserved = True
             diagnostic_event(
                 log,
                 "generation.buffer_acquired",

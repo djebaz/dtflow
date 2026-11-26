@@ -392,12 +392,12 @@ class _Execution:
         # Each planned submission may get the shared automatic retry (#241): at most planned x 2 before any Retry.
         self.allowance = request.planned * (1 + AUTO_RETRIES + LORA_EXTRA_RETRIES)
         limit = runner.service.backend.capabilities.max_concurrency
-        self.lanes = max(1, min(limit, 10))
+        self.lanes = max(1, limit)
         self.graph = None
         self.plan = None
         self.prompt_counts: dict[int, int] = {}
         self.slots: dict[int, asyncio.Semaphore] = {}  # per node: steps of that node running together
-        self.total = asyncio.Semaphore(10)  # all steps together (the global limit); set from the workflow at run start
+        self.total = asyncio.Semaphore(limit)  # all steps together (the global limit); set from the workflow at run start
         self.in_flight: dict[str, list[Key]] = {}  # attempt id -> steps whose generation may have been sent
         self.closed = False  # the run settled; a step abandoned at Stop may not write over it
 
@@ -455,12 +455,21 @@ class _Execution:
             defaults = None  # an unreadable settings file never blocks a run: the built-in defaults apply
         backend = self.runner.service.backend
         limit = workflow_limit(self.graph, self.request.backend, defaults)
-        widen = getattr(backend, "set_concurrency", None)
-        if widen is not None:
-            widen(limit)  # a Draw Things session runs as many generations together as this run asks for
-            if self.runner.service.admission is not None:
-                self.runner.service.admission.pool.widen(limit)  # the shared pool never narrows under a live run
-        self.lanes = max(1, min(limit, backend.capabilities.max_concurrency, 10))
+        if self.request.backend == "cloud":
+            # The existing owner pool is authoritative if Connection changed during this dispatch.
+            provider_limit = (
+                self.runner.service.admission.pool.limit
+                if self.runner.service.admission is not None
+                else backend.capabilities.max_concurrency
+            )
+            limit = min(limit, provider_limit, backend.capabilities.max_concurrency)
+        else:
+            widen = getattr(backend, "set_concurrency", None)
+            if widen is not None:
+                widen(limit)
+                if self.runner.service.admission is not None:
+                    self.runner.service.admission.pool.widen(limit)
+        self.lanes = max(1, min(limit, backend.capabilities.max_concurrency))
         self.total = asyncio.Semaphore(limit)  # every running step, local or generative, takes one
         self.slots = {
             node.id: asyncio.Semaphore(node_limit(self.graph, node, self.request.backend, defaults))

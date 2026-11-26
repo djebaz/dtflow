@@ -23,9 +23,9 @@ class SettingsError(ValidationError):
     pass
 
 
-def validate_concurrency(value: object) -> int:
-    if type(value) is not int or not 1 <= value <= MAX_CLOUD_CONCURRENCY:
-        raise SettingsError(f"Concurrency must be an integer in 1..{MAX_CLOUD_CONCURRENCY}.")
+def validate_concurrency(value: object, maximum: int = MAX_CLOUD_CONCURRENCY) -> int:
+    if type(value) is not int or not 1 <= value <= maximum:
+        raise SettingsError(f"Concurrency must be an integer in 1..{maximum}.")
     return value
 
 
@@ -163,7 +163,7 @@ def load_workflow_defaults(state: Path) -> dict[str, int]:
     """The workflow concurrency defaults (DT+, local, local segmentation nodes); a missing value is the built-in one."""
     document = _read(state)
     return {
-        name: validate_concurrency(document.get(key, WORKFLOW_DEFAULTS[name]))
+        name: validate_concurrency(document.get(key, WORKFLOW_DEFAULTS[name]), MAX_CLOUD_CONCURRENCY if name == "cloud" else 10)
         for name, key in WORKFLOW_DEFAULT_KEYS.items()
     }
 
@@ -181,13 +181,13 @@ def save_workflow_defaults(state: Path, values: dict[str, int]) -> Path:
         document = _read(state)
         for name, key in WORKFLOW_DEFAULT_KEYS.items():
             if name in values:
-                document[key] = validate_concurrency(values[name])
+                document[key] = validate_concurrency(values[name], MAX_CLOUD_CONCURRENCY if name == "cloud" else 10)
         return _write(state, document)
 
 
 # Local video encoding (#550): how many FFmpeg encoders may run at once and how many codec threads each one uses.
 # 0 means Unlimited encoders (no cap beyond the video admission limit) and Auto threads (chosen from the CPU count).
-MAX_VIDEO_ENCODERS = MAX_QUEUE_CONCURRENCY
+MAX_VIDEO_ENCODERS = 10  # independent local codec resource policy
 MAX_VIDEO_THREADS = 16
 VIDEO_ENCODING_KEYS = ("video_max_encoders", "video_encoder_threads")
 

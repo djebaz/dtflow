@@ -1209,7 +1209,7 @@ class WorkflowsPage(QObject):
         except SettingsError:
             defaults = dict(WORKFLOW_DEFAULTS)
         spin = QSpinBox(host)
-        spin.setRange(0, wf.MAX_CONCURRENCY)
+        spin.setRange(0, wf.MAX_CONCURRENCY if backend == "cloud" else 10)
         if node is None:
             label = _label("Global concurrency", "workflowParamLabel")
             spin.setSpecialValueText(
@@ -1217,7 +1217,7 @@ class WorkflowsPage(QObject):
             )
             tip = (
                 "The most steps of this workflow that run at the same time, all nodes together. "
-                "Default: set in the Connection tab. Saved in the workflow file."
+                "Default: set in the Connection tab. DT+ workflows can only narrow that limit. Saved in the workflow file."
             )
             spin.setAccessibleName("Global concurrency")
         else:

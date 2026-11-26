@@ -7,7 +7,7 @@ import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from dtflow.core.models import MAX_QUEUE_CONCURRENCY, BackendError, BackendFailure, ErrorCategory, ValidationError
+from dtflow.core.models import BackendError, BackendFailure, ErrorCategory, ValidationError
 from dtflow.core.tasks import settle
 
 MIB = 1024 * 1024
@@ -52,7 +52,7 @@ class VideoLease:
         # Conservative admission accounting for frame conversion, bounded payload queues, audio and poster.
         # External SDK/FFmpeg allocations and whole-process RSS are not certified by this estimate.
         self.spool, self.scratch, self.output_reserve = clip_reservations(request)
-        self.wait_reason: str | None = None  # why acquire() last returned False: "clip_limit", "memory" or "disk"
+        self.wait_reason: str | None = None  # why acquire() last returned False: "memory" or "disk"
         self.memory = 192 * MIB + request.width_px * request.height_px * 3 * 16
 
     def _disks(self):
@@ -85,9 +85,6 @@ class VideoLease:
 
     def acquire(self) -> bool:
         with _lock:
-            if len(_active) >= MAX_QUEUE_CONCURRENCY:
-                self.wait_reason = "clip_limit"
-                return False
             if sum(value[0] for value in _active.values()) + self.memory > MEMORY_BUDGET:
                 self.wait_reason = "memory"
                 return False

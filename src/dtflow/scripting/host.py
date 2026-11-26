@@ -40,6 +40,7 @@ from pathlib import Path
 from typing import Any
 
 from dtflow.core.models import (
+    MAX_QUEUE_CONCURRENCY,
     SEED_LIMIT,
     BackendError,
     LoRASelection,
@@ -115,7 +116,7 @@ MAX_SANDBOX_FILE_BYTES = 64 * 1024 * 1024
 MAX_SANDBOX_FILES = 200
 PIPELINE_RUN_KEYS = frozenset({"configuration", "prompt", "negativePrompt", "mask"})
 BATCH_JOB_KEYS = PIPELINE_RUN_KEYS | {"outputFile", "planId", "jobIndex"}
-MAX_BATCH_CONCURRENT = 10
+MAX_BATCH_CONCURRENT = MAX_QUEUE_CONCURRENCY
 SAFE_FAILURES = (RemoteOutcome.NOT_STARTED, RemoteOutcome.FAILED, RemoteOutcome.CANCELLED_CONFIRMED)
 POLL_SECONDS = 0.1
 PNG_PREFIX = "data:image/png;base64,"

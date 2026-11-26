@@ -28,12 +28,12 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
-from dtflow.core.models import MAX_QUEUE_CONCURRENCY
+from dtflow.persistence.settings import MAX_VIDEO_ENCODERS
 from dtflow.services.video_resources import MP4_LIMIT
 
 log = logging.getLogger(__name__)
 
-_VIDEO_WORKERS = ThreadPoolExecutor(max_workers=MAX_QUEUE_CONCURRENCY, thread_name_prefix="dtflow-video")
+_VIDEO_WORKERS = ThreadPoolExecutor(max_workers=MAX_VIDEO_ENCODERS, thread_name_prefix="dtflow-video")
 
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
 STALL_SECONDS = 90  # a frame writer that makes no progress for this long fails the run

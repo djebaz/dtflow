@@ -856,7 +856,7 @@ class QueueMixin:
     def _reserve_script_child(
         self, queue_id: str, attempt_id: str, max_concurrent: int, backend_limit: int, shared: bool = False
     ) -> bool:
-        if not 1 <= max_concurrent <= 10 or not 1 <= backend_limit <= MAX_QUEUE_CONCURRENCY:
+        if not 1 <= max_concurrent <= MAX_QUEUE_CONCURRENCY or not 1 <= backend_limit <= MAX_QUEUE_CONCURRENCY:
             raise QueueError("Invalid script concurrency bound.")
         with self._txn() as db:
             queue = db.execute(

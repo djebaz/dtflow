@@ -92,7 +92,7 @@ def accepted_name_changes(accepted: str | None, identifier: str | None) -> bool:
 
 Metadata = tuple[tuple[str, str], ...]
 MAX_QUEUE_ITEMS = 1000  # one queue's item ceiling; the planner checks it before enumerating
-MAX_QUEUE_CONCURRENCY = 10  # configurable client policy; provider limits still apply
+MAX_QUEUE_CONCURRENCY = 100  # configurable client policy; provider limits still apply
 SEED_LIMIT = 4294967295
 
 
