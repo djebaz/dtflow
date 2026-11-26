@@ -237,7 +237,7 @@ uv run dtflow pose retry -b cloud -c <metadata.json of a pose run> -o .\tmp\retr
 
 This is an unverified CLI-only experiment, not SDXL support in the desktop or queue composer. The exact [pinned Xinsir Union ProMax metadata](https://github.com/drawthingsai/community-models/blob/ce4b2ae34a2ef7899fa014f019d04f2632dabe6f/controlnets/xinsir-union-promax-sdxl-1.0/metadata.json) is sent through the existing control override and semantic Pose hint path. The provider must advertise the control. The probe accepts only `sd_xl_base_1.0_f16.ckpt` or `sd_xl_base_1.0_q6p_q8p.ckpt`; neither is claimed to be available until checked.
 
-Use an existing body-map PNG and the normal CLI environment credential (`DRAWTHINGS_API_KEY`). From the repository root in PowerShell:
+After the owner confirmed SD 1.5 pose adherence with unit-range RGB, the same direct-pose normalization is applied to SDXL. The upstream generator converts custom RGB to 0–1 for SDXL but passes direct pose hints unchanged. This is an isolated, unverified SDXL correction. Use a source photograph with `-ph` (or an extracted pose map with `-im`) and the normal CLI environment credential (`DRAWTHINGS_API_KEY`). From the repository root in PowerShell:
 
 ```powershell
 uv run dtflow models -b cloud -r
@@ -245,7 +245,7 @@ $Model = "sd_xl_base_1.0_f16.ckpt" # use the quantized Base 1.0 variant instead 
 $Control = "controlnet_xinsir_union_promax_sdxl_1.0_f16.ckpt"
 $Prompt = "a person in a red coat in a park, full body shot, natural light"
 # Owner-approved submission: sends the map to DT+ Cloud and may consume credits.
-uv run dtflow pose generate -b cloud -m $Model -p $Prompt -s 12345 -w 1024 -y 1024 -i 25 -g 6 -a euler_a -im .\tmp\pose.png -co $Control -cs 0.7 -o .\tmp\sdxl-pose
+uv run dtflow pose generate -b cloud -m $Model -p $Prompt -s 12345 -w 1024 -y 1024 -i 25 -g 6 -a euler_a -ph .\tmp\pose.png -co $Control -cs 0.7 -o .\tmp\sdxl-pose
 # Only if the controlled request works: optional second paid generation for same-seed comparison.
 uv run dtflow generate -b cloud -m $Model -p $Prompt -s 12345 -w 1024 -y 1024 -i 25 -g 6 -a euler_a -o .\tmp\sdxl-baseline
 ```
@@ -254,7 +254,7 @@ Inspect the generated image, output metadata and the provider error if the reque
 
 ### Official SDXL Canny feasibility probe (#632)
 
-This CLI-only diagnostic uses the built-in `controlnet_canny_sdxl_v1.0_mid_f16.ckpt` rather than community Union metadata. It sends a Canny input override and Canny hint using the existing durable generation path. The provider must advertise the exact control. The production desktop and queue composer do not offer this probe.
+This CLI-only diagnostic uses the built-in `controlnet_canny_sdxl_v1.0_mid_f16.ckpt` rather than community Union metadata. It sends a Canny input override and a `custom` RGB hint in −1–1 using the existing durable generation path. The upstream Canny branch reads custom RGB when no initial image is present and converts it internally to 0–1; the previous `canny` hint was not consumed by that branch. The provider must advertise the exact control. The production desktop and queue composer do not offer this probe.
 
 Use a source photo with `-ph`; OpenCV generates edges locally at the fitted target resolution (thresholds 100/200). OpenCV is an optional, invocation-scoped dependency, not an addition to the project lockfile. Alternatively use `-im` with an already prepared edge map, without OpenCV.
 
@@ -267,11 +267,11 @@ This sends one real request and may consume credits. Compare the result to the e
 
 ### Official SD 1.5 Pose feasibility probe
 
-The official [Draw Things ControlNetZoo specification](https://github.com/drawthingsai/draw-things-community/blob/cb2d4c61d1b58816ce1843481e74293a240e5bf4/Libraries/ModelZoo/Sources/ControlNetZoo.swift) identifies `controlnet_openpose_1.x_v1.1_f16.ckpt` as Pose (SD v1.x, ControlNet 1.1), modifier Pose, version v1, regular ControlNet. The CLI probe accepts only `sd_v1.5_f16.ckpt`. It leaves the input override Unspecified (the app exports an empty string) and sends the existing semantic `pose` float tensor hint, without community metadata. The official control declares its native Pose modifier. The owner reported good pose results in the official app; DTFlow adherence remains unverified. Neither the production desktop nor queue composer is extended.
+The official [Draw Things ControlNetZoo specification](https://github.com/drawthingsai/draw-things-community/blob/cb2d4c61d1b58816ce1843481e74293a240e5bf4/Libraries/ModelZoo/Sources/ControlNetZoo.swift) identifies `controlnet_openpose_1.x_v1.1_f16.ckpt` as Pose (SD v1.x, ControlNet 1.1), modifier Pose, version v1, regular ControlNet. The CLI probe accepts only `sd_v1.5_f16.ckpt`. It leaves the input override Unspecified (the app exports an empty string) and sends the existing semantic `pose` float tensor hint, without community metadata. The official control declares its native Pose modifier. The owner reported good pose results in the official app and subsequently confirmed a normal image with visible pose adherence in DTFlow after the unit-range normalization change. Neither the production desktop nor queue composer is extended.
 
 The owner supplied two equivalent successful app configuration exports: 640 × 1024, 16 steps, guidance 5, sampler 12 (DPM++ 2M AYS), seed 1580038928, Clip Skip 1, seed mode 2, strength 1, control weight 1, Balanced, range 0–1, no LoRAs. The commands match exposed settings; exact equivalence of the app's seed mode, preprocessing and remaining defaults is not established.
 
-The owner reported noise from the initial DTFlow SD 1.5 probe. This revision changes only the SD 1.5 pose hint RGB normalization to 0–1, preserving float16 NHWC and the tensor reference. The [upstream generator](https://github.com/drawthingsai/draw-things-community/blob/cb2d4c61d1b58816ce1843481e74293a240e5bf4/Libraries/LocalImageGenerator/Sources/LocalImageGenerator.swift#L2720-L2985) converts custom RGB to 0–1 for SD 1.5 but passes a direct pose hint through unchanged. This is a source-supported diagnostic, not a confirmed fix. FLUX.1, SDXL and ordinary image operations keep their existing encoding.
+The owner reported noise from the initial DTFlow SD 1.5 probe. This revision changes only the SD 1.5 pose hint RGB normalization to 0–1, preserving float16 NHWC and the tensor reference. The [upstream generator](https://github.com/drawthingsai/draw-things-community/blob/cb2d4c61d1b58816ce1843481e74293a240e5bf4/Libraries/LocalImageGenerator/Sources/LocalImageGenerator.swift#L2720-L2985) converts custom RGB to 0–1 for SD 1.5 but passes a direct pose hint through unchanged. The owner confirmed that the normalization change removed the noise and followed the pose. FLUX.1 and ordinary image operations retain their existing encoding; SDXL direct pose now uses the same unit-range encoding as SD 1.5.
 
 From the repository root in PowerShell, check the inventory before submitting:
 
