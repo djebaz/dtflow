@@ -50,6 +50,7 @@ class DirectCloudBackend(DrawThingsBackend):
         *,
         endpoint: DrawThingsEndpoint | None = None,
         max_concurrency: int = 4,
+        owns_auth: bool = True,
         upload_transport: httpx.AsyncBaseTransport | None = None,
         upload_policy: AssetUploadPolicy | None = None,
         **kwargs,
@@ -61,6 +62,7 @@ class DirectCloudBackend(DrawThingsBackend):
         self.max_concurrency = max_concurrency
         super().__init__(endpoint or self.default_endpoint(), **kwargs)
         self._auth = auth
+        self._owns_auth = owns_auth
         self._upload_transport, self._upload_policy = upload_transport, upload_policy
 
     async def lookup_lora_assets(self, identities: tuple[FileIdentity, ...]) -> dict[str, LoRABackendAvailability]:
@@ -163,5 +165,8 @@ class DirectCloudBackend(DrawThingsBackend):
         return replace(status, authentication="ok" if status.authentication != "failed" else "failed")
 
     async def aclose(self) -> None:
-        await super().aclose()
-        await self._auth.aclose()
+        try:
+            await super().aclose()
+        finally:
+            if self._owns_auth:
+                await self._auth.aclose()

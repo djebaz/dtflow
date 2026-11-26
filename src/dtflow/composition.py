@@ -5,6 +5,7 @@ backend to another, and credentials are read from the environment by providers, 
 """
 
 import os
+import hashlib
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -26,6 +27,7 @@ from dtflow.services.credentials import KEY, EnvironmentCredentials, resolve_cre
 if TYPE_CHECKING:  # the Draw Things provider library is slow to import, so it loads only when a backend needs it
     from dtflow.backends.drawthings.backend import DrawThingsEndpoint
     from dtflow.backends.drawthings.tls import TlsPolicy
+    from dtflow.backends.drawthings.cloud_auth import CloudAuth
 
 BACKENDS = ("fake", "local", "cloud")
 SHARED_SECRET = "DRAWTHINGS_SHARED_SECRET"
@@ -47,6 +49,37 @@ class _CloudCredentials:
 
     async def get(self) -> Credential:
         return await resolve_credentials(self._environment, self._saved)
+
+
+class OwnerCloudAuth:
+    """Reuse short tokens and HTTP connections only within one dispatch owner and selected credential."""
+
+    def __init__(self):
+        self._clients: dict[tuple[str, bytes, str | None], CloudAuth] = {}
+
+    async def get(self, saved: CredentialProvider | None) -> "CloudAuth":
+        from dtflow.backends.drawthings.cloud_auth import CloudAuth
+
+        credential = await _CloudCredentials(os.environ, saved or _NoSavedCredentials()).get()
+        key = (credential.source, hashlib.sha256(credential.secret.encode()).digest(), credential.alias)
+        client = self._clients.get(key)
+        if client is None:
+            class PinnedCredential:
+                async def get(self) -> Credential:
+                    return credential
+
+            client = CloudAuth(PinnedCredential())
+            self._clients[key] = client
+        return client
+
+    async def aclose(self) -> None:
+        import asyncio
+
+        clients, self._clients = tuple(self._clients.values()), {}
+        results = await asyncio.gather(*(client.aclose() for client in clients), return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
 
 
 class _SharedSecret:
@@ -106,6 +139,7 @@ def create_backend(
     image_inputs_loader: Callable[[ImageInputSnapshot], PreparedImageInputs] | None = None,
     allow_image_probe: bool = False,
     preview_images: bool | PreviewGate = True,
+    owner_auth: "CloudAuth | None" = None,
 ) -> Backend:
     """Build the explicitly selected backend; ``tls`` is the injection point for fixture trust only.
 
@@ -158,7 +192,8 @@ def create_backend(
         if KEY not in environ and isinstance(saved, _NoSavedCredentials):
             raise ValidationError(f"The cloud backend requires {KEY} in the environment.")
         return DirectCloudBackend(
-            CloudAuth(_CloudCredentials(environ, saved)),
+            owner_auth if owner_auth is not None else CloudAuth(_CloudCredentials(environ, saved)),
+            owns_auth=owner_auth is None,
             max_concurrency=selection.cloud_concurrency,
             timeouts=timeouts,
             image_permits=image_permits,

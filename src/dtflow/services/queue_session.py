@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from dtflow.composition import BackendSelection
+from dtflow.composition import BackendSelection, OwnerCloudAuth
 from dtflow.core.image_inputs import ImageContent, ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.models import (
     MAX_QUEUE_CONCURRENCY,
@@ -563,6 +563,7 @@ async def dispatch_queue(
     backends: dict[str, str] = {}  # each open queue's provider pool key, known once its backend is open
     admission = ProviderAdmission()  # one pool per backend, shared by every queue this owner dispatches
     overlap_open = True
+    owner_auth = OwnerCloudAuth()
 
     def start(next_id: str) -> None:
         task = asyncio.create_task(
@@ -579,6 +580,7 @@ async def dispatch_queue(
                 admission,
                 manual_sink=manual,
                 preview_gate=preview_gate,
+                owner_auth=owner_auth,
             )
         )
         if manual is not None:
@@ -714,8 +716,11 @@ async def dispatch_queue(
                         data={"reason": type(exc).__name__},
                     )
         finally:
-            await store.aclose()
-            schedule_publish(state, reason="queue_session_end")
+            try:
+                await owner_auth.aclose()
+            finally:
+                await store.aclose()
+                schedule_publish(state, reason="queue_session_end")
 
 
 async def _dispatch_one(
@@ -731,6 +736,7 @@ async def _dispatch_one(
     admission=None,
     manual_sink=None,
     preview_gate=None,
+    owner_auth=None,
 ) -> dict[str, Any]:
     """One queue on the open owner: its own recorded backend session, closed before the next queue starts."""
     backend = None
@@ -798,6 +804,8 @@ async def _dispatch_one(
         # A Generate click shows live preview images, and a Generate batch (#560) the ones its visible grid tiles ask
         # for; ordinary queues, workflows and scripts consume none.
         previews = manual or (preview_gate if preview_gate is not None and is_generate_batch(queue) else False)
+        if selection.name == "cloud" and owner_auth is not None:
+            image_options["owner_auth"] = await owner_auth.get(saved)
         backend = session.create_backend(
             selection, timeouts=policy, saved=saved, preview_images=previews, **image_options
         )
