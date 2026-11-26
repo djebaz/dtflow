@@ -1,4 +1,4 @@
-"""Advanced section of the Generate page: optional Draw Things values, collapsed by default (#539).
+"""Advanced section of the Generate page and the Queues composer: optional Draw Things values, collapsed by default (#539).
 
 The panel owns only the controls and the first-pass preview. Validation, HiRes sizing and the provider mapping stay
 in ``dtflow.core.advanced`` and the Draw Things backend, so every mode that later offers these values shares one rule.
@@ -6,6 +6,7 @@ in ``dtflow.core.advanced`` and the Draw Things backend, so every mode that late
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 from PySide6.QtCore import QFile, QIODevice, QObject, Qt, Signal
@@ -30,11 +31,30 @@ FIELD_WIDGETS = (
 
 
 class AdvancedPanel(QObject):
+    """The controls and their first-pass preview.
+
+    By default the panel sits under Generate's parameters and reads the final Size from Generate's spin boxes. A host
+    such as the Queues composer passes its own ``layout`` and ``index`` (where the frame goes), ``size`` (the final size
+    the preview uses, or ``None`` when there is none) and ``size_note`` (what to add when other sizes are derived the
+    same way).
+    """
+
     changed = Signal()
 
-    def __init__(self, page: QWidget):
+    def __init__(
+        self,
+        page: QWidget,
+        *,
+        layout=None,
+        index: int | None = None,
+        size: Callable[[], tuple[int, int] | None] | None = None,
+        size_note: str = "",
+    ):
         super().__init__(page)
         self.page = page
+        generate = layout is None
+        self._size = size or (lambda: (page.widthSpinBox.value(), page.heightSpinBox.value()))
+        self._size_note = size_note
         file = QFile(str(FORM))
         if not file.open(QIODevice.OpenModeFlag.ReadOnly):
             raise OSError("Advanced settings form could not be opened.")
@@ -75,13 +95,19 @@ class AdvancedPanel(QObject):
             self.first_height.valueChanged,
             self.seed_mode.currentIndexChanged,
             self.tiled.stateChanged,
-            page.widthSpinBox.valueChanged,
-            page.heightSpinBox.valueChanged,
         ):
             signal.connect(self._edited)
-        index = page.generationContextLayout.indexOf(page.parametersBox)
-        page.generationContextLayout.insertWidget(index + 1, self.frame)
+        if generate:
+            page.widthSpinBox.valueChanged.connect(self._edited)
+            page.heightSpinBox.valueChanged.connect(self._edited)
+            layout = page.generationContextLayout
+            index = layout.indexOf(page.parametersBox) + 1
+        layout.insertWidget(layout.count() if index is None else index, self.frame)
         self._edited()
+
+    def refresh(self) -> None:
+        """The host's size changed: show the first pass for it again."""
+        self.summary.setText(self._preview())
 
     # -- state ------------------------------------------------------------------------------------------------------
     def _show(self, shown: bool) -> None:
@@ -125,16 +151,19 @@ class AdvancedPanel(QObject):
         """First pass -> final for the settings as shown, or the reason they cannot be used; never blocks editing."""
         if not self.hires.isEnabled():
             return ""
-        width, height = self.page.widthSpinBox.value(), self.page.heightSpinBox.value()
+        size = self._size()
+        if size is None:
+            return ""
+        width, height = size
         try:
             settings = self.settings()
             rules.check_first_pass(width, height, settings)
         except ValidationError as exc:
             return str(exc)
-        size = rules.first_pass_size(width, height, settings)
-        if size is None:
+        first = rules.first_pass_size(width, height, settings)
+        if first is None:
             return "HiRes is off." if self.hires.isChecked() else ""
-        return f"First pass {size[0]}x{size[1]} → final {width}x{height}"
+        return f"First pass {first[0]}x{first[1]} → final {width}x{height}{self._size_note}"
 
     def set_scope(self, scope: str | None) -> None:
         """Which kind of request the form would send now: ``image``, ``pose``, ``video`` or ``None`` (not a single

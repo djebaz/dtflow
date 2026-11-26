@@ -26,7 +26,7 @@ from PySide6.QtGui import QDesktopServices, QIcon, QStandardItem, QStandardItemM
 from PySide6.QtWidgets import QApplication, QFormLayout, QListWidgetItem, QMenu, QPlainTextEdit, QWidget
 
 from dtflow.core.models import BackendEvent, Designation, LoRASelection, ValidationError
-from dtflow.core.advanced import summary as advanced_summary
+from dtflow.core.advanced import scope_for, summary as advanced_summary
 from dtflow.core.request_records import request_from_record
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.assets import AssetRegistry
@@ -66,12 +66,13 @@ from dtflow.services.queue_session import (
 from dtflow.services.queue_templates import TemplatePose
 from dtflow.services.session import bind_prepared, script_asset_choices, selection_for
 from dtflow.ui.activity import Activity
+from dtflow.ui.advanced_panel import AdvancedPanel
 from dtflow.ui.controlnet_editor import PoseJob
 from dtflow.ui.performance import profile_slow_gui_callback
 from dtflow.ui.activity_bar import clock
 from dtflow.ui.progress_model import ProgressSnapshot, totals_from_view
 from dtflow.ui.activity_strip import activity_strip
-from dtflow.ui.generation_presenter import FormError
+from dtflow.ui.generation_presenter import FormError, field_for
 from dtflow.ui.inline_feedback import confirm_action, feedback
 from dtflow.ui.planning_presenter import (
     ERROR_FIELDS,
@@ -463,6 +464,16 @@ class QueuePage:
         self._preview_timer.setInterval(PREVIEW_MS)
         self._preview_timer.timeout.connect(self.preview)
         self._configure_dimensions()
+        self._syncing_advanced = False  # restoring the section from a draft must not count as an edit
+        composer = page.planBox.parentWidget().layout()
+        self.advanced = AdvancedPanel(
+            page,
+            layout=composer,
+            index=composer.indexOf(page.planBox),
+            size=self._draft_size,
+            size_note=" for the base Size; each item derives its own first pass",
+        )
+        self.advanced.changed.connect(self._advanced_edited)
         self._align_plan_labels()
         self._actions_fit = ActionsFit(
             page.queueComposerScroll,
@@ -1675,6 +1686,27 @@ class QueuePage:
             return f"Uses {source}. DT+ video: up to 10 concurrent clips, from Connection's default. Start may use credits; Retry is manual."
         return f"Uses {source}. Provider: {name}. A cloud run may use credits."
 
+    def _draft_size(self) -> tuple[int, int] | None:
+        """The base request's Size, which the section previews its first pass for; plan sizes derive their own."""
+        return None if self._draft is None else (self._draft[0].width_px, self._draft[0].height_px)
+
+    def _advanced_edited(self) -> None:
+        if not self._syncing_advanced:
+            self._plan_changed()
+
+    def _sync_advanced(self, request, job) -> None:
+        """Show the draft's advanced values, and which of them its kind of request can send (never a silent drop)."""
+        self._syncing_advanced = True
+        try:
+            scope = scope_for(
+                video=request.num_frames is not None,
+                pose=isinstance(job, PoseJob) or request.pose_control is not None,
+            )
+            self.advanced.restore(request.advanced)
+            self.advanced.set_scope(scope)
+        finally:
+            self._syncing_advanced = False
+
     def _set_draft(self, request, name, endpoint, asset_ids, job) -> None:
         self._draft = request, name, endpoint, tuple(asset_ids)
         # Generate is an explicit one-way source, including its offered LoRA/model choices.
@@ -1696,6 +1728,7 @@ class QueuePage:
         edit.setPlainText(request.prompt)
         edit.blockSignals(False)
         self.pose_editor.draft_changed()
+        self._sync_advanced(request, job)
 
     def _composer_choices(self) -> dict:
         if self._draft is None:
@@ -1794,7 +1827,10 @@ class QueuePage:
             loras = (*(item for item in loras if item.identifier not in named), *swept)
         selected = {item.identifier for item in loras}
         bound = tuple(item for item in request.prepared_assets if item.identifier in selected)
-        changes = {"prompt": prompt, "loras": loras}
+        try:
+            changes = {"prompt": prompt, "loras": loras, "advanced": self.advanced.values()}
+        except ValidationError as exc:
+            raise FormError(str(exc), field_for(str(exc))) from exc
         if bound != request.prepared_assets:
             evidence = tuple(pair for pair in request.resolution_evidence if pair[0] != "prepared_assets")
             if bound:
