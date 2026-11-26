@@ -114,6 +114,42 @@ def _load_inventory(
         return None
 
 
+@cache_io("inventory")
+def _miss_reason(
+    root: Path, kind: str, *, endpoint: str | None = None, credential: tuple[str, str] | None = None
+) -> str:
+    try:
+        document = json.loads(_target(root, f"{kind}_inventory.json").read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return "file_missing"
+    except (OSError, ValueError):
+        return "unreadable"
+    if not isinstance(document, dict):
+        return "unreadable"
+    if type(document.get("cache_version")) is not int or document["cache_version"] != CACHE_VERSION:
+        return "other_cache_version"
+    if endpoint is not None and document.get("endpoint") != endpoint:
+        return "other_endpoint"
+    if credential is not None:
+        recorded = document.get("credential")
+        source, key = credential
+        if not isinstance(recorded, dict) or recorded.get("source") != source:
+            return "other_credential_source"
+        if recorded.get("fingerprint") != _fingerprint(str(recorded.get("salt")), key):
+            return "other_key"
+    return "entries_unreadable"
+
+
+def inventory_miss_reason(
+    root: Path, kind: str, *, endpoint: str | None = None, credential: tuple[str, str] | None = None
+) -> str:
+    """Why ``load_inventory`` returned ``None``, for development diagnostics only; never raises."""
+    try:
+        return _miss_reason(root, kind, endpoint=endpoint, credential=credential)
+    except OSError:
+        return "cache_busy_or_unreadable"
+
+
 def load_inventory(
     root: Path, kind: str, *, endpoint: str | None = None, credential: tuple[str, str] | None = None
 ) -> InventorySnapshot | None:

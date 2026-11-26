@@ -50,9 +50,10 @@ from dtflow.core.retry_policy import (
 )
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
+from dtflow.logging_setup import dev_enabled
 from dtflow.persistence.assets import AssetRegistry, AssetsBusyError, newest_per_name
 from dtflow.persistence.gallery_snapshot import schedule_publish
-from dtflow.persistence.inventory_cache import load_inventory, save_inventory
+from dtflow.persistence.inventory_cache import inventory_miss_reason, load_inventory, save_inventory
 from dtflow.persistence.settings import load_dtplus_concurrency
 from dtflow.persistence.queues import read_attempt_record
 from dtflow.persistence.store import PersistenceError, SQLiteAttempts, StateBusyError
@@ -829,15 +830,12 @@ async def cached_inventory(
         return None
     kind, endpoint, credential = identity
     snapshot = await asyncio.to_thread(load_inventory, state, kind, endpoint=endpoint, credential=credential)
-    diagnostic_event(
-        log,
-        "inventory.cache_read",
-        level=logging.INFO,
-        data={
-            "hit": snapshot is not None,
-            "backend": kind,
-        },
-    )
+    data = {"hit": snapshot is not None, "backend": kind}
+    if snapshot is None and dev_enabled():
+        data["reason"] = await asyncio.to_thread(
+            inventory_miss_reason, state, kind, endpoint=endpoint, credential=credential
+        )
+    diagnostic_event(log, "inventory.cache_read", level=logging.INFO, data=data)
     return snapshot
 
 
@@ -918,6 +916,13 @@ class InventoryDisplayMemory:
             kind, _, credential = identity
             try:
                 await asyncio.to_thread(save_inventory, state, kind, snapshot, credential=credential)
+                if dev_enabled():
+                    diagnostic_event(
+                        log,
+                        "inventory.cache_write",
+                        level=logging.DEBUG,
+                        data={"backend": kind, "entries": len(snapshot.entries)},
+                    )
             except OSError as exc:
                 diagnostic_event(
                     log,
