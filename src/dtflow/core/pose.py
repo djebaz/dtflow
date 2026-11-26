@@ -26,12 +26,16 @@ SD15_DEPTH_PROBE_CONTROL = "controlnet_depth_1.x_v1.1_f16.ckpt"
 SD15_SEG_PROBE_CONTROL = "controlnet_seg_1.x_v1.1_f16.ckpt"
 SDXL_DEPTH_PROBE_CONTROL = "controlnet_depth_sdxl_v1.0_mid_f16.ckpt"
 
-# Exact CLI-only combinations. Production controls remain in CONTROLS.
+# SD 1.x probes use the bundled catalogue family; SDXL probes retain exact model admission.
+SD1_PROBE_CONTROLS = (
+    SD15_POSE_PROBE_CONTROL, SD15_CANNY_PROBE_CONTROL, SD15_DEPTH_PROBE_CONTROL, SD15_SEG_PROBE_CONTROL,
+)
+# Production controls remain in CONTROLS.
 OFFICIAL_PROBE_CONTROLS = {
-    SD15_POSE_PROBE_CONTROL: ("pose", (SD15_POSE_PROBE_MODEL,)),
-    SD15_CANNY_PROBE_CONTROL: ("canny", (SD15_POSE_PROBE_MODEL,)),
-    SD15_DEPTH_PROBE_CONTROL: ("depth", (SD15_POSE_PROBE_MODEL,)),
-    SD15_SEG_PROBE_CONTROL: ("seg", (SD15_POSE_PROBE_MODEL,)),
+    SD15_POSE_PROBE_CONTROL: ("pose", ()),
+    SD15_CANNY_PROBE_CONTROL: ("canny", ()),
+    SD15_DEPTH_PROBE_CONTROL: ("depth", ()),
+    SD15_SEG_PROBE_CONTROL: ("seg", ()),
     SDXL_CANNY_PROBE_CONTROL: ("canny", SDXL_POSE_PROBE_MODELS),
     SDXL_DEPTH_PROBE_CONTROL: ("depth", SDXL_POSE_PROBE_MODELS),
 }
@@ -42,6 +46,8 @@ def probe_models(checkpoint: str) -> tuple[str, ...] | None:
     """Return the exact model allowlist for a CLI-only control, or None for production controls."""
     if checkpoint == SDXL_POSE_PROBE_CONTROL:
         return SDXL_POSE_PROBE_MODELS
+    if checkpoint in SD1_PROBE_CONTROLS:
+        return None  # family admission, not an exact checkpoint allowlist
     entry = OFFICIAL_PROBE_CONTROLS.get(checkpoint)
     return entry[1] if entry else None
 
