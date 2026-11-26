@@ -131,151 +131,13 @@ def add_commands(commands, add_request_options):
             )
 
 
-def prepare_canny_probe(path: Path, width: int, height: int, *, photo: bool):
-    """Prepare a target-sized RGB edge map; OpenCV is optional and only needed for a source photo."""
-    from PIL import Image
-    from dtflow.services import image_preparation as pixels
-
-    content = pixels.load_source_file(path)
-    image = pixels._verified(content)
-    fit = pixels._fit(image.size, (width, height))
-    fitted = image.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.LANCZOS)
-    evidence = {"origin": "canny_photo" if photo else "prepared_canny_map", "source_sha256": content.sha256}
-    if photo:
-        try:
-            import cv2
-        except ImportError as exc:
-            raise ValidationError(
-                "Canny photo extraction needs OpenCV; run with uv run --with opencv-python-headless==4.11.0.86."
-            ) from exc
-        import numpy as np
-
-        # Extract only within the fitted photograph. Replicating pixels before
-        # Canny extends boundary features into artificial horizontal/vertical lines.
-        gray = cv2.cvtColor(np.asarray(fitted.convert("RGB")), cv2.COLOR_RGB2GRAY)
-        edges = cv2.Canny(gray, 100, 200)
-        canvas = Image.new("RGB", (width, height), "black")
-        canvas.paste(Image.fromarray(edges).convert("RGB"), (fit.left, fit.top))
-        evidence.update({"canny_low": "100", "canny_high": "200", "opencv_version": cv2.__version__})
-    else:
-        canvas = Image.new("RGB", (width, height), "black")
-        canvas.paste(fitted.convert("RGB"), (fit.left, fit.top))
-    if canvas.getbbox() is None:
-        raise ValidationError("Canny map is empty; no guidance was submitted.")
-    map_content = pixels._content(canvas)
-    evidence["map_sha256"] = map_content.sha256
-    evidence["preparation"] = "aspect_fit_canny_before_black_padding" if photo else "aspect_fit_black_padding_no_crop"
-    return pixels.prepare_image_bytes(map_content.encoded, width, height), tuple(sorted(evidence.items()))
-
-
-def prepare_spatial_probe(
-    path: Path,
-    width: int,
-    height: int,
-    *,
-    input_type: str,
-    photo: bool,
-    depth_model: Path | None,
-    state: Path,
-    seg_method: str = "yolo",
-):
-    """Fit depth or semantic maps; preserve class colours with nearest-neighbour resampling."""
-    import hashlib
-
-    import numpy as np
-    from PIL import Image
-
-    from dtflow.services import image_preparation as pixels
-
-    content = pixels.load_source_file(path)
-    image = pixels._verified(content)
-    fit = pixels._fit(image.size, (width, height))
-    evidence = {"origin": f"prepared_{input_type}_map", "source_sha256": content.sha256}
-    if input_type == "depth":
-        if photo:
-            import onnxruntime as ort
-
-            model = depth_model or Path("tmp/models/depth-anything-v2-small.onnx")
-            expected = "afb6a5c28f3b6bf1618c6e43f02073ef9dfdc70e937502d51603e57b0a1df10c"
-            if not model.is_file():
-                raise ValidationError(
-                    "Depth Anything V2 Small ONNX is missing; provide --depth-model or a prepared depth map."
-                )
-            with model.open("rb") as stream:
-                digest = hashlib.file_digest(stream, "sha256").hexdigest()
-            if digest != expected:
-                raise ValidationError("Depth model differs from the pinned Depth Anything V2 Small checkpoint.")
-            session = ort.InferenceSession(str(model), providers=["CPUExecutionProvider"])
-            rgb = np.asarray(image.resize((518, 518), Image.Resampling.BICUBIC), dtype=np.float32) / 255
-            rgb = (rgb - np.array([0.485, 0.456, 0.406], dtype=np.float32)) / np.array(
-                [0.229, 0.224, 0.225], dtype=np.float32
-            )
-            tensor = np.transpose(rgb, (2, 0, 1))[None].astype(np.float32)
-            depth = np.asarray(session.run(None, {session.get_inputs()[0].name: tensor})[0]).squeeze()
-            if depth.ndim != 2 or not np.isfinite(depth).all() or depth.max() <= depth.min():
-                raise ValidationError("Depth model did not produce a finite nonconstant depth map.")
-            image = Image.fromarray(np.rint((depth - depth.min()) / (depth.max() - depth.min()) * 255).astype(np.uint8))
-            evidence.update(
-                {"origin": "depth_photo", "detector": "Depth Anything V2 Small ONNX", "detector_sha256": digest}
-            )
-        else:
-            image = image.convert("L")
-        fitted = image.resize((fit.fitted_width, fit.fitted_height), Image.Resampling.BILINEAR).convert("RGB")
-    else:
-        if photo:
-            from dtflow.persistence.person_models import load_person_models
-            from dtflow.services.person_selection import control_segmentation
-
-            models = load_person_models(state)
-            model = models.segmentation
-            if model is None:
-                raise ValidationError("Choose or install the YOLO segmentation model in Inpaint first, or use --image.")
-            clothes = models.clothes if seg_method == "clothes" else None
-            if seg_method == "clothes" and clothes is None:
-                raise ValidationError("Choose the existing SegFormer clothes model in Inpaint first.")
-            image, count = control_segmentation(content, model, clothes)
-            if clothes is not None:
-                evidence.update(
-                    {"clothes_sha256": clothes.sha256, "clothes_model": "Configured SegFormer human parsing"}
-                )
-            evidence.update(
-                {
-                    "origin": "seg_photo",
-                    "detector": "Configured YOLO segmentation",
-                    "detector_sha256": model.sha256,
-                    "instances": str(count),
-                    "palette": "ADE20K sparse COCO overlap; unknown black",
-                    "seg_method": seg_method,
-                }
-            )
-        fitted = image.convert("RGB").resize((fit.fitted_width, fit.fitted_height), Image.Resampling.NEAREST)
-    if input_type == "depth":
-        # Continue the depth field outside the fitted photo without a false depth discontinuity.
-        canvas = Image.fromarray(
-            np.pad(
-                np.asarray(fitted),
-                (
-                    (fit.top, height - fit.top - fit.fitted_height),
-                    (fit.left, width - fit.left - fit.fitted_width),
-                    (0, 0),
-                ),
-                mode="edge",
-            )
-        )
-        preparation = "aspect_fit_edge_replicated_depth_no_crop"
-    else:
-        canvas = Image.new("RGB", (width, height), "black")
-        canvas.paste(fitted, (fit.left, fit.top))
-        preparation = "aspect_fit_black_padding_no_crop"
-    map_content = pixels._content(canvas)
-    evidence.update({"map_sha256": map_content.sha256, "preparation": preparation})
-    return pixels.prepare_image_bytes(map_content.encoded, width, height), tuple(sorted(evidence.items()))
-
-
 async def run(args):
     from dtflow.cli import resolve_generation
     from dtflow.core.request_records import request_from_record
-    from dtflow.services.body_pose import DETECTOR, extract_body, install_detector, prepare_pose, save_extraction
+    from dtflow.services.body_pose import (
+        DETECTOR, extract_body, install_detector, prepare_pose, save_extraction,
+        prepare_canny_probe, prepare_spatial_probe,
+    )
     from dtflow.services.config import read_json_file
     from dtflow.services.session import (
         _require_pose_family,
@@ -463,7 +325,8 @@ async def compare_models(args, request, prepared, policy):
     from dataclasses import replace
     from dtflow.services import queue_session, session
     from dtflow.services.image_inputs import snapshot_image_inputs
-    from dtflow.services.planning import Plan, expand_plan
+    from dtflow.services.planning import Plan
+    from dtflow.services.body_pose import write_comparison_collage
     from dtflow.core.tasks import settle
 
     if request.pose_control.checkpoint not in SD1_PROBE_CONTROLS:
@@ -471,16 +334,16 @@ async def compare_models(args, request, prepared, policy):
     if getattr(args, "asset", None):
         raise ValidationError("Model comparison does not yet accept explicit asset receipts.")
     plan = Plan("cross", dimensions=(("model", tuple(args.models)),), seed_policy="fixed")
-    items = expand_plan(request, plan)
     selection = session.selection_for("cloud", None, args.state)
-    await queue_session._check_pose_queue(args.state, selection, items, request.pose_control, saved=None)
     staged = await settle(
         asyncio.to_thread(
             snapshot_image_inputs, args.state, request.image_inputs.attempt_id, prepared, preserve_outside=False
         )
     )
-    items = [replace(item, image_inputs=staged) for item in items]
-    queue_id = await queue_session.create_queue(args.state, {"name": "cloud"}, items, origin="pose-comparison")
+    queue_id = await queue_session.create_saved_pose_queue(
+        args.state, {"name": "cloud"}, selection, replace(request, schema_version=3, image_inputs=staged),
+        plan=plan, origin="pose-comparison",
+    )
     print(f"Comparison queue: {queue_id}", file=sys.stderr)
 
     def settled(item_id, state):
@@ -489,50 +352,10 @@ async def compare_models(args, request, prepared, policy):
     final = await queue_session.dispatch_queue(
         args.state, queue_id, timeouts=policy, out=args.out, on_settle=settled, auto_play=False
     )
-    target = await asyncio.to_thread(write_comparison_collage, final, args.out or args.state / "outputs")
+    target = await asyncio.to_thread(write_comparison_collage, final, args.out or args.state / "comparisons")
     print(json.dumps({"queue": queue_id, "summary": final["summary"], "collage": str(target)}, indent=2))
     from dtflow.cli import queue_exit_code
 
     return queue_exit_code(final)
 
 
-def write_comparison_collage(queue, root: Path) -> Path:
-    """One labelled thumbnail per queue item, including unsuccessful items."""
-    from PIL import Image, ImageDraw, ImageFont, ImageOps
-    from dtflow.core.output_layout import group_name
-
-    items = queue["items"]
-    cols = min(4, len(items))
-    width, height, label, gap = 384, 512, 76, 12
-    rows = (len(items) + cols - 1) // cols
-    sheet = Image.new("RGB", (cols * (width + gap) + gap, rows * (height + label + gap) + gap), "#181818")
-    draw = ImageDraw.Draw(sheet)
-    try:
-        font = ImageFont.truetype("arial.ttf", 16)
-    except OSError:
-        font = ImageFont.load_default()
-    folder = Path(root) / group_name("queue", queue["queue_id"])
-    for index, item in enumerate(items):
-        x = gap + index % cols * (width + gap)
-        y = gap + index // cols * (height + label + gap)
-        # Only current queue attempts qualify; no recursive scan of unrelated outputs.
-        files = sorted(folder.glob(f"*{item['attempt_id']}*.png")) if item.get("attempt_id") else []
-        if files:
-            with Image.open(files[0]) as image:
-                thumb = ImageOps.contain(image.convert("RGB"), (width, height), Image.Resampling.LANCZOS)
-            sheet.paste(thumb, (x + (width - thumb.width) // 2, y + (height - thumb.height) // 2))
-        else:
-            draw.rectangle((x, y, x + width, y + height), fill="#303030")
-            draw.text((x + 12, y + height // 2), item["state"], fill="white", font=font)
-        name = item["model"].removesuffix(".ckpt")
-        import textwrap
-
-        draw.multiline_text((x + 5, y + height + 5), "\n".join(textwrap.wrap(name, 40)), fill="white", font=font)
-        duration = item.get("duration")
-        timing = f"{duration:.2f} s" if duration is not None else "No recorded time"
-        draw.text((x + 5, y + height + 53), f"{item['state']} | {timing}", fill="#aaaaaa", font=font)
-    folder.mkdir(parents=True, exist_ok=True)
-    target = folder / "comparison.jpg"
-    with target.open("xb") as stream:
-        sheet.save(stream, format="JPEG", quality=94)
-    return target
