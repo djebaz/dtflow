@@ -606,6 +606,7 @@ def _require_pose_family(state: Path, model_id: str, *, control_checkpoint: str 
         SD15_POSE_PROBE_CONTROL,
         SD15_POSE_PROBE_MODEL,
         SDXL_CANNY_PROBE_CONTROL,
+        SDXL_CANNY_PROBE_MODELS,
         SDXL_POSE_PROBE_CONTROL,
         SDXL_POSE_PROBE_MODELS,
         supports_pose,
@@ -617,8 +618,9 @@ def _require_pose_family(state: Path, model_id: str, *, control_checkpoint: str 
             raise ValidationError("The SD 1.5 pose probe requires Stable Diffusion v1.5 F16.")
         return
     if control_checkpoint in (SDXL_POSE_PROBE_CONTROL, SDXL_CANNY_PROBE_CONTROL):
-        if model_id not in SDXL_POSE_PROBE_MODELS:
-            raise ValidationError("The SDXL control probe requires an SDXL Base 1.0 F16 or Q6P/Q8P checkpoint.")
+        models = SDXL_POSE_PROBE_MODELS if control_checkpoint == SDXL_POSE_PROBE_CONTROL else SDXL_CANNY_PROBE_MODELS
+        if model_id not in models:
+            raise ValidationError("The SDXL control probe requires one of: " + ", ".join(models))
         return
     entry = Catalogue(state).checkpoint(model_id, include_unavailable=True)
     if not supports_pose(model_id, entry.base_model if entry else None):
