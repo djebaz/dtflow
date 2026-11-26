@@ -58,11 +58,26 @@ log = logging.getLogger(__name__)
 
 
 def _buffer_reservation(request: ResolvedGenerationRequest, caps, prepared_inputs: PreparedImageInputs | None) -> int:
-    """Reserve one cloud text-to-image artifact; retain conservative image-edit buffers."""
+    """Estimate owned buffers by operation; a cloud control map is not a composited edit."""
     raw_bytes = request.height_px * (1 + request.width_px * 4)
-    if caps.backend_id == "drawthings-cloud" and prepared_inputs is None:
-        # Cloud inference is remote and permits one output per request; do not reserve three artifacts.
-        return caps.limits.artifact_bytes
+    if caps.backend_id == "drawthings-cloud":
+        if prepared_inputs is None:
+            # Cloud inference is remote and permits one output per request.
+            return caps.limits.artifact_bytes
+        if request.operation == "txt2img" and request.pose_control is not None and prepared_inputs.mask is None:
+            # One output plus retained PNGs, RGB decode/validation, float conversion,
+            # tensor serialization and transport copies. No raw/edit/composite trio.
+            # Use the existing conservative per-grid allowance even for single-channel depth.
+            return (
+                caps.limits.artifact_bytes
+                + sum(
+                    len(getattr(prepared_inputs, name).encoded)
+                    for name in INPUT_NAMES
+                    if getattr(prepared_inputs, name) is not None
+                )
+                + prepared_inputs.source.width * prepared_inputs.source.height * 16
+                + request.width_px * request.height_px * 24
+            )
     reservation = raw_bytes + 3 * caps.limits.artifact_bytes + caps.limits.preview_bytes
     if prepared_inputs is not None:
         # Edits retain prepared grids, encoded PNGs and SDK tensors; keep their larger allowance.
@@ -563,8 +578,20 @@ class GenerationService:
 
         try:
             preparation("waiting_buffer_budget")
+            buffer_wait_started = monotonic()
             await self.budget.acquire(reservation)
             reserved = True
+            diagnostic_event(
+                log,
+                "generation.buffer_acquired",
+                level=logging.DEBUG,
+                data={
+                    "waited_ms": round((monotonic() - buffer_wait_started) * 1000),
+                    "reservation_bytes": reservation,
+                    "used_bytes": self.budget.used,
+                    "limit_bytes": self.budget.limit,
+                },
+            )
             if image_operation or request.pose_control is not None:
                 preparation("saving_image_snapshot")
                 snapshot = await settle(
