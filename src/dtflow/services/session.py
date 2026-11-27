@@ -628,6 +628,7 @@ async def generate_pose_once(
     saved: CredentialProvider | None = None,
     on_event: EventSink | None = None,
     asset_ids: tuple[str, ...] = (),
+    inputs_validated: bool = False,
 ) -> GenerationOutcome:
     """One explicit DT+ pose submission (a request built with ``pose_request``): the map leaves the machine and may
     consume credits. No provider fallback; the input snapshot is the one the request records."""
@@ -651,7 +652,13 @@ async def generate_pose_once(
         ) as service:
             _preparation_event(sink, bound, "session_ready")
             return await run_generation(
-                service, bound, prefix=prefix, on_event=sink, prepared_inputs=prepared_inputs, timeline=timeline
+                service,
+                bound,
+                prefix=prefix,
+                on_event=sink,
+                prepared_inputs=prepared_inputs,
+                timeline=timeline,
+                inputs_validated=inputs_validated,
             )
 
     return await _timed(selection, on_event, run)
@@ -668,7 +675,9 @@ async def retry_pose_once(
     if request.pose_control is None or request.image_inputs is None:
         raise ValidationError("Retry requires saved pose control settings.")
     prepared = await settle(asyncio.to_thread(restore_image_inputs, state, request.image_inputs))
-    return await generate_pose_once(selection, state, replace(request, request_id=uuid4().hex), prepared, **options)
+    return await generate_pose_once(
+        selection, state, replace(request, request_id=uuid4().hex), prepared, inputs_validated=True, **options
+    )
 
 
 async def generate_image_once(
