@@ -175,8 +175,14 @@ def build_generation_message(
             != request.image_inputs
         ):
             raise _reject(request, "pose_input_mismatch", "Pose input differs from the recorded snapshot.")
+        control = request.pose_control
         transport = encode_image_inputs(
-            prepared, limits, unit_rgb=_unit_control_rgb(request), depth=request.pose_control.input_type == "depth"
+            prepared,
+            limits,
+            unit_rgb=_unit_control_rgb(request),
+            depth=control.input_type == "depth",
+            depth_size=(control.depth_width, control.depth_height) if control.depth_width is not None else None,
+            depth_channels=control.depth_channels,
         )
     elif image_operation:
         if not isinstance(image_permit, ImageOperationPermit) or prepared is None or request.image_inputs is None:
