@@ -135,7 +135,7 @@ class DrawThingsBackend:
         self._benchmark_next = 0
         self._benchmark_count = 1
         if self.backend_id == "drawthings-cloud":
-            count = os.environ.get("DTFLOW_BENCH_GRPC_CHANNELS", "1")
+            count = os.environ.get("DTFLOW_BENCH_GRPC_CHANNELS", "4")
             if count not in ("1", "2", "4"):
                 raise ValidationError("DTFLOW_BENCH_GRPC_CHANNELS must be 1, 2 or 4.")
             self._benchmark_count = int(count)
