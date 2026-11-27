@@ -219,7 +219,7 @@ class _Strip(QWidget):
         # Use the widest digit in this font, rather than assuming tabular figures.
         digit = max("0123456789", key=metrics.horizontalAdvance)
         count = digit * digits
-        steps = digit * max(4, digits + 2)
+        steps = digit * max(3, digits + 1)
         cells = []
         for index, part in enumerate(groups):
             if not part:
@@ -229,7 +229,8 @@ class _Strip(QWidget):
                 long = "sampling" in part
                 sample = f"{count} sampling" if long else f"S{count}"
                 wait = f"{count} waiting · " if long else f"W{count} · "
-                counter = f"{steps}/{steps}" + (" steps" if long else "")
+                # P2 normally reports observed steps only; a reported total still fits naturally.
+                counter = (steps if part.startswith("P2") else f"{steps}/{steps}") + (" steps" if long else "")
                 prefix = wait if part.startswith("P2") else ""
                 template = f"{part[:2]} [{prefix}{sample} · {counter}]"
                 width = max(width, metrics.horizontalAdvance(template))
