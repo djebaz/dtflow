@@ -657,6 +657,7 @@ class DrawThingsBackend:
                         )
                         first_response = True
                         first_content = timing_enabled()
+                        sampling_totals: dict[str, int] = {}
                         async for response in stream:
                             if first_response:
                                 first_response = False
@@ -690,8 +691,9 @@ class DrawThingsBackend:
                             self._log_response(response)
                             if response.chunk_state == image_service.ChunkState.MORE_CHUNKS:
                                 raise self._reject(request, "chunked_output_unsupported", stage, finals)
+                            sampling_totals.update(self._sampling_totals(response.signposts))
                             for signpost in (response.current_signpost,) if response.current_signpost else ():
-                                self._signpost(signpost, request, emit)
+                                self._signpost(signpost, request, emit, sampling_totals)
                             if response.download_size and not receiving_announced and not finals:
                                 receiving_announced = True
                                 emit("progress", stage="receiving_image")
@@ -872,6 +874,7 @@ class DrawThingsBackend:
             seen["scale_factor"] = response.scale_factor
         if response.signposts:
             seen["signposts"] = [betterproto.which_one_of(item, "signpost")[0] for item in response.signposts]
+            seen["sampling_totals"] = DrawThingsBackend._sampling_totals(response.signposts)
         if response.current_signpost:
             seen["signpost"] = betterproto.which_one_of(response.current_signpost, "signpost")[0]
         if response.preview_image:
@@ -909,17 +912,30 @@ class DrawThingsBackend:
         )
 
     @staticmethod
-    def _signpost(signpost, request: ResolvedGenerationRequest, emit) -> None:
+    def _sampling_totals(signposts) -> dict[str, int]:
+        """Read expected sampling endpoints from the provider's signpost collection."""
+        totals: dict[str, int] = {}
+        for signpost in signposts:
+            name, value = betterproto.which_one_of(signpost, "signpost")
+            if name in ("sampling", "second_pass_sampling") and int(value.step) > 0:
+                totals[name] = max(totals.get(name, 0), int(value.step))
+        return totals
+
+    @staticmethod
+    def _signpost(signpost, request: ResolvedGenerationRequest, emit, totals=None) -> None:
         name, value = betterproto.which_one_of(signpost, "signpost")
         hires = request.advanced is not None and request.advanced.hires_fix_active
+        totals = totals or {}
         if name == "sampling":
             step = int(value.step)
-            emit("progress", stage="sampling_pass_1" if hires else "sampling", completed=step, total=request.steps)
-            if hires and step >= request.steps:
+            total = totals.get(name, request.steps) if hires else request.steps
+            emit("progress", stage="sampling_pass_1" if hires else "sampling", completed=step, total=total)
+            if hires and step >= total:
                 emit("progress", stage="waiting_pass_2")
         elif name == "second_pass_sampling":
-            # The signpost supplies the step, not a verified second-pass total.
-            emit("progress", stage=name, completed=int(value.step))
+            step = int(value.step)
+            total = totals.get(name)
+            emit("progress", stage=name, completed=step, total=total if total is not None and step <= total else None)
         elif name:
             emit("progress", stage=name)
 
