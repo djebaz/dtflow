@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from dtflow.ui.progress_model import SOLO_QUEUE, ProgressSnapshot
 
 SEP = " · "
-_LONG = {"W": "waiting", "C": "in DT+ Cloud", "E": "encoding", "V": "saving"}
+_LONG = {"W": "waiting", "C": "in DT+ Cloud", "W2": "waiting | pass 2", "E": "encoding", "V": "saving"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,9 +36,9 @@ def _groups(snapshot: ProgressSnapshot, short: bool) -> tuple[list[str], list[st
     if failed:
         core.append(f"!{failed}" if short else f"{failed} failed")
     waiting = []
-    for code in ("W", "C"):
+    for code in ("W", "C", "W2"):
         if counts.get(code):
-            waiting.append(f"{code}{counts[code]}" if short else f"{counts[code]} {_LONG[code]}")
+            waiting.append((f"W2:{counts[code]}" if code == "W2" else f"{code}{counts[code]}") if short else f"{counts[code]} {_LONG[code]}")
     if not short:
         outcomes = dict(snapshot.outcomes)
         for name in ("cancelled", "unknown"):
@@ -52,15 +52,29 @@ def _groups(snapshot: ProgressSnapshot, short: bool) -> tuple[list[str], list[st
         if counts.get(code):
             ending.append(f"{code}{counts[code]}" if short else f"{counts[code]} {_LONG[code]}")
     xy = []
+    pass_items = tuple(item for queue in snapshot.queues for item in queue.items)
+
+    def pass_steps(code):
+        pairs = [item.steps for item in pass_items if item.stage == code and item.steps is not None]
+        return sum(pair[0] for pair in pairs), sum(pair[1] for pair in pairs), len(pairs)
+
     for code, word, unit, sums in (
         ("S", "sampling", "steps", snapshot.steps),
+        ("S1", "sampling | pass 1", "steps", pass_steps("S1")),
+        ("S2", "sampling | pass 2", "steps", pass_steps("S2")),
         ("R", "receiving", "frames", snapshot.frames),
     ):
         count = counts.get(code, 0)
         if not count:
             continue
         done, total, reporters = sums
-        head = f"{code}{count}" if short else f"{count} {word}"
+        head = (f"{code}:{count}" if code in ("S1", "S2") else f"{code}{count}") if short else f"{count} {word}"
+        if code == "S2" and reporters < count:
+            observed = [item.observed_step for item in pass_items if item.stage == code and item.observed_step is not None]
+            if observed:
+                partial = "" if len(observed) == count else f", {len(observed)} reporting"
+                xy.append(f"{head} {sum(observed)} steps" if short else f"{head} ({sum(observed)} steps{partial})")
+                continue
         if reporters:
             partial = "" if reporters >= count else f", {reporters} reporting"
             xy.append(f"{head} {done}/{total}" if short else f"{head} ({done}/{total} {unit}{partial})")
