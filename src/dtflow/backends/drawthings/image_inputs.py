@@ -49,7 +49,13 @@ def _check_tensor(tensor: bytes, width: int, height: int, *, mask: bool, channel
 
 
 def encode_image_inputs(
-    prepared: PreparedImageInputs, limits: ResourceLimits | None = None, *, unit_rgb: bool = False, depth: bool = False
+    prepared: PreparedImageInputs,
+    limits: ResourceLimits | None = None,
+    *,
+    unit_rgb: bool = False,
+    depth: bool = False,
+    depth_size: tuple[int, int] | None = None,
+    depth_channels: int = 1,
 ) -> EncodedImageInputs:
     """Encode fitted RGB float16 [-1,1] (or [0,1] for an explicit control probe) plus optional uint8 0/2 mask.
 
@@ -63,7 +69,10 @@ def encode_image_inputs(
     if not isinstance(prepared, PreparedImageInputs):
         raise ValidationError("Image preparation evidence is required.")
     width, height = prepared.fit.target_width, prepared.fit.target_height
-    channels = 1 if depth else 3
+    source_width, source_height = width, height
+    if depth and depth_size is not None:
+        width, height = depth_size
+    channels = depth_channels if depth else 3
     image_size = HEADER_BYTES + width * height * 2 * channels
     mask_size = HEADER_BYTES + width * height if prepared.mask is not None else 0
     if image_size > limits.tensor_bytes or mask_size > limits.tensor_bytes:
@@ -73,7 +82,14 @@ def encode_image_inputs(
     pixels_rgb = image_content_pixels(prepared.image)
     if depth:
         # Prepared depth maps are RGB snapshots of one grayscale plane.
-        pixels_rgb = pixels_rgb[::3]
+        if (width, height) != (source_width, source_height):
+            from PIL import Image
+
+            pixels_rgb = Image.frombytes("RGB", (source_width, source_height), pixels_rgb).resize(
+                (width, height), Image.Resampling.BILINEAR
+            ).tobytes()
+        if channels == 1:
+            pixels_rgb = pixels_rgb[::3]
     image = ImageBuffer(pixels_rgb, width, height, channels).to_tensor()
     _check_tensor(image, width, height, mask=False, channels=channels)
     if unit_rgb:
