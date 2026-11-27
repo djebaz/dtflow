@@ -6,7 +6,7 @@ Changes through 6.5.5 are consolidated in [DTFlow 6.5.5](v6.5.5.md). The publish
 
 ## Added
 
-- Experimental ControlNet CLI options for Depth tensor dimensions/channels, explicit HiRes first-pass sizes, flat comparison exports and configurable collage thumbnails. Desktop defaults are unchanged.
+- CLI tools for comparing Depth + HiRes settings, with flat image exports and adjustable comparison collages. Desktop generation is unchanged.
 
 - Connection shows an experimental **Next 100 releases** countdown per API key, based on saved images and an assumed rolling 24-hour window. It updates automatically every minute. Existing daily counts and timezone selection are unchanged; actual DT+ availability is not confirmed.
 
