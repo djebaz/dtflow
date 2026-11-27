@@ -126,6 +126,7 @@ class CloudAuth:
         self._lock = asyncio.Lock()
         self.inventory_lock = asyncio.Lock()
         self.inventories: dict[str, tuple[InventorySnapshot, dict[str, dict]]] = {}
+        self.inventory_times: dict[str, float] = {}
         self._refresh: asyncio.Task[str] | None = None
         self._closed = False
         self._scope = uuid.uuid4().hex
@@ -360,6 +361,7 @@ class CloudAuth:
                             # Do not keep a rejected token for a subsequent generation; never replay this request.
                             self._token = None
                             self.inventories.clear()
+                            self.inventory_times.clear()
                         raise api_error(
                             category,
                             "cloud_http_rejected",

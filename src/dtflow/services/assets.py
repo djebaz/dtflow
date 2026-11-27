@@ -1044,7 +1044,7 @@ class AssetService:
         error = _failure(
             ErrorCategory.VALIDATION,
             REFRESH_FAILED_CODE,
-            f"LoRA {name} changed on disk but could not be prepared again ({reason}). Nothing was submitted; "
+            f"LoRA {name} could not be checked or prepared again ({reason}). Nothing was submitted; "
             "the run pauses. Run Prepare for it again.",
             diagnostics=(("asset", name), ("cause", reason)),
         )

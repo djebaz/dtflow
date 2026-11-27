@@ -188,7 +188,7 @@ def save_workflow_defaults(state: Path, values: dict[str, int]) -> Path:
 
 
 # Local video encoding (#550): how many FFmpeg encoders may run at once and how many codec threads each one uses.
-# 0 means Unlimited encoders (no cap beyond the video admission limit) and Auto threads (chosen from the CPU count).
+# 0 means Unlimited encoders (up to the 10 local encoding workers) and Auto threads (chosen from the CPU count).
 MAX_VIDEO_ENCODERS = 10  # independent local codec resource policy
 MAX_VIDEO_THREADS = 16
 VIDEO_ENCODING_KEYS = ("video_max_encoders", "video_encoder_threads")

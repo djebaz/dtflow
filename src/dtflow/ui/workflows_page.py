@@ -1209,7 +1209,7 @@ class WorkflowsPage(QObject):
         except SettingsError:
             defaults = dict(WORKFLOW_DEFAULTS)
         spin = QSpinBox(host)
-        spin.setRange(0, wf.MAX_CONCURRENCY if backend == "cloud" else 10)
+        spin.setRange(0, wf.workflow_limit(wf.Graph(concurrency=None), "cloud", defaults) if backend == "cloud" else 10)
         if node is None:
             label = _label("Global concurrency", "workflowParamLabel")
             spin.setSpecialValueText(

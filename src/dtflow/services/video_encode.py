@@ -107,15 +107,16 @@ def _wake() -> None:
 async def encoder_slot(on_wait=None):
     """One slot of the shared local-encoder limit, held across a clip's FFmpeg encode and audio mux.
 
-    Waiting is cancellable. ``on_wait`` is called once, only when the item has to wait. With no cap (0) the slot is
-    only counted, never refused. The cap is read at each attempt, so a changed setting applies to waiting items.
+    Waiting is cancellable. ``on_wait`` is called once, only when the item has to wait. With no cap (0) the worker pool size is
+    the cap. The cap is read at each attempt, so a changed setting applies to waiting items.
     """
     global _running
     waited = False
     while True:
         with _gate:
-            cap = _policy[0]
-            if cap == 0 or _running < cap:
+            # Never admit more encodes than the worker pool can run, so waiting is shown instead of hidden in the pool.
+            cap = min(_policy[0] or MAX_VIDEO_ENCODERS, MAX_VIDEO_ENCODERS)
+            if _running < cap:
                 _running += 1
                 break
             future = asyncio.get_running_loop().create_future()

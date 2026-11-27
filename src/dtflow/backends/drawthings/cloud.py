@@ -1,5 +1,6 @@
 """Direct DT+ backend: cloud authentication around the shared Draw Things transport path."""
 
+import time
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -33,6 +34,9 @@ from dtflow.core.models import (
     StorageListing,
     ValidationError,
 )
+
+
+_FRESH_SECONDS = 5.0
 
 
 class DirectCloudBackend(DrawThingsBackend):
@@ -145,7 +149,11 @@ class DirectCloudBackend(DrawThingsBackend):
         # Keep Echo model descriptions with the snapshot; never share image permits.
         endpoint = self.endpoint.label
         async with self._auth.inventory_lock:
-            if refresh:
+            # Concurrent forced refreshes share one Echo: a snapshot taken moments ago still counts as fresh.
+            if (
+                refresh
+                and time.monotonic() - self._auth.inventory_times.get(endpoint, -_FRESH_SECONDS) >= _FRESH_SECONDS
+            ):
                 self._auth.inventories.pop(endpoint, None)
             cached = self._auth.inventories.get(endpoint)
             if cached is not None:
@@ -155,6 +163,7 @@ class DirectCloudBackend(DrawThingsBackend):
                 return self._with_staleness(self._inventory)
             snapshot = await super().get_inventory(refresh=True)
             self._auth.inventories[endpoint] = (snapshot, self._model_specs)
+            self._auth.inventory_times[endpoint] = time.monotonic()
             return snapshot
 
     async def _echo(self):

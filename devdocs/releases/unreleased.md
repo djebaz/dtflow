@@ -14,6 +14,8 @@ Changes through 6.5.5 are consolidated in [DTFlow 6.5.5](v6.5.5.md). The publish
 
 ## Changed
 
+- DT+ concurrency can be set from 1 to 100 on the Connection page, and DT+ image generations are no longer held back by the old ten-slot limits or by the shared memory budget. Videos no longer have a fixed limit of ten clips in progress (disk and memory still limit them); local video encoding still runs at most ten encoders at once. DT+ images use up to four connections, never more than the selected concurrency. A workflow can only lower the Connection value; a higher saved workflow value is now reduced to it.
+- Starting several DT+ generations is faster: sign-in, model information and LoRA checks are reused instead of repeated for every item.
 - Controlnet offers **Union Pro 2.0** (q5p first) instead of Union Pro 1.0 for FLUX.1. Saved settings and templates that name Union Pro 1.0 retain their values but require an explicit replacement for new desktop submissions. Existing durable queues and Retry keep and can submit their exact recorded requests; nothing is replaced silently.
 - In the Queues composer the Fixed LoRAs row is now called **Constant LoRAs**, and LoRA sets add to the Constant LoRAs instead of replacing them (a LoRA in both takes the set's weight). Queues and templates saved before keep their items, and plan files keep the old behavior unless they set `"constant_loras": true`.
 

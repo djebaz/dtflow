@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -62,6 +61,9 @@ from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event, timing_enabled, timing_level
 
 log = logging.getLogger(__name__)
+CLOUD_IMAGE_CHANNELS = (
+    4  # owner-approved after matched 20-image submission-spread benchmarks (see cloud-integration.md)
+)
 GENERATE_METHOD = "/ImageGenerationService/GenerateImage"
 
 BACKEND_ID = "drawthings-grpc"
@@ -131,14 +133,8 @@ class DrawThingsBackend:
         self.limits = limits or ResourceLimits()
         self._shared_secret = shared_secret
         self._channel: Channel | None = None
-        self._benchmark_channels: list[Channel] = []
-        self._benchmark_next = 0
-        self._benchmark_count = 1
-        if self.backend_id == "drawthings-cloud":
-            count = os.environ.get("DTFLOW_BENCH_GRPC_CHANNELS", "4")
-            if count not in ("1", "2", "4"):
-                raise ValidationError("DTFLOW_BENCH_GRPC_CHANNELS must be 1, 2 or 4.")
-            self._benchmark_count = int(count)
+        self._extra_channels: list[Channel] = []
+        self._channel_next = 0
         self._closing = False
         self._closed = False
         self._active = 0
@@ -244,17 +240,22 @@ class DrawThingsBackend:
             channel._codec = _TimingProtoCodec()
         return channel
 
+    @property
+    def _channel_count(self) -> int:
+        """DT+ image generations use up to four channels, never more than the selected concurrency."""
+        return min(CLOUD_IMAGE_CHANNELS, self.max_concurrency) if self.backend_id == "drawthings-cloud" else 1
+
     async def _generation_channel(self) -> tuple[Channel, int]:
-        """Select a fixed benchmark channel before authorization; no extra generation admission."""
+        """Round-robin an image generation over the DT+ channels before authorization; no extra admission."""
         primary = self._require_channel()
-        index = self._benchmark_next % self._benchmark_count
-        self._benchmark_next += 1
+        index = self._channel_next % self._channel_count
+        self._channel_next += 1
         if index == 0:
             await self._connect()
             return primary, index
-        while len(self._benchmark_channels) < index:
-            self._benchmark_channels.append(self._new_channel())
-        channel = self._benchmark_channels[index - 1]
+        while len(self._extra_channels) < index:
+            self._extra_channels.append(self._new_channel())
+        channel = self._extra_channels[index - 1]
         await self._connect(channel)
         return channel, index
 
@@ -648,9 +649,9 @@ class DrawThingsBackend:
                                     {
                                         "send_ms": (request_sent_at - send_started) * 1000,
                                         "channel_index": channel_index,
-                                        "channel_count": self._benchmark_count,
+                                        "channel_count": self._channel_count,
                                     }
-                                    if timing_enabled() or self._benchmark_count > 1
+                                    if timing_enabled() or self._channel_count > 1
                                     else {}
                                 ),
                             },
@@ -953,9 +954,9 @@ class DrawThingsBackend:
         if self._channel is not None:
             channel, self._channel = self._channel, None
             channel.close()
-        for channel in self._benchmark_channels:
+        for channel in self._extra_channels:
             channel.close()
-        self._benchmark_channels.clear()
+        self._extra_channels.clear()
         self._closed = True
 
     # -- internals -----------------------------------------------------------------------------------------------

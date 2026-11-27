@@ -20,7 +20,6 @@ def event_stage(event: BackendEvent) -> str:
             "creating_attempt": "Creating generation attempt",
             "waiting_buffer_budget": "Waiting for memory budget",
             "waiting_video_disk": "Waiting for free disk space on this PC",
-            "waiting_video_clip_limit": "Waiting for a free video slot on this PC",
             "waiting_video_memory": "Waiting for video memory on this PC",
             "video_preparing": "Preparing video",
             "saving_image_snapshot": "Saving image input snapshot",
