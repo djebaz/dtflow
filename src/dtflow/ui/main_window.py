@@ -244,6 +244,7 @@ class MainWindow:
         environ=None,
         state_dir: Path | None = None,
         no_cache: bool = False,
+        defer_startup_workers: bool = False,
     ):
         # Separate first-use Qt costs (loader plugins, fonts, stylesheet parsing) from the form's own cost.
         _form_loader()
@@ -280,7 +281,7 @@ class MainWindow:
         self._check_token = None
         self._check_future = None
         self._environ = environ
-        self.runner = runner or AsyncRunner(self.form)
+        self.runner = runner or AsyncRunner(self.form, defer_start=defer_startup_workers)
         self._shutdown_guard = _ShutdownGuard(self.form)
         self._wheel_guard = WheelGuard(self.form)
         self._wheel_step = WheelStepRule(self.form)
@@ -487,6 +488,7 @@ class MainWindow:
             saved_source=lambda: self._optional_saved,
             state_dir=self.state_dir,
             request_source=self.generation.request_for_queue,
+            verify_generate_source=self.generation.video.verify_saved_source,
             edit_source=self.generation.queue_edit_job,
             editing_source=lambda: self.generation.inpaint.active,
             simulation_source=self.generation.simulation,
@@ -855,7 +857,6 @@ class MainWindow:
             self._gui_heartbeat_context,
             self.gallery._perf_stats.flush,
         )
-        self.refresh_custom_loras(background=True)
         file_dialogs.configure(
             self.state_dir, on_problem=self.dialog_folder_problem, on_change=self.refresh_remembered_folders
         )
@@ -1081,6 +1082,7 @@ class MainWindow:
     def _show_scripts(self) -> None:
         """Switch Generate to its third sub-mode without touching active work."""
         self._scripts_active = True
+        self.generation.video.set_generate_visible(False)
         self.form.workspaceStack.setCurrentWidget(self.generation_page)
         self.generation_page.scriptsModeButton.setChecked(True)
         self.scripts.activate()
@@ -1134,6 +1136,7 @@ class MainWindow:
         for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
             stack.setCurrentIndex(1)
         self._set_scripts_left_rail(False)
+        self.generation.video.set_generate_visible(self.form.workspaceStack.currentWidget() is self.generation_page)
         self._responsive_workspace()
 
     def _toggle_logs(self) -> None:
@@ -1212,6 +1215,9 @@ class MainWindow:
             self.refresh_cache()
             self.cloud_usage.refresh()
             self.refresh_custom_loras(background=True)
+            self._render_lora_table()
+        else:
+            self._lora_actions_timer.stop()
         for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
             stack.setCurrentIndex(index)
         if index == 1 and self._scripts_active:
@@ -1275,6 +1281,7 @@ class MainWindow:
         generate_visible = self.form.workspaceStack.currentWidget() is self.generation_page
         self.generation.inpaint.set_generate_visible(generate_visible)
         self.generation.controlnet.set_generate_visible(generate_visible)
+        self.generation.video.set_generate_visible(generate_visible and not self._scripts_active)
 
     def _retire_activity_presentation(self) -> None:
         """Unsubscribe before Qt destroys the activity overlay's child widgets."""
@@ -1309,6 +1316,7 @@ class MainWindow:
                 policy.setHorizontalPolicy(horizontal)
                 page.setSizePolicy(policy)
 
+    @profile_slow_gui_callback("main.responsive_workspace")
     def _responsive_workspace(self) -> None:
         shell = self.shell
         narrow = self.form.width() < 1100
@@ -2201,6 +2209,12 @@ class MainWindow:
         self.form.statusBar().showMessage(f"Exported {count} Draw Things preset(s).", 5000)
 
     def refresh_cache(self) -> None:
+        # Cache usage scans are presentation only; measure when the section is opened.
+        if (
+            self.form.workspaceStack.currentWidget() is not self.form.connectionPage
+            or self.form.cacheManagementBoxContents.isHidden()
+        ):
+            return
         token = self._cache_measure_token = object()
 
         async def measure():
@@ -2609,9 +2623,15 @@ class MainWindow:
         if changed or force_render:
             self._render_lora_table()
 
+    def _lora_table_visible(self) -> bool:
+        return (
+            self.form.workspaceStack.currentWidget() is self.form.connectionPage
+            and not self.form.customLorasBoxContents.isHidden()
+        )
+
     def _render_lora_table(self) -> None:
-        """Reconcile changed content and controls in bounded turns without locking current rows."""
-        if self.runner.closed or self._removing_retained_lora:
+        """Reconcile changed content and controls only while the library is exposed."""
+        if self.runner.closed or self._removing_retained_lora or not self._lora_table_visible():
             return
         self._lora_current_entries = {
             (entry.get("sha256"), entry.get("size")): entry
@@ -2657,8 +2677,9 @@ class MainWindow:
             if controls != self._lora_controls_state:
                 self._lora_controls_state = deepcopy(controls)
                 self._lora_control_updates = self._refresh_lora_controls()
-                self._lora_actions_timer.start(0)
             self._retained_lora_selection_changed()
+            if self._lora_reconcile is not None or self._lora_control_updates is not None:
+                self._lora_actions_timer.start(0)
             return
         self._lora_actions_timer.stop()
         selected = self._selected_lora_identity()
@@ -2853,8 +2874,8 @@ class MainWindow:
             self._lora_reconcile = None
             self._lora_control_updates = None
             return
-        if self._removing_retained_lora:
-            # Removal owns the disabled parent and restarts from a fresh projection on completion.
+        if self._removing_retained_lora or not self._lora_table_visible():
+            # Removal or a hidden library pauses presentation; reopening reconciles the latest state.
             return
         table = self.form.retainedLorasTable
         deadline = time.perf_counter() + 0.008
@@ -3067,9 +3088,14 @@ class MainWindow:
                 getattr(self.form, name) for name in (header_name, heading_name, contents_name, button_name)
             )
             title = heading.text()
-            button.toggled.connect(
-                lambda expanded, c=contents, b=button, t=title: self._toggle_connection_section(c, b, t, expanded)
-            )
+            if button_name == "customLorasDisclosure":
+                button.toggled.connect(self._toggle_custom_loras)
+            elif button_name == "cacheManagementDisclosure":
+                button.toggled.connect(self._toggle_cache_management)
+            else:
+                button.toggled.connect(
+                    lambda expanded, c=contents, b=button, t=title: self._toggle_connection_section(c, b, t, expanded)
+                )
             guard = _DisclosureHeader(button, header)
             self._connection_header_guards.append(guard)
             for widget in (header, heading):
@@ -3091,11 +3117,25 @@ class MainWindow:
         name = "controls/chevron-down.svg" if expanded else "gallery/chevron-right.svg"
         button.setIcon(QIcon(str(images / name)))
 
+    def _toggle_cache_management(self, expanded: bool) -> None:
+        self._toggle_connection_section(
+            self.form.cacheManagementBoxContents,
+            self.form.cacheManagementDisclosure,
+            self.form.cacheManagementHeading.text(),
+            expanded,
+        )
+        if expanded:
+            self.refresh_cache()
+
     def _toggle_custom_loras(self, expanded: bool) -> None:
         """Expand the existing Connections LoRA library only when needed."""
         self._toggle_connection_section(
             self.form.customLorasBoxContents, self.form.customLorasDisclosure, "Custom LoRAs", expanded
         )
+        if expanded:
+            self._render_lora_table()
+        else:
+            self._lora_actions_timer.stop()
 
     def _retained_lora_selection_changed(self) -> None:
         selected = self._selected_lora_identity() is not None

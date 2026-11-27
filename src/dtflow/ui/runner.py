@@ -18,7 +18,7 @@ class AsyncRunner(QObject):
     shutdown_started = Signal()
     _done = Signal(object, object, object)  # callback, result, exception
 
-    def __init__(self, parent: QObject | None = None):
+    def __init__(self, parent: QObject | None = None, *, defer_start: bool = False):
         super().__init__(parent)
         self._loop = asyncio.new_event_loop()
         self._pending: set = set()
@@ -29,7 +29,13 @@ class AsyncRunner(QObject):
         self._closed = False
         self._thread = threading.Thread(target=self._serve, name="dtflow-qt-async", daemon=True)
         self._done.connect(self._deliver, Qt.ConnectionType.QueuedConnection)
-        self._thread.start()
+        if not defer_start:
+            self.start()
+
+    def start(self) -> None:
+        """Release queued submissions once the desktop has reached its first post-show turn."""
+        if not self._closed and self._thread.ident is None:
+            self._thread.start()
 
     def _serve(self) -> None:
         asyncio.set_event_loop(self._loop)
@@ -75,6 +81,9 @@ class AsyncRunner(QObject):
             work = take_unstarted()
             if work is None:
                 return  # cancellation took ownership before the wrapper started
+            if self._closed:
+                work.close()
+                return
             try:
                 result, failure = await work, None
             except Exception as exc:
@@ -117,6 +126,10 @@ class AsyncRunner(QObject):
         if self._loop.is_closed():
             return
         self._loop.call_soon_threadsafe(self._stop.set)
+        if self._thread.ident is None:
+            # Drain the queued asyncio wrappers during normal shutdown. They close their work
+            # without executing it; closing an unrun loop would abandon those wrappers.
+            self._thread.start()
         self._thread.join(timeout)
         if not self._thread.is_alive():
             with self._unstarted_lock:

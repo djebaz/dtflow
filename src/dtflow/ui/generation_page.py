@@ -104,6 +104,7 @@ from dtflow.ui.lora_panel import LoraAssetPanel
 from dtflow.ui.prompt_tags import style_prompt_tags
 from dtflow.ui.submit_shortcut import SubmitShortcut
 from dtflow.ui.runner import AsyncRunner, EventRelay
+from dtflow.ui.performance import profile_slow_gui_callback
 
 
 log = logging.getLogger(__name__)
@@ -2245,6 +2246,7 @@ class GenerationPage:
     def _catalogue_context(self):
         return (self._inventory_revision, self._current_inventory_source())
 
+    @profile_slow_gui_callback("generate.catalogue_delivery")
     def _catalogue_ready(self, token, context, result, error) -> None:
         self._catalogue_reading = False
         if self._runner.closed or token is not self._catalogue_request or context != self._catalogue_context():
@@ -2587,6 +2589,7 @@ class GenerationPage:
         selection = await asyncio.to_thread(selection_for, name, endpoint, self._state)
         return await self._inventory_memory.restore(selection, self._state, saved=saved, no_cache=self._no_cache)
 
+    @profile_slow_gui_callback("generate.inventory_restored")
     def _inventory_restored(self, source, revision, token, result, revalidate):
         if (
             token is not self._cache_request

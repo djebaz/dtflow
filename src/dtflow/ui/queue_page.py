@@ -316,6 +316,7 @@ class QueuePage:
         reuse_hook: Callable[[dict], None] = lambda request: None,
         pose_controls_source: Callable = lambda _model, _kind: (),
         pose_control_problem: Callable = lambda _model, _checkpoint, _kind: "",
+        verify_generate_source: Callable[[], None] = lambda: None,
     ):
         self.page = page
         self._runner, self._backend, self._saved = runner, backend_source, saved_source
@@ -327,6 +328,7 @@ class QueuePage:
         self._live_models = models_source  # every known model, read on each use: not narrowed to Generate's family
         self._choices = self._composer_choices
         self._reuse_hook = reuse_hook
+        self._verify_generate_source = verify_generate_source
         self._draft = None  # immutable request/backend/receipts snapshot; Generate is only an explicit copy source
         self._draft_choices: dict = {}  # initial inventory suggestions, not a live view of later Generate edits
         self._draft_job = None
@@ -1801,6 +1803,7 @@ class QueuePage:
                 # A recorded pose's execution references must not survive the explicit fresh-map capture.
                 request = replace(request, schema_version=2, pose_control=None, image_inputs=None)
             else:
+                self._verify_generate_source()
                 request, name, endpoint, assets = self._request_source(preview=True)
             self._set_draft(request, name, endpoint, assets, job)
             if not keep_base:
@@ -2495,6 +2498,8 @@ class QueuePage:
                 report(Presentation("warning", "Queue not created", "A run started meanwhile; use Add to queue."))
             return
         try:
+            if (quick and count is not None) or self._draft is None:
+                self._verify_generate_source()
             request, name, endpoint, asset_ids = (
                 self._request_source() if quick and count is not None else self._composer_request()
             )
