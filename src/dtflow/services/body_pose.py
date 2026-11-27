@@ -561,25 +561,61 @@ def prepare_spatial_probe(
     return fit_control_map(content, evidence, input_type, width, height)
 
 
-def write_comparison_collage(queue, root: Path) -> Path:
+def write_comparison_collage(queue, root: Path, thumbnail_width: int = 384, details: str = "") -> Path:
     """One labelled thumbnail per queue item, including unsuccessful items."""
     from PIL import Image, ImageDraw, ImageFont, ImageOps
 
     items = queue["items"]
     cols = min(4, len(items))
-    width, height, label, gap = 384, 512, 76, 12
-    rows = (len(items) + cols - 1) // cols
-    sheet = Image.new("RGB", (cols * (width + gap) + gap, rows * (height + label + gap) + gap), "#181818")
-    draw = ImageDraw.Draw(sheet)
+    width, height, gap = thumbnail_width, thumbnail_width * 4 // 3, 12
     try:
         font = ImageFont.truetype("arial.ttf", 16)
     except OSError:
         font = ImageFont.load_default()
+
+    def wrap(text, available):
+        lines = []
+        line = ""
+        for char in text:
+            if line and font.getlength(line + char) > available:
+                lines.append(line.rstrip())
+                line = ""
+            line += char
+        lines.append(line.rstrip())
+        return "\n".join(lines)
+
+    def label_for(item):
+        lines = [item["model"].removesuffix(".ckpt")]
+        control = item.get("pose_control") or {}
+        if control.get("input_type") == "depth":
+            dw = control.get("depth_width") or item.get("width")
+            dh = control.get("depth_height") or item.get("height")
+            lines.append(f"Depth {dw}x{dh}")
+        duration = item.get("duration")
+        timing = f"{duration:.2f} s" if duration is not None else "No recorded time"
+        lines.append(f"{item['state']} | {timing}")
+        return "\n".join(wrap(line, width - 10) for line in lines)
+
+    labels = [label_for(item) for item in items]
+    measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+
+    def text_height(text):
+        box = measure.multiline_textbbox((0, 0), text, font=font)
+        return box[3] - min(0, box[1]) + 12
+
+    label = max(76, *(text_height(text) for text in labels))
+    sheet_width = cols * (width + gap) + gap
+    heading = wrap(details, sheet_width - 2 * gap) if details else ""
+    banner = text_height(heading) if heading else 0
+    rows = (len(items) + cols - 1) // cols
+    sheet = Image.new("RGB", (sheet_width, rows * (height + label + gap) + gap + banner), "#181818")
+    draw = ImageDraw.Draw(sheet)
+    if heading:
+        draw.multiline_text((gap, gap), heading, fill="white", font=font)
     folder = Path(root)
     for index, item in enumerate(items):
         x = gap + index % cols * (width + gap)
-        y = gap + index // cols * (height + label + gap)
-        # Use only the recorded artifacts of this settled attempt.
+        y = banner + gap + index // cols * (height + label + gap)
         files = [Path(path) for path in item["artifacts"] if path.lower().endswith(".png") and Path(path).is_file()]
         if files:
             with Image.open(files[0]) as image:
@@ -588,15 +624,28 @@ def write_comparison_collage(queue, root: Path) -> Path:
         else:
             draw.rectangle((x, y, x + width, y + height), fill="#303030")
             draw.text((x + 12, y + height // 2), item["state"], fill="white", font=font)
-        name = item["model"].removesuffix(".ckpt")
-        import textwrap
-
-        draw.multiline_text((x + 5, y + height + 5), "\n".join(textwrap.wrap(name, 40)), fill="white", font=font)
-        duration = item.get("duration")
-        timing = f"{duration:.2f} s" if duration is not None else "No recorded time"
-        draw.text((x + 5, y + height + 53), f"{item['state']} | {timing}", fill="#aaaaaa", font=font)
+        draw.multiline_text((x + 5, y + height + 5), labels[index], fill="white", font=font)
     folder.mkdir(parents=True, exist_ok=True)
     target = folder / f"comparison-{queue['queue_id']}.jpg"
     with target.open("xb") as stream:
         sheet.save(stream, format="JPEG", quality=94)
     return target
+
+
+def export_flat_comparison(queue, root: Path) -> list[str]:
+    """Copy recorded artifacts to a flat directory without replacing canonical outputs."""
+    import shutil
+
+    root = Path(root)
+    root.mkdir(parents=True, exist_ok=True)
+    exported = []
+    for index, item in enumerate(queue["items"], 1):
+        for number, artifact in enumerate(item["artifacts"], 1):
+            source = Path(artifact)
+            if not source.is_file() or source.suffix.lower() not in (".png", ".json"):
+                continue
+            target = root / f"{queue['queue_id']}-{index:03d}-{number:02d}-{source.name}"
+            with source.open("rb") as incoming, target.open("xb") as outgoing:
+                shutil.copyfileobj(incoming, outgoing)
+            exported.append(str(target))
+    return exported

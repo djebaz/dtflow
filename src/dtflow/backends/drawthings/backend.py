@@ -85,6 +85,46 @@ class _TimingProtoCodec(ProtoCodec):
         return encoded
 
 
+def _depth_wire_diagnostics(request: ResolvedGenerationRequest, effective_configuration) -> dict:
+    """Project only verified, relevant Depth settings, never raw configuration or payloads."""
+    control = request.pose_control
+    if control is None or control.input_type != "depth":
+        return {}
+    effective = dict(effective_configuration)
+    keys = (
+        "model",
+        "seed",
+        "width",
+        "height",
+        "steps",
+        "guidance",
+        "sampler",
+        "seed_mode",
+        "hires_fix",
+        "hires_fix_factor",
+        "hires_fix_width",
+        "hires_fix_height",
+        "hires_fix_strength",
+        "control_hint_type",
+        "control_input_override",
+        "control_tensor_width",
+        "control_tensor_height",
+        "control_tensor_channels",
+        "control_tensor_rgb_range",
+        "config_source",
+    )
+    return {
+        **{key: effective[key] for key in keys if key in effective},
+        "control_checkpoint": control.checkpoint,
+        "control_strength": control.strength,
+        "control_mode": control.control_mode,
+        "control_start": control.guidance_start,
+        "control_end": control.guidance_end,
+        "depth_tensor_fingerprint": effective.get("depth_tensor_sha256", "")[:16],
+        "loras_count": len(request.loras),
+    }
+
+
 def now() -> str:
     return datetime.now(UTC).isoformat()
 
@@ -646,6 +686,7 @@ class DrawThingsBackend:
                             data={
                                 "transport": "grpc",
                                 "backend": self.backend_id,
+                                **_depth_wire_diagnostics(request, wire.effective_configuration),
                                 **(
                                     {
                                         "send_ms": (request_sent_at - send_started) * 1000,

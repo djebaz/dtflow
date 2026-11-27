@@ -415,6 +415,23 @@ For the owner's Fill command, keep all parameters and add `--bridge` alongside `
 
 Use `pose generate -ms MODEL MODEL ...` instead of `-m` to compare compatible checkpoints from the selected control's model family with one shared fitted map and fixed seed. This creates and starts one durable generation queue through the existing queue dispatcher. Concurrency follows the saved DT+ Connection setting (client cap 10, not a claimed provider limit). Queue items retain ordinary status, attempts, bounded retry policy and metadata; no new scheduler, process-level state locks or automatic retry policy. The CLI prints the queue ID before dispatch and writes a labelled `comparison-<queue-id>.jpg` directly under `--out` (or `STATE/comparisons` without `--out`) after settlement, with placeholders for missing results. Originals are unchanged. Existing queue Start/Resume/Retry are available; a resumed queue does not automatically rebuild the collage. Explicit asset receipts are not supported for this comparison. The owner observed seven independent CLI processes failing during session opening while one completed; exact exceptions were not supplied. Eight sequential SD 1.x Pose HiRes runs succeeded. The owner’s parallel comparison succeeded 8/8 on Windows with DT+ Cloud, producing the labelled collage; the subsequent memory optimization still needs retesting.
 
+### Experimental Depth transport (#637)
+
+`pose generate` accepts `-dw/--depth-width` and `-dh/--depth-height` together (1–2048 pixels), and `-hw/--hires-width` and `-hy/--hires-height` for explicit first-pass dimensions. The retained map remains fitted at final size; explicit wire dimensions bilinearly resize that map without changing generation dimensions. Native Depth remains single-channel and uncompressed. The public engine requires one channel; RGB is not offered. The request serializer retains explicit dimensions and older records use the default final size by construction; runtime retry and old-record loading are not yet verified.
+
+`-fl/--flat` copies saved PNG/JSON artifacts directly into `--out` (default STATE/comparisons), with unique queue/item-prefixed names; canonical attempt directories stay under state. `-cl/--collage` requests a labelled JPEG even for one model; multi-model comparisons retain their automatic collage. `-cz/--collage-size` sets thumbnail width (128–1024, default 384). The collage identifies the final and first-pass sizes and Depth wire settings; missing results receive placeholders. Original images are not resized or replaced. Flat export or an explicit collage uses a durable queue even for one model. Each command explicitly submits its selected generation(s); do not assume the experimental settings work on DT+.
+
+Use a prepared grayscale map and fixed seed/settings; compare default final-size Depth against an explicit first-pass-sized tensor using separate invocations. Only change one variable at a time. Alternatively, `-ds/--depth-sizes final first 512x768` creates one durable fixed-seed comparison queue with three explicitly selected sizes and automatically writes one labelled collage. Specify 2–8 distinct sizes (duplicates after resolution are rejected); use one model and do not combine with `--models` or `--depth-width/height`. `first` requires HiRes. Each size is a separate generation, may consume credits and may fail. Use `--flat --collage-size 256` for compact comparison exports. The final resolution, control, prompt, seed and sampling settings stay fixed. For a 704×1024 final size and 384×512 first pass, the pinned upstream axis swap predicts the following tensor shapes (width × height):
+
+| Submitted Depth size | Pass 1 | Pass 2, if reached |
+| --- | --- | --- |
+| 704×1024 (`final`) | 352×559 | 704×1024 |
+| 384×512 (`first`) | 384×512 | 768×939 |
+| 512×768 (custom) | 341×576 | 683×1056 |
+
+These are source-derived predictions, not observed cloud outcomes. Each pass uses the submitted hint; a pass-1 mismatch may prevent pass 2 from being reached. Changing hint size is diagnostic, not a general fix.
+
+For owner validation, retain the JSONL session log, queue summary and comparison collage (plus any saved metadata). The INFO `backend.generation_request_sent` event for Depth includes the verified wire dimensions, channel count, normalization, hint type/input override, model, seed, sampler, sampling settings, HiRes configuration and a short tensor fingerprint. It is emitted after successful local gRPC send, even if the provider later fails or returns no image; a failure before send completion may have no such event. The existing attempt context correlates this event with provider errors. No prompt, credential or raw tensor is included.
 
 ### Cloud ControlNet admission and timing
 

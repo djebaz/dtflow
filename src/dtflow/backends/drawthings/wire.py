@@ -175,8 +175,13 @@ def build_generation_message(
             != request.image_inputs
         ):
             raise _reject(request, "pose_input_mismatch", "Pose input differs from the recorded snapshot.")
+        control = request.pose_control
         transport = encode_image_inputs(
-            prepared, limits, unit_rgb=_unit_control_rgb(request), depth=request.pose_control.input_type == "depth"
+            prepared,
+            limits,
+            unit_rgb=_unit_control_rgb(request),
+            depth=control.input_type == "depth",
+            depth_size=(control.depth_width, control.depth_height) if control.depth_width is not None else None,
         )
     elif image_operation:
         if not isinstance(image_permit, ImageOperationPermit) or prepared is None or request.image_inputs is None:
@@ -295,6 +300,9 @@ def build_generation_message(
                 (f"{request.pose_control.input_type}_tensor_sha256", transport.image.hex()),
                 (f"{request.pose_control.input_type}_cloud_acceptance", "unverified_owner_experiment"),
                 ("control_hint_type", _control_hint_type(request)),
+                ("control_input_override", _control_input_override(request)),
+                ("control_tensor_width", str(transport.width)),
+                ("control_tensor_height", str(transport.height)),
                 ("control_tensor_channels", "1" if request.pose_control.input_type == "depth" else "3"),
                 (
                     "control_tensor_rgb_range",
