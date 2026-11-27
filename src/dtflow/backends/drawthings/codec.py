@@ -10,13 +10,14 @@ from __future__ import annotations
 
 import logging
 import struct
+from time import monotonic
 
 from drawthings_py.image._preview_decoders import decode_preview
 from drawthings_py.image.image_buffer import ImageBuffer
 
 from dtflow.core.models import Designation, ImageArtifact, ResolvedGenerationRequest, ResourceLimits
 from dtflow.core.png import encode_png
-from dtflow.diagnostics import event as diagnostic_event
+from dtflow.diagnostics import event as diagnostic_event, timing_level
 
 log = logging.getLogger(__name__)
 HEADER_BYTES = 68
@@ -77,7 +78,9 @@ def pixel_stats(data: bytes, width: int, height: int, channels: int) -> dict[str
 def decode_final(tensor: bytes, width: int, height: int, channels: int, index: int, limits: ResourceLimits):
     """Decode one checked final tensor to a PNG artifact; runs in a worker thread."""
     try:
+        started = monotonic()
         buffer = ImageBuffer.from_tensor(tensor)
+        decoded = monotonic()
         if (buffer.width, buffer.height, buffer.channels) != (width, height, channels):
             raise TensorRejected("tensor_dimensions_mismatch")
         if log.isEnabledFor(logging.DEBUG):
@@ -89,7 +92,20 @@ def decode_final(tensor: bytes, width: int, height: int, channels: int, index: i
                     "statistics": pixel_stats(buffer.data, width, height, channels),
                 },
             )
+        encoding = monotonic()
         encoded = encode_png(buffer.data, width, height, channels)
+        diagnostic_event(
+            log,
+            "backend.final_image_processed",
+            level=timing_level(),
+            data={
+                "decode_ms": (decoded - started) * 1000,
+                "diagnostics_ms": (encoding - decoded) * 1000,
+                "png_encode_ms": (monotonic() - encoding) * 1000,
+                "tensor_bytes": len(tensor),
+                "png_bytes": len(encoded),
+            },
+        )
     except TensorRejected:
         raise
     except Exception as exc:
