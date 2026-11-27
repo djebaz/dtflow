@@ -32,6 +32,10 @@ Changes through 6.5.5 are consolidated in [DTFlow 6.5.5](v6.5.5.md). The publish
 
 - The Compute Units estimate in Generate now follows HiRes: it adds the second pass to the smaller first pass, so turning HiRes on changes the number. The result is an approximation (Draw Things' own estimate ignores HiRes), and the "excludes the second pass" note is gone. The wording is now "HiRes" everywhere, and the HiRes factor goes up to 10 instead of 4.
 
+## Known limitations
+
+- Depth + HiRes may fail at some sizes. Try HiRes off or, at factor 2, a width and height both divisible by 128. This workaround is not guaranteed.
+
 ## Upgrade and compatibility
 
 - Queue templates saved by this version carry an `advanced` entry; an older DTFlow cannot read them, which matters only if you downgrade. Templates and queues from older versions load unchanged. Templates saved by this version also carry a `constant_loras` entry that an older DTFlow cannot read.
