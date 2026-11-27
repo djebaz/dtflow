@@ -2,7 +2,7 @@
 
 Only the smallest Qt modules and one bundled image are touched here. The theme, Designer forms, main window and
 services load after the splash has painted, in a queued continuation on the GUI thread. No fixed delays are used; the
-splash closes at the main window's first paint or when startup fails.
+splash closes in a queued handoff after the main window's first paint event or when startup fails.
 """
 
 import json
@@ -221,10 +221,14 @@ class StartupSplash(QWidget):
         self.close()
 
     def finish(self, form: QWidget) -> None:
-        """Close once the main window is up; the window form, not the splash, keeps the focus."""
+        """Dismiss outside the paint event; avoid a redundant native window activation."""
+        startup.mark("splash handoff started")
         self.dismiss()
-        form.raise_()
-        form.activateWindow()
+        startup.mark("splash dismissed")
+        if form.isVisible() and not form.isActiveWindow():
+            form.raise_()
+            form.activateWindow()
+        startup.mark("splash handoff completed")
 
 
 def run_gui_with_splash(**options) -> int:
@@ -257,12 +261,14 @@ def run_gui_with_splash(**options) -> int:
 
     def watch_window(window) -> None:
         def window_painted(source: str) -> None:
-            startup.mark("window painted" if source == "paint" else "window paint fallback")
+            # The event filter runs before Qt paints. Do not synchronously repaint the splash,
+            # hide a native window or request activation while Qt is handling this paint.
             startup.observe(None)
-            splash.finish(window.form)
+            startup.mark("window painted" if source == "paint" else "window paint fallback")
+            QTimer.singleShot(0, window.form, lambda: splash.finish(window.form))
 
-        # Watch before show(), so a synchronous first paint cannot be missed; report timings only once it is marked.
-        startup.expect("window painted", "window paint fallback")
+        # Report both paint observation and handoff, even if the post-show timer arrives first.
+        startup.expect("splash handoff completed")
         outcome["paint_watch"] = _FirstPaint(window.form, window_painted)
 
     startup.observe(splash.set_stage)

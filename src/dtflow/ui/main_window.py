@@ -1322,6 +1322,7 @@ class MainWindow:
                 policy.setHorizontalPolicy(horizontal)
                 page.setSizePolicy(policy)
 
+    @profile_slow_gui_callback("main.responsive_workspace")
     def _responsive_workspace(self) -> None:
         shell = self.shell
         narrow = self.form.width() < 1100
