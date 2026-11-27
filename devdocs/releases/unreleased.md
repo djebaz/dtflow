@@ -6,8 +6,6 @@ Changes through 6.5.5 are consolidated in [DTFlow 6.5.5](v6.5.5.md). The publish
 
 ## Added
 
-- Documented a public upstream Controlnet HiRes resize-axis discrepancy and the optional proportional-size workaround. Actual DT+ failure causality remains unconfirmed; no generation settings or admission behavior change.
-
 - Connection shows an experimental **Next 100 releases** countdown per API key, based on saved images and an assumed rolling 24-hour window. It updates automatically every minute. Existing daily counts and timezone selection are unchanged; actual DT+ availability is not confirmed.
 
 - Controlnet guides images with **Canny edges, depth or segmentation** as well as pose, from a photo or a prepared map, for SD 1.x and SDXL checkpoints as well as FLUX.1, when your DT+ inventory lists the control. Compatible combinations are available for experimentation even if previously unsuccessful or untested. Choosing a control, type or model family starts from suggested settings; saved settings are kept as they are. Queues, Gallery Use settings and templates keep the control type. Depth from a photo uses Depth Anything V2 Small, downloaded on request (about 94.5 MiB, Apache-2.0); Canny from a photo uses OpenCV, now included.
@@ -33,6 +31,10 @@ Changes through 6.5.5 are consolidated in [DTFlow 6.5.5](v6.5.5.md). The publish
 - Controlnet keeps its own base model, checkpoint, LoRAs and settings (size, steps, guidance, sampler, seed and Advanced generation), apart from Text to image and Inpaint. A preset or a LoRA chosen in one mode no longer lands in the other, so a Text to image LoRA from another model family no longer blocks a Controlnet generation, and the sampler stays as you chose it when you go back and forth. Prompts stay shared. The first time you open Controlnet it starts from your current settings without LoRAs.
 
 - The Compute Units estimate in Generate now follows HiRes: it adds the second pass to the smaller first pass, so turning HiRes on changes the number. The result is an approximation (Draw Things' own estimate ignores HiRes), and the "excludes the second pass" note is gone. The wording is now "HiRes" everywhere, and the HiRes factor goes up to 10 instead of 4.
+
+## Known limitations
+
+- Depth + HiRes may fail at some sizes. Try HiRes off or, at factor 2, a width and height both divisible by 128. This workaround is not guaranteed.
 
 ## Upgrade and compatibility
 
