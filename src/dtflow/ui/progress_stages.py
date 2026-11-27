@@ -42,5 +42,10 @@ def event_stage(event: BackendEvent) -> str:
     if event.kind == "terminal":
         return "Finished; checking and saving output"
     if event.kind == "progress":
-        return "Generating" if event.stage == "sampling" else (event.stage or "Progress").replace("_", " ")
+        return {
+            "sampling": "Generating",
+            "receiving_image": "Receiving final image",
+            "processing_image": "Processing final image",
+            "waiting_stream_completion": "Waiting for provider completion",
+        }.get(event.stage, (event.stage or "Progress").replace("_", " "))
     return ""
