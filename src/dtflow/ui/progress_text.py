@@ -61,21 +61,23 @@ def _groups(snapshot: ProgressSnapshot, short: bool, hires: bool = False) -> tup
             items = [item for item in pass_items if item.stage == code]
             pairs = [item.steps for item in items if item.steps is not None]
             observed = [item.observed_step for item in items if item.observed_step is not None]
+            partial = ""
             if count and len(pairs) == count:
                 counter = f"{sum(p[0] for p in pairs)}/{sum(p[1] for p in pairs)}"
             elif observed:
                 counter = str(sum(observed))
                 if len(observed) < count:
-                    counter += f", {len(observed)} reporting"
+                    partial = f", {len(observed)} reporting"
             elif pairs:
-                counter = f"{sum(p[0] for p in pairs)}/{sum(p[1] for p in pairs)}, {len(pairs)} reporting"
+                counter = f"{sum(p[0] for p in pairs)}/{sum(p[1] for p in pairs)}"
+                partial = f", {len(pairs)} reporting"
             else:
                 counter = "—" if count else "0"
             parts = []
             if waiting_count is not None:
                 parts.append(f"W{waiting_count}" if short else f"{waiting_count} waiting")
             parts.append(f"S{count}" if short else f"{count} sampling")
-            parts.append(counter if short else f"{counter} steps")
+            parts.append(f"{counter}{partial}" if short else f"{counter} steps{partial}")
             return f"{label} [{SEP.join(parts)}]"
 
         xy.extend((pass_group("S1", "P1"), pass_group("S2", "P2", counts.get("W2", 0))))
