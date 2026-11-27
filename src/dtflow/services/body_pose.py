@@ -568,7 +568,7 @@ def write_comparison_collage(queue, root: Path, thumbnail_width: int = 384, deta
     items = queue["items"]
     cols = min(4, len(items))
     width, height, label, gap = thumbnail_width, thumbnail_width * 4 // 3, 76, 12
-    banner = 48 if details else 0
+    banner = 64 if details else 0
     rows = (len(items) + cols - 1) // cols
     sheet = Image.new("RGB", (cols * (width + gap) + gap, rows * (height + label + gap) + gap + banner), "#181818")
     draw = ImageDraw.Draw(sheet)
@@ -577,7 +577,10 @@ def write_comparison_collage(queue, root: Path, thumbnail_width: int = 384, deta
     except OSError:
         font = ImageFont.load_default()
     if details:
-        draw.text((gap, gap), details, fill="white", font=font)
+        import textwrap
+
+        draw.multiline_text((gap, gap), "\n".join(textwrap.wrap(details, max(16, cols * width // 9))),
+                            fill="white", font=font)
     folder = Path(root)
     for index, item in enumerate(items):
         x = gap + index % cols * (width + gap)
@@ -594,7 +597,7 @@ def write_comparison_collage(queue, root: Path, thumbnail_width: int = 384, deta
         name = item["model"].removesuffix(".ckpt")
         import textwrap
 
-        draw.multiline_text((x + 5, y + height + 5), "\n".join(textwrap.wrap(name, 40)), fill="white", font=font)
+        draw.multiline_text((x + 5, y + height + 5), "\n".join(textwrap.wrap(name, max(12, width // 9))), fill="white", font=font)
         duration = item.get("duration")
         timing = f"{duration:.2f} s" if duration is not None else "No recorded time"
         draw.text((x + 5, y + height + 53), f"{item['state']} | {timing}", fill="#aaaaaa", font=font)
