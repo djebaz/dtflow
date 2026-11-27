@@ -122,7 +122,7 @@ text stays in `backend.api_failed`. Quota exhaustion is never inferred.
 | Open calls past sampling (`limit × OVERLAP`) | Retained | Bounds paid requests whose download or save is stuck |
 | Shared buffer budget for ordinary cloud images and ControlNet | Exempt while raw size fits one encoded-artifact allowance | Serialized small requests; per-request bounds remain, no aggregate bound |
 | Buffer budget for image edits and video | Retained | Larger buffers; video also keeps its disk and a 4 GiB memory budget that ignores image memory |
-| Ten-clip video limit | Removed | Arbitrary; disk and memory admission remain the clip-count bound |
+| Ten-clip video limit | Removed | Arbitrary; disk and memory admission remain the clip-count bound. An owner Windows run opened 13 clips at once (13/13 saved, peak RSS 478 MiB, no buffer or slot waits) with the encoder cap set to 4 |
 | Local video encoders | Capped at the ten-thread worker pool, so Unlimited means ten and waiting is shown | Pool threads also serve short per-frame operations |
 | Publication gate (exclusive save and durable registration) | Retained | Protects saved results; Stop waits for queued publications |
 | Per-item authentication, inventory, LoRA checks | Shared per credential and reused; a forced inventory refresh within five seconds of another reuses it | Repeated work in the pre-send path |
