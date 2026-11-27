@@ -55,7 +55,6 @@ def encode_image_inputs(
     unit_rgb: bool = False,
     depth: bool = False,
     depth_size: tuple[int, int] | None = None,
-    depth_channels: int = 1,
 ) -> EncodedImageInputs:
     """Encode fitted RGB float16 [-1,1] (or [0,1] for an explicit control probe) plus optional uint8 0/2 mask.
 
@@ -72,7 +71,7 @@ def encode_image_inputs(
     source_width, source_height = width, height
     if depth and depth_size is not None:
         width, height = depth_size
-    channels = depth_channels if depth else 3
+    channels = 1 if depth else 3
     image_size = HEADER_BYTES + width * height * 2 * channels
     mask_size = HEADER_BYTES + width * height if prepared.mask is not None else 0
     if image_size > limits.tensor_bytes or mask_size > limits.tensor_bytes:
@@ -88,8 +87,7 @@ def encode_image_inputs(
             pixels_rgb = Image.frombytes("RGB", (source_width, source_height), pixels_rgb).resize(
                 (width, height), Image.Resampling.BILINEAR
             ).tobytes()
-        if channels == 1:
-            pixels_rgb = pixels_rgb[::3]
+        pixels_rgb = pixels_rgb[::3]
     image = ImageBuffer(pixels_rgb, width, height, channels).to_tensor()
     _check_tensor(image, width, height, mask=False, channels=channels)
     if unit_rgb:
