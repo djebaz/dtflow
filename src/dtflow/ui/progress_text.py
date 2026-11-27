@@ -77,16 +77,18 @@ def _groups(
                 else:
                     done += item.steps[0]
                     total += item.steps[1]
+            elif item.second_pass_total is not None:
+                total += item.second_pass_total
             else:
-                # The second-pass total has not been observed for this item yet.
                 complete = False
-        counter = f"{done}/{total}" if complete and total else str(done)
-        passes = (
+        counter = f"{done}/{total}" if complete and total else f"{done}/?"
+        details = (
             f"P1:{p1}" if short else f"{p1} P1",
             f"P2:{p2}" if short else f"{p2} P2",
             f"W2:{pending}" if short else f"{pending} waiting",
             f"{counter} steps",
         )
+        passes = (("S" if short else "Sampling") + " [" + SEP.join(details) + "]",)
     else:
         passes = ()
 

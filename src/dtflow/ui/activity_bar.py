@@ -211,34 +211,35 @@ class _Strip(QWidget):
     @staticmethod
     def _aggregate_cells(text: str, metrics: QFontMetrics) -> list[tuple[str, int]]:
         """Reserve measured space for HiRes groups while keeping the existing adaptive candidates."""
-        groups = re.split(r"(P[12] \[[^\]]*\])", text)
+        groups = re.split(r"((?:Sampling|S) \[[^\]]*\])", text)
         if len(groups) == 1:
             return [(text, metrics.horizontalAdvance(text))]
         total = re.search(r"\d+/(\d+)", groups[0])
         digits = max(2, len(total.group(1))) if total else 2
-        # Use the widest digit in this font, rather than assuming tabular figures.
         digit = max("0123456789", key=metrics.horizontalAdvance)
-        count = digit * digits
-        steps = digit * max(3, digits + 1)
         cells = []
         for index, part in enumerate(groups):
             if not part:
                 continue
-            width = metrics.horizontalAdvance(part)
             if index % 2:
-                long = "sampling" in part
-                sample = f"{count} sampling" if long else f"S{count}"
-                wait = f"{count} waiting · " if long else f"W{count} · "
-                # P2 normally reports observed steps only; a reported total still fits naturally.
-                counter = (steps if part.startswith("P2") else f"{steps}/{steps}") + (" steps" if long else "")
-                prefix = wait if part.startswith("P2") else ""
-                template = f"{part[:2]} [{prefix}{sample} · {counter}]"
-                width = max(width, metrics.horizontalAdvance(template))
-            elif index == 0:
-                # The settled count grows during a run; reserve its full digit width too.
-                prefix = re.sub(r"\d+/(\d+)", lambda m: f"{digit * len(m[1])}/{digit * len(m[1])}", part, count=1)
-                width = max(width, metrics.horizontalAdvance(prefix))
-            cells.append((part, width))
+                # Allocate each numeric field independently so subsequent labels stay put.
+                for field_index, field in enumerate(part.split(" · ")):
+                    if field_index:
+                        cells.append((" · ", metrics.horizontalAdvance(" · ")))
+                    step_field = field_index == 3
+                    pattern = r"(\d+|\?)" if step_field else r"(\d+)(?= P[12]| waiting|$)"
+                    if not step_field and field.startswith(("S [P1:", "P2:", "W2:")):
+                        pattern = r"(\d+)$"
+                    for token in re.split(pattern, field):
+                        if not token:
+                            continue
+                        width = metrics.horizontalAdvance(token)
+                        if token.isdigit() or token == "?":
+                            reserve = max(4, digits + 2) if step_field else digits
+                            width = max(width, metrics.horizontalAdvance(digit * reserve))
+                        cells.append((token, width))
+            else:
+                cells.append((part, metrics.horizontalAdvance(part)))
         return cells
 
     def _aggregate_layout(self, model: BarModel, width: int) -> tuple[str, str]:

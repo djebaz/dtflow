@@ -124,6 +124,7 @@ class ItemProgress:
         self.bytes = 0
         self.steps: tuple[int, int] | None = None  # last observed sampler step counter
         self.pass_1_steps: tuple[int, int] | None = None
+        self.second_pass_total: int | None = None
         self.frames: tuple[int, int] | None = None  # last observed received-frame counter
         self.counter: tuple[int, int] | None = None  # last valid counter of any kind, until the item settles
         self.label = ""  # last observed stage wording, until a terminal event of an image
@@ -179,6 +180,8 @@ class ItemProgress:
     def _observe(self, event: BackendEvent, now: float) -> bool:
         """Fold one event in; True when it is one a video run presents."""
         self.observed = True
+        if event.second_pass_total is not None and event.second_pass_total > 0:
+            self.second_pass_total = event.second_pass_total
         if event.kind == "progress" and event.stage == "waiting_heartbeat":
             if self.phase == "cloud":
                 self.beats += 1
@@ -241,6 +244,7 @@ class ItemProgress:
             self.done, self.total = event.completed, event.total
             self.steps = _counter(event)
             if self.steps is not None:
+                self.second_pass_total = self.steps[1]
                 self.text += f" ({self.done}/{self.total} steps)"
             elif self.done is not None:
                 self.text += f" ({self.done} steps)"
@@ -274,6 +278,7 @@ class ItemSnapshot:
     estimate: float
     observed_step: int | None = None
     pass_1_steps: tuple[int, int] | None = None
+    second_pass_total: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -532,6 +537,7 @@ class ProgressModel:
                 item.estimate(now),
                 item.done if item.phase == "second_pass" else None,
                 item.pass_1_steps,
+                item.second_pass_total,
             )
             for item in items
         )

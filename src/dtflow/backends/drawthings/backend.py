@@ -929,9 +929,12 @@ class DrawThingsBackend:
         if name == "sampling":
             step = int(value.step)
             total = totals.get(name, request.steps) if hires else request.steps
-            emit("progress", stage="sampling_pass_1" if hires else "sampling", completed=step, total=total)
+            emit(
+                "progress", stage="sampling_pass_1" if hires else "sampling", completed=step, total=total,
+                second_pass_total=totals.get("second_pass_sampling") if hires else None,
+            )
             if hires and step >= total:
-                emit("progress", stage="waiting_pass_2")
+                emit("progress", stage="waiting_pass_2", second_pass_total=totals.get("second_pass_sampling"))
         elif name == "second_pass_sampling":
             step = int(value.step)
             total = totals.get(name)
