@@ -237,7 +237,6 @@ class PoseControl:
     guidance_end: float = 1.0
     depth_width: int | None = None
     depth_height: int | None = None
-    depth_channels: int = 1
 
     def __post_init__(self):
         if self.checkpoint == SDXL_POSE_PROBE_CONTROL:
@@ -268,12 +267,10 @@ class PoseControl:
         validate_metadata(self.evidence)
         if (self.depth_width is None) != (self.depth_height is None):
             raise ValidationError("Specify both experimental depth dimensions.")
-        if self.depth_channels not in (1, 3) or type(self.depth_channels) is not int:
-            raise ValidationError("Depth channels must be 1 or 3.")
         if self.depth_width is not None:
             from dtflow.core.models import integer
 
             integer(self.depth_width, 1, 2048, "Depth width")
             integer(self.depth_height, 1, 2048, "Depth height")
-        if self.input_type != "depth" and (self.depth_width is not None or self.depth_channels != 1):
+        if self.input_type != "depth" and self.depth_width is not None:
             raise ValidationError("Experimental depth transport options require Depth control.")
