@@ -9,7 +9,9 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import io
+import logging
 import math
+from time import monotonic
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -21,7 +23,11 @@ from PySide6.QtWidgets import QDoubleSpinBox, QLabel, QPushButton, QToolButton
 from dtflow.core import video as rules
 from dtflow.core.models import ResolvedGenerationRequest
 from dtflow.services import video_encode
+from dtflow.diagnostics import measurement
+from dtflow.logging_setup import perf_enabled
 from dtflow.ui.file_dialogs import QFileDialog
+
+log = logging.getLogger(__name__)
 
 IMAGE_FILTER = "Images (*.png *.jpg *.jpeg *.webp *.tif *.tiff *.bmp)"
 IMAGE_ONLY_REASON = "Not available for video: a video is one clip from text or one start image."
@@ -36,22 +42,23 @@ MAX_START_IMAGE_BYTES = 32 * 1024 * 1024
 FORM = Path(__file__).parent / "forms" / "video_panel.ui"
 
 
-THUMB_BOX = (1600, 1600)  # One cached preview serves the small thumbnail and the large hover crop.
+THUMB_BOX = (1600, 1600)  # Bound the full-source crop preview.
 
 
 @dataclass(frozen=True, slots=True)
 class StartImageInfo:
-    """What the controller keeps of the start image: its digest, its own size and a small PNG preview."""
+    """What the controller keeps of the start image: its digest, dimensions and worker-prepared preview images."""
 
     digest: str
     width: int
     height: int
-    thumbnail_png: bytes
+    preview: QImage
+    thumbnail: QImage
 
 
-def _read_start_image(path: Path) -> StartImageInfo:
-    """Read, hash and decode a bounded file away from Qt; only the digest, size and a small preview are kept."""
-    from PIL import Image
+def _read_start_image(path: Path, icon_size: tuple[int, int]) -> StartImageInfo:
+    """Read, hash and prepare bounded display images away from the GUI thread."""
+    from PIL import Image, ImageOps
 
     if path.stat().st_size > MAX_START_IMAGE_BYTES:
         raise ValueError("The start image is larger than 32 MiB.")
@@ -66,9 +73,16 @@ def _read_start_image(path: Path) -> StartImageInfo:
         image.draft("RGB", THUMB_BOX)
         preview = image.convert("RGB")
         preview.thumbnail(THUMB_BOX, Image.Resampling.LANCZOS)
-        out = io.BytesIO()
-        preview.save(out, format="PNG")
-    return StartImageInfo(hashlib.sha256(data).hexdigest(), width, height, out.getvalue())
+        thumbnail = ImageOps.fit(preview, icon_size, Image.Resampling.LANCZOS)
+
+        def qt_image(picture):
+            # Detach from Python-owned bytes before crossing the worker boundary.
+            return QImage(
+                picture.tobytes(), picture.width, picture.height, picture.width * 3, QImage.Format.Format_RGB888
+            ).copy()
+
+        # QImage is safe to prepare in a worker. Only the small icon becomes a QPixmap on Qt.
+        return StartImageInfo(hashlib.sha256(data).hexdigest(), width, height, qt_image(preview), qt_image(thumbnail))
 
 
 def _short_name(name: str, limit: int = 48) -> str:
@@ -106,6 +120,8 @@ class VideoPanel(QObject):
         self._start_source: tuple | None = None
         self._choice_revision = 0
         self._loading = False
+        self._generate_visible = False
+        self._restore_pending = False
         self._preview_hovered: set[QObject] = set()
         self._preview_focused: set[QObject] = set()
         self._choice_problem = ""
@@ -168,6 +184,15 @@ class VideoPanel(QObject):
         self.frame.setVisible(now)
         if now != was:
             self._lock(now)
+        self._activate_saved_source()
+        self._sync()
+
+    def set_generate_visible(self, visible: bool) -> None:
+        """Track the actual workspace, not the hidden legacy Generate container."""
+        self._generate_visible = visible
+        if not visible:
+            self._hide_hover()
+        self._activate_saved_source()
         self._sync()
 
     def session_document(self) -> dict:
@@ -200,10 +225,20 @@ class VideoPanel(QObject):
             and all(char in "0123456789abcdef" for char in digest)
         ):
             return
-        chosen = Path(path)
+        self._start, self._sha, self._start_source = Path(path), digest, self._backend_source()
+        self._restore_pending = True
+        self._show_start()
+        self._activate_saved_source()
+        self._sync()
+
+    def _activate_saved_source(self) -> None:
+        """Read a remembered source once, only when Generate displays Video."""
+        if not (self._restore_pending and self._generate_visible and self.active) or self._runner.closed:
+            return
+        chosen, digest = self._start, self._sha
+        self._restore_pending = False
         self._choice_revision += 1
-        token, source = self._choice_revision, self._backend_source()
-        self._start, self._sha, self._start_source = chosen, digest, source
+        token = self._choice_revision
         self._loading = True
         self._show_start()
         self._sync()
@@ -221,7 +256,8 @@ class VideoPanel(QObject):
             self._show_start()
             self._sync()
 
-        self._runner.submit(asyncio.to_thread(_read_start_image, chosen), done)
+        size = self.thumb.iconSize()
+        self._runner.submit(asyncio.to_thread(_read_start_image, chosen, (size.width(), size.height())), done)
 
     def _lock(self, locked: bool) -> None:
         page = self.page
@@ -307,7 +343,7 @@ class VideoPanel(QObject):
         incompatible = self._incompatible_settings()
         if incompatible:
             return incompatible
-        if self._loading:
+        if self._restore_pending or self._loading:
             return "Checking the selected start image; generation cannot begin yet."
         if self._choice_problem:
             return self._choice_problem
@@ -344,13 +380,15 @@ class VideoPanel(QObject):
                 self._show_start()
             self._sync()
 
-        self._runner.submit(asyncio.to_thread(_read_start_image, chosen), done)
+        size = self.thumb.iconSize()
+        self._runner.submit(asyncio.to_thread(_read_start_image, chosen, (size.width(), size.height())), done)
 
     def _clear(self) -> None:
         self.page.resultPreviewLabel.clear_temporary_crop()
         self._choice_revision += 1
         self._start, self._sha, self._start_source, self._start_info = None, "", None, None
         self._loading = False
+        self._restore_pending = False
         self._choice_problem = ""
         self._show_start()
         self.clear.setEnabled(False)
@@ -377,7 +415,7 @@ class VideoPanel(QObject):
         return super().eventFilter(watched, event)
 
     def _sync_crop_preview(self) -> None:
-        if self.active and (self._preview_hovered or self._preview_focused):
+        if self._generate_visible and self.active and (self._preview_hovered or self._preview_focused):
             self._show_hover()
         else:
             self.page.resultPreviewLabel.clear_temporary_crop()
@@ -387,9 +425,8 @@ class VideoPanel(QObject):
         if not self.active or self._start_info is None or self._start is None:
             self.page.resultPreviewLabel.clear_temporary_crop()
             return
-        picture = QPixmap.fromImage(QImage.fromData(self._start_info.thumbnail_png))
         self.page.resultPreviewLabel.show_temporary_crop(
-            picture,
+            self._start_info.preview,
             (self.page.widthSpinBox.value(), self.page.heightSpinBox.value()),
         )
 
@@ -404,30 +441,17 @@ class VideoPanel(QObject):
         info = self._start_info
         if info is None or self.thumb.width() <= 0 or self.thumb.height() <= 0:
             return
-        picture = QPixmap.fromImage(QImage.fromData(info.thumbnail_png))
-        size = self.thumb.iconSize()
-        covered = picture.scaled(
-            size,
-            aspectMode=Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-            mode=Qt.TransformationMode.SmoothTransformation,
-        )
-        self.thumb.setIcon(
-            QIcon(
-                covered.copy(
-                    (covered.width() - size.width()) // 2,
-                    (covered.height() - size.height()) // 2,
-                    size.width(),
-                    size.height(),
-                )
-            )
-        )
+        started = monotonic()
+        self.thumb.setIcon(QIcon(QPixmap.fromImage(info.thumbnail)))
+        if perf_enabled():
+            measurement(log, "video.thumbnail_presentation", elapsed_ms=(monotonic() - started) * 1000)
 
     def _show_start(self) -> None:
         """Keep the selected source inspectable in its own row, including after generating."""
         info = self._start_info
         if self._start is None or info is None:
             self.thumb.setIcon(QIcon())
-            self.thumb.setText("Checking…" if self._loading else "Choose\nimage")
+            self.thumb.setText("Checking…" if self._loading else "Saved\nimage" if self._restore_pending else "Choose\nimage")
             self._sync_crop_preview()
             return
         self.thumb.setText("")
@@ -442,7 +466,7 @@ class VideoPanel(QObject):
             raise ValidationError(self.blocker())
         if request.loras:
             raise ValidationError("LoRAs are not supported for video yet.")
-        if self._loading:
+        if self._restore_pending or self._loading:
             raise ValidationError("The start image is still being checked.")
         if self._choice_problem:
             raise ValidationError(self._choice_problem)

@@ -1,7 +1,7 @@
 """Backend-free, aspect-preserving image viewport with local inspection controls."""
 
 from PySide6.QtCore import QEvent, QRectF, Qt, QTimer
-from PySide6.QtGui import QColor, QPainter, QPixmap
+from PySide6.QtGui import QColor, QImage, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QAbstractScrollArea,
     QFrame,
@@ -30,7 +30,7 @@ class ImagePreview(QAbstractScrollArea):
         self.setAccessibleName("Image preview. Mouse wheel zooms; drag to pan.")
         self.viewport().setMouseTracking(True)
         self._pixmap = QPixmap()
-        self._temporary_crop: tuple[QPixmap, tuple[int, int]] | None = None
+        self._temporary_crop: tuple[QImage, tuple[int, int]] | None = None
         self._scale = 1.0
         self._fit = True
         self._drag = None
@@ -114,11 +114,11 @@ class ImagePreview(QAbstractScrollArea):
         self._pixmap = pixmap
         self.fit()
 
-    def show_temporary_crop(self, pixmap: QPixmap, output_size: tuple[int, int]) -> None:
+    def show_temporary_crop(self, image: QImage, output_size: tuple[int, int]) -> None:
         """Temporarily show the start image and its centered output crop without replacing the saved result."""
-        if pixmap.isNull() or min(output_size) <= 0:
+        if image.isNull() or min(output_size) <= 0:
             return
-        self._temporary_crop = (pixmap, output_size)
+        self._temporary_crop = (image, output_size)
         self._sync()
 
     def clear_temporary_crop(self) -> None:
@@ -267,8 +267,8 @@ class ImagePreview(QAbstractScrollArea):
 
     def _paint_temporary_crop(self, painter: QPainter) -> None:
         """The shaded areas are exactly the centered cover-fit cut used for the submitted start frame."""
-        pixmap, (target_w, target_h) = self._temporary_crop
-        source_w, source_h = pixmap.width(), pixmap.height()
+        image, (target_w, target_h) = self._temporary_crop
+        source_w, source_h = image.width(), image.height()
         area = self.viewport().rect()
         factor = min(max(1, area.width() - 24) / source_w, max(1, area.height() - 24) / source_h)
         shown = QRectF(
@@ -278,7 +278,7 @@ class ImagePreview(QAbstractScrollArea):
             source_h * factor,
         )
         painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform)
-        painter.drawPixmap(shown, pixmap, QRectF(pixmap.rect()))
+        painter.drawImage(shown, image, QRectF(image.rect()))
         # PIL ImageOps.fit uses centering=(0.5, 0.5). No separate crop controls or saved offsets.
         if source_w * target_h > source_h * target_w:
             kept_width = source_h * target_w / target_h

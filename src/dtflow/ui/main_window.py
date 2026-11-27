@@ -1081,6 +1081,7 @@ class MainWindow:
     def _show_scripts(self) -> None:
         """Switch Generate to its third sub-mode without touching active work."""
         self._scripts_active = True
+        self.generation.video.set_generate_visible(False)
         self.form.workspaceStack.setCurrentWidget(self.generation_page)
         self.generation_page.scriptsModeButton.setChecked(True)
         self.scripts.activate()
@@ -1134,6 +1135,7 @@ class MainWindow:
         for stack in (self.shell.leftStack, self.shell.centerStack, self.shell.rightStack):
             stack.setCurrentIndex(1)
         self._set_scripts_left_rail(False)
+        self.generation.video.set_generate_visible(self.form.workspaceStack.currentWidget() is self.generation_page)
         self._responsive_workspace()
 
     def _toggle_logs(self) -> None:
@@ -1275,6 +1277,7 @@ class MainWindow:
         generate_visible = self.form.workspaceStack.currentWidget() is self.generation_page
         self.generation.inpaint.set_generate_visible(generate_visible)
         self.generation.controlnet.set_generate_visible(generate_visible)
+        self.generation.video.set_generate_visible(generate_visible and not self._scripts_active)
 
     def _retire_activity_presentation(self) -> None:
         """Unsubscribe before Qt destroys the activity overlay's child widgets."""
