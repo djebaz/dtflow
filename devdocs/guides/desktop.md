@@ -160,6 +160,8 @@ Reload Models remains available for a manual refresh. Selecting another DT+ API 
 
 ### Local DT+ completed-image counter
 
+**Next 100 releases** estimates the time until 100 saved outputs for each key age out of an assumed rolling 24-hour window. It updates every minute and when saved evidence refreshes; a dash means insufficient or unavailable local evidence, not zero capacity. The selected timezone still controls only the daily counter. This forecast is experimental and does not confirm DT+ quota availability.
+
 Connection's **Local completed images** card lists one row per DT+ API key that produced a saved final image on the selected day. A row shows `Key 4F8K••••` (only the first four characters of the key's variable part, never more, also in tooltips, accessible names and logs), an **Active** marker for the key cloud work would use now, and the count, colored green up to 400, amber for 401-499 and red from 500. A searchable dropdown above the rows picks the reset timezone: one entry per whole-hour GMT offset (-12 to +14) with its current local time and largest city. The default is Europe/Paris (daylight-saving aware); other entries are fixed offsets. The day runs from local midnight to the next local midnight; changing the zone recounts immediately from saved times, without contacting DT+, generating or changing saved outputs, and the choice is remembered in `usage_preferences.json`.
 
 The bottom bar carries the same information on every view as a small pill `active/all`: the active key's count and the sum over all keys for the selected day, colored by the active key's count (neutral `–/all` when no key is available). Its tooltip names the key and zone.
