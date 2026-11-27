@@ -356,6 +356,7 @@ async def create_saved_pose_queue(
     saved: CredentialProvider | None = None,
     prepared: PreparedImageInputs | None = None,
     plan: Plan | None = None,
+    depth_sizes: tuple[tuple[int, int], ...] = (),
     count: int = 1,
     up_next: bool = False,
     receipts: tuple[PreparedAsset, ...] = (),
@@ -369,6 +370,20 @@ async def create_saved_pose_queue(
     if backend.get("name") != "cloud":
         raise ValidationError("The recorded pose requires DT+ Cloud; no queue was created.")
     items = expand_items(base, count) if plan is None else expand_plan(base, plan, receipts=receipts)
+    if depth_sizes:
+        if plan is not None or count != 1 or base.pose_control.input_type != "depth":
+            raise ValidationError("Depth-size comparison requires one Depth model and no other plan.")
+        if not 2 <= len(depth_sizes) <= 8 or len(set(depth_sizes)) != len(depth_sizes):
+            raise ValidationError("Choose 2..8 distinct Depth sizes.")
+        items = [
+            replace(
+                base,
+                request_id=uuid4().hex,
+                pose_control=replace(base.pose_control, depth_width=width, depth_height=height),
+                resolution_evidence=(*base.resolution_evidence, ("queue_position", str(index))),
+            )
+            for index, (width, height) in enumerate(depth_sizes, 1)
+        ]
     await _check_pose_queue(state, selection, items, base.pose_control, saved=saved)
     if prepared is not None:
         if (
