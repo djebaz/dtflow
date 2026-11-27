@@ -911,8 +911,15 @@ class DrawThingsBackend:
     @staticmethod
     def _signpost(signpost, request: ResolvedGenerationRequest, emit) -> None:
         name, value = betterproto.which_one_of(signpost, "signpost")
+        hires = request.advanced is not None and request.advanced.hires_fix_active
         if name == "sampling":
-            emit("progress", stage="sampling", completed=int(value.step), total=request.steps)
+            step = int(value.step)
+            emit("progress", stage="sampling_pass_1" if hires else "sampling", completed=step, total=request.steps)
+            if hires and step >= request.steps:
+                emit("progress", stage="waiting_pass_2")
+        elif name == "second_pass_sampling":
+            # The signpost supplies the step, not a verified second-pass total.
+            emit("progress", stage=name, completed=int(value.step))
         elif name:
             emit("progress", stage=name)
 
