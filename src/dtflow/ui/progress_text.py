@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from dtflow.ui.progress_model import SOLO_QUEUE, ProgressSnapshot
 
 SEP = " · "
+GROUP_SEP = " | "
 _LONG = {"W": "waiting", "C": "in DT+ Cloud", "E": "encoding", "V": "saving"}
 
 
@@ -28,8 +29,8 @@ def _counts(snapshot: ProgressSnapshot) -> dict[str, int]:
     return dict(snapshot.stage_counts)
 
 
-def _groups(snapshot: ProgressSnapshot, short: bool, hires: bool = False) -> tuple[list[str], list[str], list[str]]:
-    """(core groups that never drop, optional waiting groups, X/Y groups) in display order."""
+def _groups(snapshot: ProgressSnapshot, short: bool, hires: bool = False) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Core, waiting, sampling/receiving, and ending groups in lifecycle order."""
     counts = _counts(snapshot)
     core = [f"{snapshot.settled}/{snapshot.total}" + ("" if short else " items")]
     failed = dict(snapshot.outcomes).get("failed", 0)
@@ -80,12 +81,16 @@ def _groups(snapshot: ProgressSnapshot, short: bool, hires: bool = False) -> tup
             parts.append(f"{counter}{partial}" if short else f"{counter} steps{partial}")
             return f"{label} [{SEP.join(parts)}]"
 
-        xy.extend((pass_group("S1", "P1"), pass_group("S2", "P2", counts.get("W2", 0))))
+        passes = (pass_group("S1", "P1"), pass_group("S2", "P2", counts.get("W2", 0)))
+    else:
+        passes = ()
 
     for code, word, unit, sums in (
         ("S", "sampling", "steps", snapshot.steps),
         ("R", "receiving", "frames", snapshot.frames),
     ):
+        if code == "R":
+            xy.extend(passes)
         count = counts.get(code, 0)
         if not count:
             continue
@@ -96,28 +101,27 @@ def _groups(snapshot: ProgressSnapshot, short: bool, hires: bool = False) -> tup
             xy.append(f"{head} {done}/{total}" if short else f"{head} ({done}/{total} {unit}{partial})")
         else:
             xy.append(head)
-    return core, waiting + ending, xy
+    return core, waiting, xy, ending
 
 
 def _line(snapshot, *, short, percent, times, wait, queues, hires=False) -> str:
-    core, optional, xy = _groups(snapshot, short, hires)
+    core, waiting, xy, ending = _groups(snapshot, short, hires)
     parts = []
     if queues and not short and snapshot.queues and snapshot.queues[0].totals.queue_id != SOLO_QUEUE:
         parts.append(f"{len(snapshot.queues)} {'queue' if len(snapshot.queues) == 1 else 'queues'}")
     parts += core
     if percent and not short:
         parts.append(percent)
-    if hires or any(group.startswith("P1 [") for group in xy):
-        parts += xy
-        if wait:
-            parts += optional
-    else:
-        if wait:
-            parts += optional
-        parts += xy
+    # Keep the queue summary together, then follow the observed generation lifecycle.
+    groups = [SEP.join(parts)]
+    if wait:
+        groups += waiting
+    groups += xy
+    if wait:
+        groups += ending
     if times:
-        parts.append(times)
-    return SEP.join(parts)
+        groups.append(times)
+    return GROUP_SEP.join(groups)
 
 
 def aggregate_text(snapshot: ProgressSnapshot, *, elapsed: str = "", eta: str = "", hires: bool = False) -> AggregateText:
