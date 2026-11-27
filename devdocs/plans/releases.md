@@ -1,5 +1,7 @@
 # DTFlow release roadmap
 
+**6.6.0 preparation (2026-11-27):** [6.5.5](https://github.com/djebaz/dtflow/releases/tag/v6.5.5) is the published baseline. [6.6.0 notes](../releases/v6.6.0.md) cover merged changes through #647: advanced generation settings (HiRes, seed mode, tiled decoding), Controlnet Canny, depth and segmentation, Constant LoRAs, generation throughput and startup responsiveness, and the next-100-releases forecast. Windows acceptance of the exact executable precedes publication.
+
 **6.5.5 preparation (2026-11-25):** [6.5.1](https://github.com/djebaz/dtflow/releases/tag/v6.5.1) is the published baseline. [6.5.5 notes](../releases/v6.5.5.md) cover merged changes through #618: cloud-only LoRA discovery, Cross LoRA weights, preset and script limits and Krea 2 previews. Windows acceptance of the exact executable precedes publication.
 
 **6.5.1 preparation (2026-11-25):** [6.5.0](https://github.com/djebaz/dtflow/releases/tag/v6.5.0) is the published baseline. [6.5.1 notes](../releases/v6.5.1.md) cover merged fixes through #600: independent LoRA conversion and Prepare, LoRA and settings integrity, cancellation and restart reliability. Windows acceptance of the exact executable precedes publication.

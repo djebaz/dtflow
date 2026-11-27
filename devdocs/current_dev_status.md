@@ -1,8 +1,12 @@
 # Current development status
 
-## Release candidate: 6.5.5 (2026-11-25)
+## Release candidate: 6.6.0 (2026-11-27)
 
-Merged scope through PR #618 is consolidated in the [6.5.5 notes](releases/v6.5.5.md): cloud-only LoRA discovery, Cross LoRA weights, preset and script limits, long-session and cancellation fixes and Krea 2 previews. [6.5.1](https://github.com/djebaz/dtflow/releases/tag/v6.5.1) is the published baseline; the 6.5.5 executable still needs Windows smoke acceptance before publication.
+Merged scope through PR #647 is consolidated in the [6.6.0 notes](releases/v6.6.0.md): advanced generation settings (HiRes, seed mode, tiled decoding), Controlnet Canny, depth and segmentation, Constant LoRAs, generation throughput and startup responsiveness, and the next-100-releases forecast. [6.5.5](https://github.com/djebaz/dtflow/releases/tag/v6.5.5) is the published baseline; the 6.6.0 executable still needs Windows smoke acceptance before publication.
+
+## Published: 6.5.5 (2026-11-25)
+
+Merged scope through PR #618 is consolidated in the [6.5.5 notes](releases/v6.5.5.md): cloud-only LoRA discovery, Cross LoRA weights, preset and script limits, long-session and cancellation fixes and Krea 2 previews. [6.5.1](https://github.com/djebaz/dtflow/releases/tag/v6.5.1) is the published baseline; the 6.5.5 executable was smoke-accepted and published.
 
 ## Published: 6.5.1 (2026-11-25)
 
