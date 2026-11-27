@@ -15,7 +15,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from time import monotonic
 
-from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, Signal
+from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Signal
 from PySide6.QtGui import QIcon, QImage, QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QDoubleSpinBox, QLabel, QPushButton, QToolButton
@@ -78,9 +78,7 @@ def _read_start_image(path: Path, icon_size: tuple[int, int]) -> StartImageInfo:
         def qt_image(picture):
             # Detach from Python-owned bytes before crossing the worker boundary.
             rgba = picture.convert("RGBA")
-            return QImage(
-                rgba.tobytes(), rgba.width, rgba.height, rgba.width * 4, QImage.Format.Format_RGBA8888
-            ).copy()
+            return QImage(rgba.tobytes(), rgba.width, rgba.height, rgba.width * 4, QImage.Format.Format_RGBA8888).copy()
 
         # QImage is safe to prepare in a worker. Only the small icon becomes a QPixmap on Qt.
         return StartImageInfo(hashlib.sha256(data).hexdigest(), width, height, qt_image(preview), qt_image(thumbnail))
