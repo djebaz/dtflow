@@ -29,7 +29,9 @@ def _counts(snapshot: ProgressSnapshot) -> dict[str, int]:
     return dict(snapshot.stage_counts)
 
 
-def _groups(snapshot: ProgressSnapshot, short: bool, hires: bool = False) -> tuple[list[str], list[str], list[str], list[str]]:
+def _groups(
+    snapshot: ProgressSnapshot, short: bool, hires: bool = False
+) -> tuple[list[str], list[str], list[str], list[str]]:
     """Core, waiting, sampling/receiving, and ending groups in lifecycle order."""
     counts = _counts(snapshot)
     core = [f"{snapshot.settled}/{snapshot.total}" + ("" if short else " items")]
@@ -124,7 +126,9 @@ def _line(snapshot, *, short, percent, times, wait, queues, hires=False) -> str:
     return GROUP_SEP.join(groups)
 
 
-def aggregate_text(snapshot: ProgressSnapshot, *, elapsed: str = "", eta: str = "", hires: bool = False) -> AggregateText:
+def aggregate_text(
+    snapshot: ProgressSnapshot, *, elapsed: str = "", eta: str = "", hires: bool = False
+) -> AggregateText:
     times = SEP.join(part for part in (elapsed, eta) if part)
     percent = f"~{int(snapshot.fill * 100)}%" if snapshot.total else ""
     full = _line(snapshot, short=False, percent=percent, times=times, wait=True, queues=True, hires=hires)

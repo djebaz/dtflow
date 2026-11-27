@@ -368,7 +368,9 @@ class ActivityStrip(QObject):
         for queue in snapshot.queues:
             end += queue.contribution / snapshot.total if snapshot.total else 0.0
             segments.append((min(1.0, end), QUEUE_PALETTE[self._palette_slot(queue.totals.queue_id)]))
-        text = aggregate_text(snapshot, hires=self._hires_groups)  # elapsed/ETA are painted at the right edge, not in the left text
+        text = aggregate_text(
+            snapshot, hires=self._hires_groups
+        )  # elapsed/ETA are painted at the right edge, not in the left text
         full = aggregate_text(snapshot, elapsed=aggregate.elapsed, eta=aggregate.eta, hires=self._hires_groups).full
         if aggregate.stop_target:
             full = f"{full} · Stop {aggregate.stop_target}"

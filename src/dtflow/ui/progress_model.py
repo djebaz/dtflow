@@ -170,7 +170,9 @@ class ItemProgress:
         """Short observed counter of the current phase, empty when it reports none."""
         if self.done is None or not self.total:
             return ""
-        unit = {"sampling": "steps", "sampling_pass_1": "steps", "second_pass": "steps", "receiving": "frames"}.get(self.phase)
+        unit = {"sampling": "steps", "sampling_pass_1": "steps", "second_pass": "steps", "receiving": "frames"}.get(
+            self.phase
+        )
         return f"{self.done}/{self.total} {unit}" if unit else ""
 
     def _observe(self, event: BackendEvent, now: float) -> bool:
@@ -207,7 +209,11 @@ class ItemProgress:
         elif event.kind == "progress" and event.stage == "waiting_pass_2":
             self.phase, self.text, self.done, self.total = "waiting_pass_2", "Waiting | pass 2", None, None
             self.steps = None
-        elif event.kind == "progress" and event.stage in ("receiving_image", "processing_image", "waiting_stream_completion"):
+        elif event.kind == "progress" and event.stage in (
+            "receiving_image",
+            "processing_image",
+            "waiting_stream_completion",
+        ):
             self.phase = "encoding" if event.stage == "processing_image" else "receiving"
             self.text, self.done, self.total = event_stage(event), None, None
         elif event.kind == "progress" and event.stage == "receiving_frames":
