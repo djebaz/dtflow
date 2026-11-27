@@ -104,6 +104,8 @@ DT+ has no list endpoint. `list_stored_assets` posts one `/get_byom_urls` for a 
 
 ## ControlNet HiRes resizing (#637)
 
+The experimental CLI can explicitly override native Depth wire dimensions and channel count while preserving final-size retained input and request geometry. The encoder bilinearly resizes the retained map only when requested; default single-channel raw transport stays unchanged. RGB is an unverified diagnostic option, not a supported server contract. No compression override is implemented. Saved request fields preserve the chosen experiment through retry.
+
 The public upstream generator at cb2d4c61 swaps width and height scale arguments for depth and custom hint resizing; the pinned s4nnc/ccv implementation applies them to their named axes. DTFlow sends a full-target-size native one-channel depth tensor or the existing custom hint, and preserves exact first-pass/final dimensions. Upstream control injection receives the resized depth tensor but the original custom tensor, which customRGB fits with correctly ordered scales; the reversed custom resize feeds image conditioning, not that injection path. The effect on Pose, Canny or Segmentation is therefore unverified. No client-side encoding correction was justified by static inspection. Proportional geometry avoids the confirmed source discrepancy but is not a guarantee of cloud success. Provider deployment and actual failure causality remain unknown. See [investigation #637](../research/2026-11-27-controlnet-hires-axis.md) for source references, predicted shapes, owner reproduction and a draft upstream report. No admission or retry changes.
 
 ## ControlNet family admission (#635)
