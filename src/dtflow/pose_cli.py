@@ -77,10 +77,8 @@ def add_commands(commands, add_request_options):
             child.add_argument("-hy", "--hires-height", type=int, help="Explicit HiRes first-pass height.")
             child.add_argument("-dw", "--depth-width", type=int, help="Experimental wire Depth width.")
             child.add_argument("-dh", "--depth-height", type=int, help="Experimental wire Depth height.")
-            child.add_argument("-dc", "--depth-channels", type=int, choices=(1, 3), default=1,
-                               help="Experimental native Depth channels; RGB may be refused by the provider.")
-            child.add_argument("-fl", "--flat", action="store_true", help="Export copies in one output directory.")
-            child.add_argument("-cl", "--collage", action="store_true", help="Write a labelled comparison collage.")
+            child.add_argument("-fl", "--flat", action="store_true", help="Export copies in one directory; use a durable queue even for one model.")
+            child.add_argument("-cl", "--collage", action="store_true", help="Write a labelled collage; use a durable queue even for one model.")
             child.add_argument("-cz", "--collage-size", type=int, default=384,
                                help="Collage thumbnail width in pixels (128..1024).")
             source = child.add_mutually_exclusive_group(required=True)
@@ -266,7 +264,6 @@ async def run(args):
             control_mode=args.control_mode,
             depth_width=args.depth_width,
             depth_height=args.depth_height,
-            depth_channels=args.depth_channels,
             guidance_start=args.start,
             guidance_end=args.end if args.end is not None else (0.65 if fast_pose else 1.0),
         )
@@ -371,12 +368,12 @@ async def compare_models(args, request, prepared, policy):
 
     control = request.pose_control
     first = first_pass_size(request.width_px, request.height_px, request.advanced)
-    hint = (control.depth_width or request.width_px, control.depth_height or request.height_px)
     details = f"Final {request.width_px}x{request.height_px} | HiRes {first[0]}x{first[1]}" if first else (
         f"Final {request.width_px}x{request.height_px} | HiRes off"
     )
     if control.input_type == "depth":
-        details += f" | Depth {hint[0]}x{hint[1]}, {control.depth_channels}ch, raw"
+        hint = (control.depth_width or request.width_px, control.depth_height or request.height_px)
+        details += f" | Depth {hint[0]}x{hint[1]}, 1ch, raw"
     target = None
     if args.models or args.collage:
         target = await asyncio.to_thread(write_comparison_collage, final, root, args.collage_size, details)
