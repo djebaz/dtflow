@@ -168,7 +168,20 @@ class QueueDispatcher:
                     await asyncio.to_thread(post_control, self.store.directory, queue_id, "pause")
                     await self.store.apply_controls(queue_id)
                     return await self.store.inspect_queue(queue_id)
-            await self._stage_inputs(queue_id)
+            preparation = asyncio.create_task(self._stage_inputs(queue_id))
+            try:
+                while not preparation.done():
+                    actions = await self.store.apply_controls(queue_id)
+                    if "cancel" in actions or "pause" in actions:
+                        preparation.cancel()
+                        await asyncio.gather(preparation, return_exceptions=True)
+                        return await self.store.inspect_queue(queue_id)
+                    await asyncio.wait((preparation,), timeout=self.poll)
+                await preparation
+            finally:
+                if not preparation.done():
+                    preparation.cancel()
+                    await asyncio.gather(preparation, return_exceptions=True)
             while True:
                 applied = await self.store.apply_controls(queue_id)
                 if "cancel" in applied:
@@ -244,11 +257,12 @@ class QueueDispatcher:
                 await asyncio.shield(asyncio.gather(*tasks, return_exceptions=True))
 
     async def _stage_inputs(self, queue_id: str) -> None:
-        """Restore and fully validate each distinct staged input set of the pending items once, before they run.
+        """Prepare, once, what every pending item of an ordinary batch shares, before they run.
 
-        The items of a queue share their staged set, and the prepared objects are immutable, so the items reuse the
-        one validated object instead of reading and validating it again. A set that cannot be restored here is left
-        to its item, which reports the failure exactly as before.
+        When all pending image items share one staged set, it is restored and fully validated here once and the items
+        reuse that immutable object. Queues with several different sets keep the per-item path, so no extra memory is
+        held. Each distinct (model, control) pair is checked here once too. A set or pair that fails is left to its
+        items, which report the failure exactly as before.
         """
         if self.service.input_state is None:
             return
@@ -256,7 +270,8 @@ class QueueDispatcher:
             _, _, records = await asyncio.to_thread(read_queue_requests, self.store.directory, queue_id)
         except (OSError, QueueError):
             return
-        distinct: dict[ImageInputSnapshot, None] = {}
+        sets: dict[ImageInputSnapshot, None] = {}
+        pairs: dict[tuple[str, str], None] = {}
         for _, state, record in records:
             if state != "pending" or not isinstance(record, dict):
                 continue
@@ -265,14 +280,27 @@ class QueueDispatcher:
             except (ValidationError, TypeError, ValueError):
                 continue
             if request.image_inputs is not None:
-                distinct[request.image_inputs] = None
-        for snapshot in distinct:
+                sets[request.image_inputs] = None
+            if request.pose_control is not None:
+                pairs[(request.model_id, request.pose_control.checkpoint)] = None
+        for model_id, checkpoint in pairs:
+            try:
+                await settle(
+                    asyncio.to_thread(
+                        _require_pose_family, self.service.input_state, model_id, control_checkpoint=checkpoint
+                    )
+                )
+            except (ValidationError, OSError):
+                continue
+            self._pose_checked.add((model_id, checkpoint))
+        if len(sets) == 1:
+            (snapshot,) = sets
             try:
                 self._staged[snapshot] = await settle(
                     asyncio.to_thread(restore_image_inputs, self.service.input_state, snapshot)
                 )
             except (ValidationError, OSError):
-                continue
+                pass
 
     async def _try_asset_recovery(
         self, queue_id: str, item_id: str, request: ResolvedGenerationRequest, failure: BackendFailure
@@ -522,7 +550,6 @@ class QueueDispatcher:
                                         control_checkpoint=request.pose_control.checkpoint,
                                     )
                                 )
-                                self._pose_checked.add(pair)
                             inventory = await self.service.get_inventory()
                             if not any(
                                 entry.identifier == request.pose_control.checkpoint
