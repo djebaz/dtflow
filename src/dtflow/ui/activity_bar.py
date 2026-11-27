@@ -228,7 +228,7 @@ class _Strip(QWidget):
                 if index % 2 and match.start() and part[match.start() - 1] in "PW":
                     continue  # P1, P2 and W2 are labels, not counts.
                 if match.start() > pos:
-                    label = part[pos:match.start()]
+                    label = part[pos : match.start()]
                     cells.append((label, metrics.horizontalAdvance(label), False))
                 value = match.group()
                 width = bold_metrics.horizontalAdvance(value)
