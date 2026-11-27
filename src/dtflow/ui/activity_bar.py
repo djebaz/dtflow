@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from PySide6.QtCore import QRectF, Qt, Signal
@@ -207,6 +208,38 @@ class _Strip(QWidget):
                 times,
             )
 
+    @staticmethod
+    def _aggregate_cells(text: str, metrics: QFontMetrics) -> list[tuple[str, int]]:
+        """Reserve measured space for HiRes groups while keeping the existing adaptive candidates."""
+        groups = re.split(r"(P[12] \[[^\]]*\])", text)
+        if len(groups) == 1:
+            return [(text, metrics.horizontalAdvance(text))]
+        total = re.search(r"\d+/(\d+)", groups[0])
+        digits = max(2, len(total.group(1))) if total else 2
+        # Use the widest digit in this font, rather than assuming tabular figures.
+        digit = max("0123456789", key=metrics.horizontalAdvance)
+        count = digit * digits
+        steps = digit * max(4, digits + 2)
+        cells = []
+        for index, part in enumerate(groups):
+            if not part:
+                continue
+            width = metrics.horizontalAdvance(part)
+            if index % 2:
+                long = "sampling" in part
+                sample = f"{count} sampling" if long else f"S{count}"
+                wait = f"{count} waiting · " if long else f"W{count} · "
+                counter = f"{steps}/{steps}" + (" steps" if long else "")
+                prefix = wait if part.startswith("P2") else ""
+                template = f"{part[:2]} [{prefix}{sample} · {counter}]"
+                width = max(width, metrics.horizontalAdvance(template))
+            elif index == 0:
+                # The settled count grows during a run; reserve its full digit width too.
+                prefix = re.sub(r"\d+/(\d+)", lambda m: f"{digit * len(m[1])}/{digit * len(m[1])}", part, count=1)
+                width = max(width, metrics.horizontalAdvance(prefix))
+            cells.append((part, width))
+        return cells
+
     def _aggregate_layout(self, model: BarModel, width: int) -> tuple[str, str]:
         """(left text, right-aligned times): the times stay while a richer-than-minimal text still fits beside them."""
         font = self.font()
@@ -216,11 +249,11 @@ class _Strip(QWidget):
         for times in options:
             room = width - 2 * PAD - metrics.horizontalAdvance(times) - 8
             for text in model.texts[: model.timed]:
-                if metrics.horizontalAdvance(text) <= room:
+                if sum(cell_width for _, cell_width in self._aggregate_cells(text, metrics)) <= room:
                     return text, times
         room = width - 2 * PAD
         for text in model.texts:
-            if metrics.horizontalAdvance(text) <= room:
+            if sum(cell_width for _, cell_width in self._aggregate_cells(text, metrics)) <= room:
                 return text, ""
         return model.texts[-1], ""
 
@@ -232,7 +265,10 @@ class _Strip(QWidget):
         text, times = self._aggregate_layout(model, width)
         painter.setPen(self._text)
         # The numbers are never elided: when even the last candidate is too wide it is clipped by the strip edge.
-        painter.drawText(QRectF(PAD, 0, width - 2 * PAD, height), int(Qt.AlignmentFlag.AlignVCenter), text)
+        x = PAD
+        for part, cell_width in self._aggregate_cells(text, metrics):
+            painter.drawText(QRectF(x, 0, cell_width + 1, height), int(Qt.AlignmentFlag.AlignVCenter), part)
+            x += cell_width
         if times:
             painter.drawText(
                 QRectF(0, 0, width - PAD, height),
