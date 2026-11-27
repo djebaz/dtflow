@@ -7,6 +7,7 @@ reset timezone is a pure recomputation: no provider call, no generation and no r
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -150,6 +151,25 @@ def count_day(
         for cid in sorted(totals, key=lambda c: (c != active_credential, -totals[c], labels[c], c))
     )
     return DayCounts(start, end, keys, unattributed)
+
+
+def release_forecast(records: tuple[UsageRecord, ...], now: datetime) -> dict[str, int]:
+    """Minutes until 100 saved outputs age out of a hypothetical rolling 24-hour window.
+
+    This is local evidence only, not a provider-confirmed quota or availability estimate.
+    """
+    now = now.astimezone(UTC)
+    window = timedelta(hours=24)
+    totals: dict[str, int] = {}
+    forecast: dict[str, int] = {}
+    for record in sorted(records, key=lambda r: r.saved_at):
+        cid = record.credential_id
+        if cid is None or cid in forecast or not now - window < record.saved_at <= now:
+            continue
+        totals[cid] = totals.get(cid, 0) + record.outputs
+        if totals[cid] >= 100:
+            forecast[cid] = math.ceil((record.saved_at + window - now).total_seconds() / 60)
+    return forecast
 
 
 def key_labels(hints: dict[str, str | None]) -> dict[str, str]:
