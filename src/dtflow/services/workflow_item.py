@@ -1061,7 +1061,8 @@ class _Execution:
                 if self.runner.on_event is not None:
                     self.runner.on_event(self.item_id, event)
 
-            options = {"prepared_inputs": prepared} if prepared is not None else {}
+            # ``prepared`` comes from ``_prepare_source``, which already validated its pixels.
+            options = {"prepared_inputs": prepared, "inputs_validated": True} if prepared is not None else {}
             matches: dict = {}
             try:
                 if self.request.backend == "cloud" and request.loras:

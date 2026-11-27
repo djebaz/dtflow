@@ -196,17 +196,22 @@ class SQLiteAttempts(QueueMixin):
                     ON attempts (backend_id, updated_at_utc)
                     WHERE state='succeeded' AND remote_outcome='succeeded'"""
                 )
+                # Recovery looks up attempts and queue items by state on every owning open; without these derived
+                # indexes each lookup scans the whole, ever-growing history. Safe to add to existing schema-9 stores.
+                connection.execute("CREATE INDEX IF NOT EXISTS idx_attempts_state ON attempts (state)")
                 for statement in QUEUE_SCHEMA:
                     connection.execute(statement)
                 add_up_next(connection)
                 add_kind(connection)
                 add_lanes(connection)
                 connection.execute(CLOUD_USAGE_SCHEMA)
+                lap("ddl")
                 if version in (1, 2):
                     self._migrate_requests(connection)
                 if 0 < version < 9:
                     migrate_script_runs(connection, self.directory)
                 connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
+                lap("migrate_user_version")
                 if recover or version != SCHEMA_VERSION:
                     # Ownership lock ensures we are not reconciling another live dispatcher.
                     now = self._now()
@@ -215,22 +220,25 @@ class SQLiteAttempts(QueueMixin):
                         updated_at_utc=? WHERE state='possibly_submitted'""",
                         (now,),
                     )
+                    lap("recover_possibly_submitted")
                     connection.execute(
                         """UPDATE attempts SET state='save_failed',
                         updated_at_utc=? WHERE state='saving'""",
                         (now,),
                     )
+                    lap("recover_saving")
                     connection.execute(
                         """UPDATE attempts SET state='interrupted_before_submission',
                         updated_at_utc=? WHERE state='prepared'""",
                         (now,),
                     )
-                    lap("schema_and_recovery")
+                    lap("recover_prepared")
                     self.reconcile(connection, now, self.directory)
                     lap("reconcile")
                     # A recovered owner never replays previously submitted script children.
                     # No earlier process can still own this DB under owner.lock.
                     connection.execute("UPDATE queue_items SET lanes_json=NULL WHERE lanes_json IS NOT NULL")
+                    lap("lanes_reset")
                 connection.execute("COMMIT")
                 lap("commit")
                 if timing_enabled():

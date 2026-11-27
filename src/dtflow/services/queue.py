@@ -39,6 +39,7 @@ from dtflow.core.models import (
     ResolvedGenerationRequest,
     ValidationError,
 )
+from dtflow.core.image_inputs import ImageInputSnapshot, PreparedImageInputs
 from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event
 from dtflow.persistence.queues import QueueError, post_control, read_queue_requests
@@ -97,6 +98,10 @@ class QueueDispatcher:
         self._recovery_active = False
         self._recovery_attempted: set[tuple[str, str, int]] = set()
         self._unprepared_noted: set[str] = set()
+        # Run-scoped: each distinct staged input set is restored and pixel-validated once before the items run, and a
+        # control's model-family compatibility is checked once per (model, control) pair. Both end with the run.
+        self._staged: dict[ImageInputSnapshot, PreparedImageInputs] = {}
+        self._pose_checked: set[tuple[str, str]] = set()
         self._unprepared_unavailable = False  # the advisory check failed once; later items skip it
         self._recovery_assets: frozenset[tuple[str, str, int]] = frozenset()
         self._queue_assets: tuple = ()
@@ -163,6 +168,7 @@ class QueueDispatcher:
                     await asyncio.to_thread(post_control, self.store.directory, queue_id, "pause")
                     await self.store.apply_controls(queue_id)
                     return await self.store.inspect_queue(queue_id)
+            await self._stage_inputs(queue_id)
             while True:
                 applied = await self.store.apply_controls(queue_id)
                 if "cancel" in applied:
@@ -227,6 +233,8 @@ class QueueDispatcher:
                 finally:
                     self.admission.pool.unwatch(changed)
         finally:
+            self._staged.clear()
+            self._pose_checked.clear()
             self.admission.forget()
             if self._asset_recovery is not None and not self._asset_recovery.done():
                 self._asset_recovery.cancel()
@@ -234,6 +242,37 @@ class QueueDispatcher:
                 task.cancel()
             if tasks:
                 await asyncio.shield(asyncio.gather(*tasks, return_exceptions=True))
+
+    async def _stage_inputs(self, queue_id: str) -> None:
+        """Restore and fully validate each distinct staged input set of the pending items once, before they run.
+
+        The items of a queue share their staged set, and the prepared objects are immutable, so the items reuse the
+        one validated object instead of reading and validating it again. A set that cannot be restored here is left
+        to its item, which reports the failure exactly as before.
+        """
+        if self.service.input_state is None:
+            return
+        try:
+            _, _, records = await asyncio.to_thread(read_queue_requests, self.store.directory, queue_id)
+        except (OSError, QueueError):
+            return
+        distinct: dict[ImageInputSnapshot, None] = {}
+        for _, state, record in records:
+            if state != "pending" or not isinstance(record, dict):
+                continue
+            try:
+                request = request_from_record(record)
+            except (ValidationError, TypeError, ValueError):
+                continue
+            if request.image_inputs is not None:
+                distinct[request.image_inputs] = None
+        for snapshot in distinct:
+            try:
+                self._staged[snapshot] = await settle(
+                    asyncio.to_thread(restore_image_inputs, self.service.input_state, snapshot)
+                )
+            except (ValidationError, OSError):
+                continue
 
     async def _try_asset_recovery(
         self, queue_id: str, item_id: str, request: ResolvedGenerationRequest, failure: BackendFailure
@@ -468,18 +507,22 @@ class QueueDispatcher:
                 if request.operation != "txt2img" or request.pose_control is not None:
                     try:
                         # Staged, hash-verified inputs are read only for the dispatched item.
-                        options["prepared_inputs"] = await settle(
+                        options["prepared_inputs"] = self._staged.get(request.image_inputs) or await settle(
                             asyncio.to_thread(restore_image_inputs, self.service.input_state, request.image_inputs)
                         )
+                        options["inputs_validated"] = True  # restore_image_inputs validates the pixels
                         if request.pose_control is not None:
-                            await settle(
-                                asyncio.to_thread(
-                                    _require_pose_family,
-                                    self.service.input_state,
-                                    request.model_id,
-                                    control_checkpoint=request.pose_control.checkpoint,
+                            pair = (request.model_id, request.pose_control.checkpoint)
+                            if pair not in self._pose_checked:
+                                await settle(
+                                    asyncio.to_thread(
+                                        _require_pose_family,
+                                        self.service.input_state,
+                                        request.model_id,
+                                        control_checkpoint=request.pose_control.checkpoint,
+                                    )
                                 )
-                            )
+                                self._pose_checked.add(pair)
                             inventory = await self.service.get_inventory()
                             if not any(
                                 entry.identifier == request.pose_control.checkpoint
