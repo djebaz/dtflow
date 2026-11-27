@@ -11,9 +11,9 @@ import hashlib
 import io
 import logging
 import math
-from time import monotonic
 from dataclasses import dataclass, replace
 from pathlib import Path
+from time import monotonic
 
 from PySide6.QtCore import QEvent, QFile, QIODevice, QObject, Qt, Signal
 from PySide6.QtGui import QIcon, QImage, QPixmap
@@ -77,8 +77,9 @@ def _read_start_image(path: Path, icon_size: tuple[int, int]) -> StartImageInfo:
 
         def qt_image(picture):
             # Detach from Python-owned bytes before crossing the worker boundary.
+            rgba = picture.convert("RGBA")
             return QImage(
-                picture.tobytes(), picture.width, picture.height, picture.width * 3, QImage.Format.Format_RGB888
+                rgba.tobytes(), rgba.width, rgba.height, rgba.width * 4, QImage.Format.Format_RGBA8888
             ).copy()
 
         # QImage is safe to prepare in a worker. Only the small icon becomes a QPixmap on Qt.
@@ -451,7 +452,9 @@ class VideoPanel(QObject):
         info = self._start_info
         if self._start is None or info is None:
             self.thumb.setIcon(QIcon())
-            self.thumb.setText("Checking…" if self._loading else "Saved\nimage" if self._restore_pending else "Choose\nimage")
+            self.thumb.setText(
+                "Checking…" if self._loading else "Saved\nimage" if self._restore_pending else "Choose\nimage"
+            )
             self._sync_crop_preview()
             return
         self.thumb.setText("")

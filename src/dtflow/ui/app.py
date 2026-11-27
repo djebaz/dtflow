@@ -55,10 +55,10 @@ def open_window(
         before_show(window)
     window.show()
     startup.mark("window shown")
-    # A zero timer is not a paint notification. The splash path separately records the paint event and queued handoff.
+    # A zero timer is not a paint notification. The splash path separately records the paint event.
     startup_timer = QTimer(window.form)
     startup_timer.setSingleShot(True)
-    startup_timer.timeout.connect(lambda: _after_first_paint(window))
+    startup_timer.timeout.connect(lambda: _after_window_shown(window))
     startup_timer.start(0)
     return window
 
@@ -137,7 +137,7 @@ def run_gui(
 STARTUP_WORK_DELAY_MS = 1000
 
 
-def _after_first_paint(window) -> None:
+def _after_window_shown(window) -> None:
     if window.runner.closed:
         return
     startup.mark("first post-show timer")

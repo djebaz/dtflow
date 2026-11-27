@@ -20,7 +20,7 @@ Changes through 6.5.5 are consolidated in [DTFlow 6.5.5](v6.5.5.md). The publish
 - In the Queues composer the Fixed LoRAs row is now called **Constant LoRAs**, and LoRA sets add to the Constant LoRAs instead of replacing them (a LoRA in both takes the set's weight). Queues and templates saved before keep their items, and plan files keep the old behavior unless they set `"constant_loras": true`.
 
 ## Fixed
-- Coalesce initial catalogue requests around cached inventory restoration and defer the first Qt selector projection until a workspace needs it (#641 follow-up).
+- Improve desktop startup responsiveness by releasing background startup tasks after the initial window-show event-loop turn (#641).
 - Startup skips mounting the hidden retained-LoRA table and scanning cache sizes until the corresponding Connection section is opened; duplicate initial LoRA refresh is removed (#641 follow-up).
 - A remembered video start image no longer loads while Generate Video is hidden at startup. Its small button crop is prepared off the UI thread, and crop inspection reuses the decoded preview (#641).
 

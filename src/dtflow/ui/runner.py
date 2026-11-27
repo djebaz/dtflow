@@ -81,6 +81,9 @@ class AsyncRunner(QObject):
             work = take_unstarted()
             if work is None:
                 return  # cancellation took ownership before the wrapper started
+            if self._closed:
+                work.close()
+                return
             try:
                 result, failure = await work, None
             except Exception as exc:
@@ -122,13 +125,11 @@ class AsyncRunner(QObject):
             self.shutdown_started.emit()
         if self._loop.is_closed():
             return
-        if self._thread.ident is None:
-            # Nothing has executed. Cancel submitted futures and close their unstarted coroutines.
-            for future in tuple(self._pending):
-                future.cancel()
-            self._loop.close()
-            return
         self._loop.call_soon_threadsafe(self._stop.set)
+        if self._thread.ident is None:
+            # Drain the queued asyncio wrappers during normal shutdown. They close their work
+            # without executing it; closing an unrun loop would abandon those wrappers.
+            self._thread.start()
         self._thread.join(timeout)
         if not self._thread.is_alive():
             with self._unstarted_lock:

@@ -105,8 +105,6 @@ The [inline interaction mockup](../mockups/dtflow_inline_panels.html) illustrate
 
 Startup worker submissions are queued during window construction and released at the first post-show timer, to isolate initial Qt presentation from background credential, inventory and cleanup activity. Existing startup checks still run automatically; the provider preload retains its existing delay.
 
-The startup splash hands off to the main window outside its first paint event, without requesting a redundant activation of an already active window. Development startup timings distinguish paint observation, the queued splash handoff, dismissal and the post-show timer; these are event-loop milestones, not measured render durations.
-
 From the repository root after `uv sync`:
 
 ```bash
@@ -217,8 +215,6 @@ A single operation is capped at 10,000 images, 64 MiB encoded input per image an
 separate operations. Export is local-only and never generates or contacts a provider.
 
 ## Generate
-
-At startup the shared cached inventory and catalogue are prepared in the background. The initial catalogue requests are coalesced, and the Generate selectors are populated on first use of Generate, Queues, Workflows or the quick queue. Opening a workspace before the read completes may briefly show loading choices; saved settings and live validation are unchanged.
 
 **Video draft persistence (#540):** The Duration input, Width × Height and selected start image are retained when switching video checkpoints, browsing base-model families, refreshing model inventory or changing provider. A model with incompatible duration or start-image support reports the problem and refuses submission without altering these choices; returning to a compatible model restores the previous workable draft. The center workspace's Video section uses the shared card header and explicit 12 px body padding, with Duration and its readout on the left and the Start image thumbnail/red × badge on the right in one control row; warnings take space only when present. Click the thumbnail to choose/replace an image; the small red × badge on the photo clears only the draft source. The photo fills its tile for visibility; this thumbnail-only crop does not change the submitted image. The central source preview shows the full source and exact output crop. Hovering or keyboard-focusing the thumbnail, Width or Height temporarily shows the centered output-aspect crop in the central viewer, updating as dimensions are edited. Leaving and moving keyboard focus away restores the latest generated result, without replacing or changing it. Normal application close saves the draft through the existing `last_session.json` along with the other Generate settings; the original start-image file must remain available and unchanged for restoration. Loading a preset or configuration explicitly applies that file's settings. No generation starts during restoration. The remembered source is read, verified and prepared asynchronously only when Generate displays Video; until then its path and digest remain in the draft. The button crop is prepared in the worker, and hover/focus draws the already decoded source preview. Generate and queue capture wait for verification. These interactions are source-reviewed; native Windows/DPI and restart acceptance remain separate.
 

@@ -459,7 +459,6 @@ class MainWindow:
             activity=self.activity,
             no_cache=no_cache,
             cache_changed=self.refresh_cache,
-            defer_initial_catalogue=True,
             retire_dispatch_inventory=lambda: self.queue.invalidate_cloud_inventory(),
         )
         startup.mark("generate controller")
@@ -552,7 +551,7 @@ class MainWindow:
         )
         self.shell.quickQueueButton.setIcon(QIcon(str(ASSETS_CONTROLS.parent / "gallery" / "layers.svg")))
         self.shell.quickQueueButton.setIconSize(QSize(18, 18))
-        self.shell.quickQueueButton.clicked.connect(self._open_quick_queue)
+        self.shell.quickQueueButton.clicked.connect(lambda: self.queue_popover.open_at(self.shell.quickQueueButton))
         self.queue.plan_hook = self.queue_popover.sync_label
         self.queue.set_images_hook(self._open_output_in_images)
         self.scripts.open_images = self._open_output_in_images
@@ -830,7 +829,6 @@ class MainWindow:
         )
         self._backend_changed(form.backendCombo.currentText())
         self.generation.sync_backend()
-        self.generation.finish_initial_catalogue_setup()
         startup.mark("backend and catalogue setup scheduled")
         self.refresh_credentials(background=True)
         self.refresh_download_tokens()
@@ -932,10 +930,6 @@ class MainWindow:
                     owner = owner.parentWidget()
                 if owner is None:
                     control.setEnabled(False)
-
-    def _open_quick_queue(self) -> None:
-        self.generation.activate_catalogue()
-        self.queue_popover.open_at(self.shell.quickQueueButton)
 
     def _show_queue(self) -> None:
         self.form.workspaceStack.setCurrentWidget(self.queue_page)
@@ -1205,8 +1199,6 @@ class MainWindow:
         self.dt_storage_overlay.dismiss()
         self._prompt_hints.close()
         self.workflows.prompt_hints.close()
-        if self.form.workspaceStack.currentWidget() in (self.generation_page, self.queue_page, self.workflows_marker):
-            self.generation.activate_catalogue()
         logs_active = self.form.workspaceStack.currentWidget() is self.logs_marker
         if logs_active:
             self.logs_button.setChecked(True)
@@ -2325,7 +2317,6 @@ class MainWindow:
         )
 
     def _reuse_output(self, request: dict, identity: str) -> None:
-        self.generation.activate_catalogue()
         self.generation.reuse_saved_request(request, identity)
         self._show_generation()
 
@@ -2685,7 +2676,6 @@ class MainWindow:
             if controls != self._lora_controls_state:
                 self._lora_controls_state = deepcopy(controls)
                 self._lora_control_updates = self._refresh_lora_controls()
-                self._lora_actions_timer.start(0)
             self._retained_lora_selection_changed()
             if self._lora_reconcile is not None or self._lora_control_updates is not None:
                 self._lora_actions_timer.start(0)
@@ -3128,7 +3118,10 @@ class MainWindow:
 
     def _toggle_cache_management(self, expanded: bool) -> None:
         self._toggle_connection_section(
-            self.form.cacheManagementBoxContents, self.form.cacheManagementDisclosure, self.form.cacheManagementHeading.text(), expanded
+            self.form.cacheManagementBoxContents,
+            self.form.cacheManagementDisclosure,
+            self.form.cacheManagementHeading.text(),
+            expanded,
         )
         if expanded:
             self.refresh_cache()
