@@ -209,37 +209,37 @@ class _Strip(QWidget):
             )
 
     @staticmethod
-    def _aggregate_cells(text: str, metrics: QFontMetrics) -> list[tuple[str, int]]:
-        """Reserve measured space for HiRes groups while keeping the existing adaptive candidates."""
+    def _aggregate_cells(text: str, metrics: QFontMetrics, bold_metrics: QFontMetrics) -> list[tuple[str, int, bool]]:
+        """Measure bold values and reserve compact space outside whole sampling fractions."""
         groups = re.split(r"((?:Sampling|S) \[[^\]]*\])", text)
-        if len(groups) == 1:
-            return [(text, metrics.horizontalAdvance(text))]
         total = re.search(r"\d+/(\d+)", groups[0])
         digits = max(2, len(total.group(1))) if total else 2
-        digit = max("0123456789", key=metrics.horizontalAdvance)
+        digit = max("0123456789", key=bold_metrics.horizontalAdvance)
+        # Pass identifiers are labels, not numeric values. Keep fractions and times contiguous.
+        values = re.compile(r"(?<!\d)\d+(?:/(?:\d+|\?)|(?::\d+){1,2}|%)?")
         cells = []
         for index, part in enumerate(groups):
             if not part:
                 continue
-            if index % 2:
-                # Allocate each numeric field independently so subsequent labels stay put.
-                for field_index, field in enumerate(part.split(" · ")):
-                    if field_index:
-                        cells.append((" · ", metrics.horizontalAdvance(" · ")))
-                    step_field = field_index == 3
-                    pattern = r"(\d+|\?)" if step_field else r"(\d+)(?= P[12]| waiting|$)"
-                    if not step_field and field.startswith(("S [P1:", "P2:", "W2:")):
-                        pattern = r"(\d+)$"
-                    for token in re.split(pattern, field):
-                        if not token:
-                            continue
-                        width = metrics.horizontalAdvance(token)
-                        if token.isdigit() or token == "?":
-                            reserve = max(4, digits + 2) if step_field else digits
-                            width = max(width, metrics.horizontalAdvance(digit * reserve))
-                        cells.append((token, width))
-            else:
-                cells.append((part, metrics.horizontalAdvance(part)))
+            # Compact W2: is a label; ordinary W counts remain numeric.
+            pos = 0
+            pattern = re.compile(r"\d+(?:/(?:\d+|\?))?") if index % 2 else values
+            for match in pattern.finditer(part):
+                if index % 2 and match.start() and part[match.start() - 1] in "PW":
+                    continue  # P1, P2 and W2 are labels, not counts.
+                if match.start() > pos:
+                    label = part[pos:match.start()]
+                    cells.append((label, metrics.horizontalAdvance(label), False))
+                value = match.group()
+                width = bold_metrics.horizontalAdvance(value)
+                if index % 2:
+                    reserve = f"{digit * 3}/{digit * 3}" if "/" in value else digit * digits
+                    width = max(width, bold_metrics.horizontalAdvance(reserve))
+                cells.append((value, width, True))
+                pos = match.end()
+            if pos < len(part):
+                label = part[pos:]
+                cells.append((label, metrics.horizontalAdvance(label), False))
         return cells
 
     def _aggregate_layout(self, model: BarModel, width: int) -> tuple[str, str]:
@@ -247,15 +247,18 @@ class _Strip(QWidget):
         font = self.font()
         font.setPointSizeF(9)
         metrics = QFontMetrics(font)
+        bold = QFont(font)
+        bold.setBold(True)
+        bold_metrics = QFontMetrics(bold)
         options = [t for t in (f"{model.elapsed} · {model.eta}" if model.eta else "", model.elapsed) if t]
         for times in options:
             room = width - 2 * PAD - metrics.horizontalAdvance(times) - 8
             for text in model.texts[: model.timed]:
-                if sum(cell_width for _, cell_width in self._aggregate_cells(text, metrics)) <= room:
+                if sum(cell_width for _, cell_width, _ in self._aggregate_cells(text, metrics, bold_metrics)) <= room:
                     return text, times
         room = width - 2 * PAD
         for text in model.texts:
-            if sum(cell_width for _, cell_width in self._aggregate_cells(text, metrics)) <= room:
+            if sum(cell_width for _, cell_width, _ in self._aggregate_cells(text, metrics, bold_metrics)) <= room:
                 return text, ""
         return model.texts[-1], ""
 
@@ -268,9 +271,14 @@ class _Strip(QWidget):
         painter.setPen(self._text)
         # The numbers are never elided: when even the last candidate is too wide it is clipped by the strip edge.
         x = PAD
-        for part, cell_width in self._aggregate_cells(text, metrics):
+        font = painter.font()
+        bold = QFont(font)
+        bold.setBold(True)
+        for part, cell_width, emphasis in self._aggregate_cells(text, metrics, QFontMetrics(bold)):
+            painter.setFont(bold if emphasis else font)
             painter.drawText(QRectF(x, 0, cell_width + 1, height), int(Qt.AlignmentFlag.AlignVCenter), part)
             x += cell_width
+        painter.setFont(font)
         if times:
             painter.drawText(
                 QRectF(0, 0, width - PAD, height),

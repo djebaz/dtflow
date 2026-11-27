@@ -19,7 +19,7 @@ Changes through 6.5.5 are consolidated in [DTFlow 6.5.5](v6.5.5.md). The publish
 
 ## Fixed
 
-- The Activity Bar groups concurrent HiRes P1, P2 and waiting counts inside Sampling, reserves numeric space and combines observed steps across both passes. Provider-reported P2 totals are included before P2 starts when available; unknown totals show `?`. Single-pass wording is unchanged.
+- The Activity Bar groups concurrent HiRes P1, P2 and waiting counts inside Sampling, reserves compact numeric space, emphasizes values in bold and combines observed steps across both passes without gaps around the slash. Provider-reported P2 totals are included before P2 starts when available; unknown totals show `?`. Single-pass wording is unchanged.
 
 - The saved model list is used again after a restart: the app no longer gives up reading it when other startup work holds the cache for a moment, so Refresh models is no longer needed after every start.
 - Controlnet keeps its own base model, checkpoint, LoRAs and settings (size, steps, guidance, sampler, seed and Advanced generation), apart from Text to image and Inpaint. A preset or a LoRA chosen in one mode no longer lands in the other, so a Text to image LoRA from another model family no longer blocks a Controlnet generation, and the sampler stays as you chose it when you go back and forth. Prompts stay shared. The first time you open Controlnet it starts from your current settings without LoRAs.
