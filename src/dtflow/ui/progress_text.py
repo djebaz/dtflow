@@ -29,9 +29,7 @@ def _counts(snapshot: ProgressSnapshot) -> dict[str, int]:
     return dict(snapshot.stage_counts)
 
 
-def _groups(
-    snapshot: ProgressSnapshot, short: bool, hires: bool = False
-) -> tuple[list[str], list[str], list[str], list[str]]:
+def _groups(snapshot: ProgressSnapshot, short: bool) -> tuple[list[str], list[str], list[str], list[str]]:
     """Core, waiting, sampling/receiving, and ending groups in lifecycle order."""
     counts = _counts(snapshot)
     core = [f"{snapshot.settled}/{snapshot.total}" + ("" if short else " items")]
@@ -56,7 +54,7 @@ def _groups(
     xy = []
     pass_items = tuple(item for queue in snapshot.queues for item in queue.items)
 
-    if hires or any(counts.get(code) for code in ("S1", "W2", "S2")):
+    if any(counts.get(code) for code in ("S1", "W2", "S2")):
         p1, p2, pending = (counts.get(code, 0) for code in ("S1", "S2", "W2"))
         done = total = 0
         complete = True
@@ -110,8 +108,8 @@ def _groups(
     return core, waiting, xy, ending
 
 
-def _line(snapshot, *, short, percent, times, wait, queues, hires=False) -> str:
-    core, waiting, xy, ending = _groups(snapshot, short, hires)
+def _line(snapshot, *, short, percent, times, wait, queues) -> str:
+    core, waiting, xy, ending = _groups(snapshot, short)
     parts = []
     if queues and snapshot.queues and snapshot.queues[0].totals.queue_id != SOLO_QUEUE:
         count = len(snapshot.queues)
@@ -132,11 +130,11 @@ def _line(snapshot, *, short, percent, times, wait, queues, hires=False) -> str:
 
 
 def aggregate_text(
-    snapshot: ProgressSnapshot, *, elapsed: str = "", eta: str = "", hires: bool = False
+    snapshot: ProgressSnapshot, *, elapsed: str = "", eta: str = ""
 ) -> AggregateText:
     times = SEP.join(part for part in (elapsed, eta) if part)
     percent = f"{int(snapshot.fill * 100)}%" if snapshot.total else ""
-    full = _line(snapshot, short=False, percent=percent, times=times, wait=True, queues=True, hires=hires)
+    full = _line(snapshot, short=False, percent=percent, times=times, wait=True, queues=True)
     candidates: list[str] = []
     timed = 0
     for wait, queues in ((True, True), (True, False), (False, False)):
@@ -148,7 +146,6 @@ def aggregate_text(
                 times="",
                 wait=wait,
                 queues=queues,
-                hires=hires,
             )
             if text and text not in candidates:
                 candidates.append(text)

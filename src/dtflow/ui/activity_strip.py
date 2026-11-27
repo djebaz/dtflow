@@ -130,7 +130,6 @@ class ActivityStrip(QObject):
         self.bar.dismiss_requested.connect(self._bar_dismiss)
         self._bar_key = None
         self._aggregate: Aggregate | None = None
-        self._hires_groups = False
         self._palette: dict[str, int] = {}  # queue id -> palette slot, kept while the queue stays active
         self._palette_reuse = 0
         self._last_run = None
@@ -338,10 +337,6 @@ class ActivityStrip(QObject):
         if not self._live():
             return
         self._aggregate = aggregate
-        if aggregate is None:
-            self._hires_groups = False
-        else:
-            self._hires_groups |= any(code in ("S1", "W2", "S2") for code, _ in aggregate.snapshot.stage_counts)
         active = {queue.totals.queue_id for queue in aggregate.snapshot.queues} if aggregate is not None else set()
         for queue_id in [queue_id for queue_id in self._palette if queue_id not in active]:
             del self._palette[queue_id]
@@ -368,10 +363,8 @@ class ActivityStrip(QObject):
         for queue in snapshot.queues:
             end += queue.contribution / snapshot.total if snapshot.total else 0.0
             segments.append((min(1.0, end), QUEUE_PALETTE[self._palette_slot(queue.totals.queue_id)]))
-        text = aggregate_text(
-            snapshot, hires=self._hires_groups
-        )  # elapsed/ETA are painted at the right edge, not in the left text
-        full = aggregate_text(snapshot, elapsed=aggregate.elapsed, eta=aggregate.eta, hires=self._hires_groups).full
+        text = aggregate_text(snapshot)  # elapsed/ETA are painted at the right edge, not in the left text
+        full = aggregate_text(snapshot, elapsed=aggregate.elapsed, eta=aggregate.eta).full
         if aggregate.stop_target:
             full = f"{full} · Stop {aggregate.stop_target}"
         stop_label = base.stop_label
@@ -768,7 +761,6 @@ class ActivityStrip(QObject):
             return
         if key == "run":
             self._aggregate = None
-            self._hires_groups = False
         self._expiry.pop(key, None)
         row = self.rows.pop(key, None)
         if key == "run" and row is not None and isValid(row) and row.property("startedAt") is not None:

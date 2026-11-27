@@ -248,6 +248,9 @@ class _Strip(QWidget):
         percent = f"{int(model.fraction * 100)}%" if model.fraction is not None else "—"
         elapsed = model.elapsed.removeprefix("Elapsed ")
         eta = model.eta.removeprefix("~").removesuffix(" left")
+        # A running aggregate has not settled, even when its ETA rounds down to zero.
+        if model.kind == "running" and re.fullmatch(r"0+(?::00){1,2}", eta):
+            eta = "0:01"
 
         def duration(value: str) -> str:
             return value.zfill(5) if re.fullmatch(r"\d+:\d{2}", value) else value
