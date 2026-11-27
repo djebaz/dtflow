@@ -210,7 +210,7 @@ class _Strip(QWidget):
 
     @staticmethod
     def _aggregate_cells(text: str, metrics: QFontMetrics, bold_metrics: QFontMetrics) -> list[tuple[str, int, bool]]:
-        """Measure bold values and reserve compact space outside whole sampling fractions."""
+        """Measure bold values; keep the step fraction and its unit adjacent."""
         groups = re.split(r"((?:Sampling|S) \[[^\]]*\])", text)
         total = re.search(r"\d+/(\d+)", groups[0])
         digits = max(2, len(total.group(1))) if total else 2
@@ -223,6 +223,7 @@ class _Strip(QWidget):
                 continue
             # Compact W2 is a label; ordinary W counts remain numeric.
             pos = 0
+            trailing_pad = 0
             pattern = re.compile(r"\d+(?:/(?:\d+|\?))?") if index % 2 else values
             for match in pattern.finditer(part):
                 if index % 2 and match.start() and part[match.start() - 1] in "PW":
@@ -233,13 +234,19 @@ class _Strip(QWidget):
                 value = match.group()
                 width = bold_metrics.horizontalAdvance(value)
                 if index % 2:
-                    reserve = f"{digit * 3}/{digit * 3}" if "/" in value else digit * digits
-                    width = max(width, bold_metrics.horizontalAdvance(reserve))
+                    if "/" in value:
+                        # Reserve space after the entire Sampling group, never before its unit.
+                        reserve = bold_metrics.horizontalAdvance(f"{digit * 3}/{digit * 3}")
+                        trailing_pad += max(0, reserve - width)
+                    else:
+                        width = max(width, bold_metrics.horizontalAdvance(digit * digits))
                 cells.append((value, width, True))
                 pos = match.end()
             if pos < len(part):
                 label = part[pos:]
                 cells.append((label, metrics.horizontalAdvance(label), False))
+            if trailing_pad:
+                cells.append(("", trailing_pad, False))
         return cells
 
     @staticmethod
