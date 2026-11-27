@@ -221,7 +221,7 @@ class _Strip(QWidget):
         for index, part in enumerate(groups):
             if not part:
                 continue
-            # Compact W2: is a label; ordinary W counts remain numeric.
+            # Compact W2 is a label; ordinary W counts remain numeric.
             pos = 0
             pattern = re.compile(r"\d+(?:/(?:\d+|\?))?") if index % 2 else values
             for match in pattern.finditer(part):
@@ -242,49 +242,76 @@ class _Strip(QWidget):
                 cells.append((label, metrics.horizontalAdvance(label), False))
         return cells
 
+    @staticmethod
+    def _aggregate_summary(model: BarModel) -> tuple[str, ...]:
+        """Compact display only; keep original timing evidence in the model."""
+        percent = f"{int(model.fraction * 100)}%" if model.fraction is not None else "—"
+        elapsed = model.elapsed.removeprefix("Elapsed ")
+        eta = model.eta.removeprefix("~").removesuffix(" left")
+
+        def duration(value: str) -> str:
+            return value.zfill(5) if re.fullmatch(r"\d+:\d{2}", value) else value
+
+        return percent, duration(elapsed) or "—", "−" + duration(eta) if eta else "—"
+
+    @staticmethod
+    def _summary_widths(values: tuple[str, ...], metrics: QFontMetrics) -> tuple[int, ...]:
+        digit = max("0123456789", key=metrics.horizontalAdvance)
+        reserves = (digit * 3 + "%", digit * 2 + ":" + digit * 2, "−" + digit * 2 + ":" + digit * 2)
+        return tuple(
+            max(metrics.horizontalAdvance(v), metrics.horizontalAdvance(r))
+            for v, r in zip(values, reserves, strict=True)
+        )
+
     def _aggregate_layout(self, model: BarModel, width: int) -> tuple[str, str]:
-        """(left text, right-aligned times): the times stay while a richer-than-minimal text still fits beside them."""
+        """Choose the richest left text that fits beside the fixed right summary."""
         font = self.font()
         font.setPointSizeF(9)
         metrics = QFontMetrics(font)
         bold = QFont(font)
         bold.setBold(True)
         bold_metrics = QFontMetrics(bold)
-        options = [t for t in (f"{model.elapsed} · {model.eta}" if model.eta else "", model.elapsed) if t]
-        for times in options:
-            room = width - 2 * PAD - metrics.horizontalAdvance(times) - 8
-            for text in model.texts[: model.timed]:
-                if sum(cell_width for _, cell_width, _ in self._aggregate_cells(text, metrics, bold_metrics)) <= room:
-                    return text, times
-        room = width - 2 * PAD
+        values = self._aggregate_summary(model)
+        summary = "  ".join(values)
+        room = width - 2 * PAD - sum(self._summary_widths(values, bold_metrics)) - 24 - 12
         for text in model.texts:
             if sum(cell_width for _, cell_width, _ in self._aggregate_cells(text, metrics, bold_metrics)) <= room:
-                return text, ""
-        return model.texts[-1], ""
+                return text, summary
+        return model.texts[-1], summary
 
     def aggregate_text(self, model: BarModel, width: int | None = None) -> str:
         """The left text that is shown for this width (the last candidate always shows)."""
         return self._aggregate_layout(model, self.width() if width is None else width)[0]
 
     def _paint_aggregate(self, painter, model, metrics, width: int, height: int) -> None:
-        text, times = self._aggregate_layout(model, width)
+        text, _ = self._aggregate_layout(model, width)
         painter.setPen(self._text)
-        # The numbers are never elided: when even the last candidate is too wide it is clipped by the strip edge.
+        # Clip only the operational text, never overlap the fixed summary.
         x = PAD
         font = painter.font()
         bold = QFont(font)
         bold.setBold(True)
-        for part, cell_width, emphasis in self._aggregate_cells(text, metrics, QFontMetrics(bold)):
+        bold_metrics = QFontMetrics(bold)
+        values = self._aggregate_summary(model)
+        widths = self._summary_widths(values, bold_metrics)
+        summary_left = width - PAD - sum(widths) - 24
+        painter.save()
+        painter.setClipRect(QRectF(0, 0, max(0, summary_left - 12), height))
+        for part, cell_width, emphasis in self._aggregate_cells(text, metrics, bold_metrics):
             painter.setFont(bold if emphasis else font)
             painter.drawText(QRectF(x, 0, cell_width + 1, height), int(Qt.AlignmentFlag.AlignVCenter), part)
             x += cell_width
-        painter.setFont(font)
-        if times:
+        painter.restore()
+        right = width - PAD
+        painter.setFont(bold)
+        for value, cell_width in reversed(tuple(zip(values, widths, strict=True))):
             painter.drawText(
-                QRectF(0, 0, width - PAD, height),
+                QRectF(right - cell_width, 0, cell_width, height),
                 int(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight),
-                times,
+                value,
             )
+            right -= cell_width + 12
+        painter.setFont(font)
         self.shown_text = text
 
 

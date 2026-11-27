@@ -2,7 +2,7 @@
 
 Qt-free. The painter measures each candidate against the real text rectangle (``QFontMetrics.horizontalAdvance``) and
 shows the first that fits, so this module never guesses pixel widths. Groups drop in a fixed order when space is short:
-the percentage, elapsed/ETA text, waiting/cloud/encoding/saving/paused counts, then the queue count. The global
+compact labels first, then the queue count and optional stage groups only as a last resort. The global
 ``settled/total`` and every shown sampling X/Y or receiving A/B are never dropped or truncated; whatever is left out
 stays in ``full`` (the tooltip and accessible name).
 """
@@ -15,7 +15,7 @@ from dtflow.ui.progress_model import SOLO_QUEUE, ProgressSnapshot
 
 SEP = " · "
 GROUP_SEP = " | "
-_LONG = {"W": "waiting", "C": "in DT+ Cloud", "E": "encoding", "V": "saving"}
+_LONG = {"W": "Waiting", "C": "DT+ Cloud", "E": "Enc", "V": "Save"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,19 +41,18 @@ def _groups(
     waiting = []
     for code in ("W", "C"):
         if counts.get(code):
-            waiting.append(f"{code}{counts[code]}" if short else f"{counts[code]} {_LONG[code]}")
-    if not short:
-        outcomes = dict(snapshot.outcomes)
-        for name in ("cancelled", "unknown"):
-            if outcomes.get(name):
-                waiting.append(f"{outcomes[name]} {name}")
+            waiting.append(f"{code}{counts[code]}" if short else f"{_LONG[code]} {counts[code]}")
+    outcomes = dict(snapshot.outcomes)
+    for name in ("cancelled", "unknown"):
+        if outcomes.get(name):
+            waiting.append(f"{outcomes[name]} {name}")
     paused = sum(1 for queue in snapshot.queues if queue.totals.paused)
     if paused:
         waiting.append(f"P{paused}" if short else f"{paused} paused")
     ending = []
     for code in ("E", "V"):
         if counts.get(code):
-            ending.append(f"{code}{counts[code]}" if short else f"{counts[code]} {_LONG[code]}")
+            ending.append(f"{code}{counts[code]}" if short else f"{_LONG[code]} {counts[code]}")
     xy = []
     pass_items = tuple(item for queue in snapshot.queues for item in queue.items)
 
@@ -83,9 +82,9 @@ def _groups(
                 complete = False
         counter = f"{done}/{total}" if complete and total else f"{done}/?"
         details = (
-            f"P1:{p1}" if short else f"{p1} P1",
-            f"P2:{p2}" if short else f"{p2} P2",
-            f"W2:{pending}" if short else f"{pending} waiting",
+            f"P1 {p1}",
+            f"P2 {p2}",
+            f"W2 {pending}" if short else f"Waiting {pending}",
             f"{counter} steps",
         )
         passes = (("S" if short else "Sampling") + " [" + SEP.join(details) + "]",)
@@ -93,8 +92,8 @@ def _groups(
         passes = ()
 
     for code, word, unit, sums in (
-        ("S", "sampling", "steps", snapshot.steps),
-        ("R", "receiving", "frames", snapshot.frames),
+        ("S", "Sampling", "steps", snapshot.steps),
+        ("R", "Recv", "frames", snapshot.frames),
     ):
         if code == "R":
             xy.extend(passes)
@@ -102,10 +101,10 @@ def _groups(
         if not count:
             continue
         done, total, reporters = sums
-        head = f"{code}{count}" if short else f"{count} {word}"
+        head = f"{code}{count}" if short else f"{word} {count}"
         if reporters:
             partial = "" if reporters >= count else f", {reporters} reporting"
-            xy.append(f"{head} {done}/{total}" if short else f"{head} ({done}/{total} {unit}{partial})")
+            xy.append(f"{head} {done}/{total}{partial}" if short else f"{head} ({done}/{total} {unit}{partial})")
         else:
             xy.append(head)
     return core, waiting, xy, ending
@@ -114,8 +113,9 @@ def _groups(
 def _line(snapshot, *, short, percent, times, wait, queues, hires=False) -> str:
     core, waiting, xy, ending = _groups(snapshot, short, hires)
     parts = []
-    if queues and not short and snapshot.queues and snapshot.queues[0].totals.queue_id != SOLO_QUEUE:
-        parts.append(f"{len(snapshot.queues)} {'queue' if len(snapshot.queues) == 1 else 'queues'}")
+    if queues and snapshot.queues and snapshot.queues[0].totals.queue_id != SOLO_QUEUE:
+        count = len(snapshot.queues)
+        parts.append(f"{count}q" if short else f"{count} {'queue' if count == 1 else 'queues'}")
     parts += core
     if percent and not short:
         parts.append(percent)
@@ -135,24 +135,24 @@ def aggregate_text(
     snapshot: ProgressSnapshot, *, elapsed: str = "", eta: str = "", hires: bool = False
 ) -> AggregateText:
     times = SEP.join(part for part in (elapsed, eta) if part)
-    percent = f"~{int(snapshot.fill * 100)}%" if snapshot.total else ""
+    percent = f"{int(snapshot.fill * 100)}%" if snapshot.total else ""
     full = _line(snapshot, short=False, percent=percent, times=times, wait=True, queues=True, hires=hires)
     candidates: list[str] = []
     timed = 0
-    for level in range(5):
+    for wait, queues in ((True, True), (True, False), (False, False)):
         for short in (False, True):
             text = _line(
                 snapshot,
                 short=short,
-                percent=percent if level == 0 else "",
-                times=times if level <= 1 else "",
-                wait=level <= 2,
-                queues=level <= 3,
+                percent="",
+                times="",
+                wait=wait,
+                queues=queues,
                 hires=hires,
             )
             if text and text not in candidates:
                 candidates.append(text)
-        if level == 1:
+        if wait and queues:
             timed = len(candidates)
     minimal = f"{snapshot.settled}/{snapshot.total}"
     if minimal not in candidates:
