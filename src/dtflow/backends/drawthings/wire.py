@@ -300,6 +300,7 @@ def build_generation_message(
                 (f"{request.pose_control.input_type}_tensor_sha256", transport.image.hex()),
                 (f"{request.pose_control.input_type}_cloud_acceptance", "unverified_owner_experiment"),
                 ("control_hint_type", _control_hint_type(request)),
+                ("control_input_override", _control_input_override(request)),
                 ("control_tensor_width", str(transport.width)),
                 ("control_tensor_height", str(transport.height)),
                 ("control_tensor_channels", "1" if request.pose_control.input_type == "depth" else "3"),
