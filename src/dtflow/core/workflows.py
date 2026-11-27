@@ -27,6 +27,7 @@ from typing import Any
 from uuid import uuid4
 
 from dtflow.core.models import (
+    MAX_LOCAL_CONCURRENCY,
     MAX_QUEUE_CONCURRENCY,
     SEED_LIMIT,
     LoRASelection,
@@ -582,7 +583,7 @@ def workflow_limit(graph: Graph, backend: str, defaults: dict[str, int] | None =
     default = {**DEFAULT_CONCURRENCY, **(defaults or {})}.get(backend, 1)
     if graph.concurrency is None:
         return default
-    return min(graph.concurrency, default if backend == "cloud" else 10)
+    return min(graph.concurrency, default if backend == "cloud" else MAX_LOCAL_CONCURRENCY)
 
 
 def node_limit(graph: Graph, node: GraphNode, backend: str, defaults: dict[str, int] | None = None) -> int:

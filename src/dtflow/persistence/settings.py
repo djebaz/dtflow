@@ -11,7 +11,7 @@ import threading
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 
-from dtflow.core.models import MAX_QUEUE_CONCURRENCY, ValidationError
+from dtflow.core.models import MAX_LOCAL_CONCURRENCY, MAX_QUEUE_CONCURRENCY, ValidationError
 from dtflow.persistence.runtime_environment import environment_key
 
 SCHEMA_VERSION = 1
@@ -164,7 +164,8 @@ def load_workflow_defaults(state: Path) -> dict[str, int]:
     document = _read(state)
     return {
         name: validate_concurrency(
-            document.get(key, WORKFLOW_DEFAULTS[name]), MAX_CLOUD_CONCURRENCY if name == "cloud" else 10
+            document.get(key, WORKFLOW_DEFAULTS[name]),
+            MAX_CLOUD_CONCURRENCY if name == "cloud" else MAX_LOCAL_CONCURRENCY,
         )
         for name, key in WORKFLOW_DEFAULT_KEYS.items()
     }
@@ -183,7 +184,9 @@ def save_workflow_defaults(state: Path, values: dict[str, int]) -> Path:
         document = _read(state)
         for name, key in WORKFLOW_DEFAULT_KEYS.items():
             if name in values:
-                document[key] = validate_concurrency(values[name], MAX_CLOUD_CONCURRENCY if name == "cloud" else 10)
+                document[key] = validate_concurrency(
+                    values[name], MAX_CLOUD_CONCURRENCY if name == "cloud" else MAX_LOCAL_CONCURRENCY
+                )
         return _write(state, document)
 
 

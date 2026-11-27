@@ -51,6 +51,9 @@ class _CloudCredentials:
         return await resolve_credentials(self._environment, self._saved)
 
 
+MAX_PINNED_CLIENTS = 4
+
+
 class OwnerCloudAuth:
     """Reuse short tokens, inventory and HTTP connections within the desktop runner or CLI dispatch lifetime."""
 
@@ -60,7 +63,10 @@ class OwnerCloudAuth:
     async def get(self, saved: CredentialProvider | None) -> "CloudAuth":
         from dtflow.backends.drawthings.cloud_auth import CloudAuth
 
-        credential = await _CloudCredentials(os.environ, saved or _NoSavedCredentials()).get()
+        saved = saved or _NoSavedCredentials()
+        if KEY not in os.environ and isinstance(saved, _NoSavedCredentials):
+            raise ValidationError(f"The cloud backend requires {KEY} in the environment.")  # as create_backend says
+        credential = await _CloudCredentials(os.environ, saved).get()
         key = (credential.source, hashlib.sha256(credential.secret.encode()).digest(), credential.alias)
         client = self._clients.get(key)
         if client is None:
@@ -71,6 +77,9 @@ class OwnerCloudAuth:
 
             client = CloudAuth(PinnedCredential())
             self._clients[key] = client
+            # Keep the few most recent keys; an older key's idle connections are closed instead of lingering.
+            while len(self._clients) > MAX_PINNED_CLIENTS:
+                await self._clients.pop(next(iter(self._clients))).aclose()
         return client
 
     async def invalidate_inventory(self) -> None:

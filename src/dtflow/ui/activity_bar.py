@@ -44,7 +44,6 @@ class BarModel:
     # first; the painter picks the first that fits the real text rectangle.
     segments: tuple[tuple[float, str], ...] = ()
     texts: tuple[str, ...] = ()
-    timed: int = 0  # leading texts that keep every count group and so may share the strip with elapsed/ETA
 
 
 def clock(seconds: float) -> str:

@@ -61,9 +61,8 @@ from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event, timing_enabled, timing_level
 
 log = logging.getLogger(__name__)
-CLOUD_IMAGE_CHANNELS = (
-    4  # owner-approved after matched 20-image submission-spread benchmarks (see cloud-integration.md)
-)
+# Owner-approved after matched 20-image submission-spread benchmarks (see cloud-integration.md).
+CLOUD_IMAGE_CHANNELS = 4
 GENERATE_METHOD = "/ImageGenerationService/GenerateImage"
 
 BACKEND_ID = "drawthings-grpc"
@@ -250,6 +249,8 @@ class DrawThingsBackend:
         primary = self._require_channel()
         index = self._channel_next % self._channel_count
         self._channel_next += 1
+        if self._active <= 1:
+            index = 0  # a lone generation keeps the warm primary channel; extra channels open only under overlap
         if index == 0:
             await self._connect()
             return primary, index
