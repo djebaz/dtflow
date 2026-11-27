@@ -104,6 +104,7 @@ from dtflow.ui.lora_panel import LoraAssetPanel
 from dtflow.ui.prompt_tags import style_prompt_tags
 from dtflow.ui.submit_shortcut import SubmitShortcut
 from dtflow.ui.runner import AsyncRunner, EventRelay
+from dtflow.ui.performance import profile_slow_gui_callback
 
 
 log = logging.getLogger(__name__)
@@ -289,6 +290,7 @@ class GenerationPage:
         activity: Activity | None = None,
         no_cache: bool = False,
         cache_changed: Callable[[], None] | None = None,
+        defer_initial_catalogue: bool = False,
         retire_dispatch_inventory: Callable[[], Awaitable[None]] | None = None,
         choose_save: Callable[[QWidget, Path], str] = _choose_save,
         choose_open: Callable[[QWidget, Path], str] = _choose_open,
@@ -324,6 +326,9 @@ class GenerationPage:
         self._catalogue_error = ""
         self._catalogue_next = None
         self._catalogue_reading = False
+        self._catalogue_startup_wait = defer_initial_catalogue
+        self._catalogue_needed = not defer_initial_catalogue
+        self._catalogue_pending_presentation = None
         self._inventory_snapshot: InventorySnapshot | None = None
         self._relink_pending = False  # imported LoRA names are being matched; Generate waits for the result
         self._relink_request = None
@@ -619,12 +624,12 @@ class GenerationPage:
         if hasattr(self, "inpaint"):
             self.inpaint.refresh_capability()
         if changed:
+            self.request_cached()
             self._rebuild_catalogue(
                 preferred_family=self._pending_family,
                 preferred_checkpoint=self.page.modelCombo.currentText(),
                 preserve_selection=True,
             )
-            self.request_cached()
 
     def _current_inventory_source(self):
         name, endpoint = self._backend()
@@ -636,6 +641,7 @@ class GenerationPage:
         self._catalogue_request = None
         self._catalogue_error = ""
         self._catalogue_next = None
+        self._catalogue_pending_presentation = None
         self._catalogue = Catalogue(self._state, deferred=True)
         self._catalogue_loaded = False
         self.lora._catalogue = self._catalogue
@@ -2220,10 +2226,27 @@ class GenerationPage:
         )
         self._queue_catalogue(options)
 
+    def finish_initial_catalogue_setup(self) -> None:
+        """Coalesce initial form/backend requests before the first worker read."""
+        self._catalogue_startup_wait = False
+        self._start_catalogue_read()
+
+    def activate_catalogue(self) -> None:
+        """Publish the first selector projection when a workspace needs the choices."""
+        self._catalogue_needed = True
+        pending, self._catalogue_pending_presentation = self._catalogue_pending_presentation, None
+        if pending is not None:
+            token, context, result = pending
+            if token is self._catalogue_request and context == self._catalogue_context():
+                self._publish_catalogue(result)
+        self._start_catalogue_read()
+        self._write_inventory_stats()
+
     def _queue_catalogue(self, options) -> None:
         if self._runner.closed:
             return
         token = self._catalogue_request = object()
+        self._catalogue_pending_presentation = None
         self._catalogue_options = options
         self._catalogue_error = ""
         self._catalogue_next = (token, self._catalogue_context(), self._inventory_snapshot, options)
@@ -2233,6 +2256,8 @@ class GenerationPage:
 
     def _start_catalogue_read(self) -> None:
         if self._runner.closed or self._catalogue_reading or self._catalogue_next is None:
+            return
+        if self._catalogue_startup_wait or (not self._catalogue_needed and self._cache_request is not None):
             return
         token, context, inventory, options = self._catalogue_next
         self._catalogue_next = None
@@ -2245,6 +2270,7 @@ class GenerationPage:
     def _catalogue_context(self):
         return (self._inventory_revision, self._current_inventory_source())
 
+    @profile_slow_gui_callback("generate.catalogue_delivery")
     def _catalogue_ready(self, token, context, result, error) -> None:
         self._catalogue_reading = False
         if self._runner.closed or token is not self._catalogue_request or context != self._catalogue_context():
@@ -2256,6 +2282,17 @@ class GenerationPage:
             self._update_compute_units()
             self._write_inventory_stats()
             return
+        # The shared classification is useful on Connection even before any selector is opened.
+        self._catalogue = result.catalogue
+        self.lora._catalogue = result.catalogue
+        self.lora._catalogue_versions = None
+        if not self._catalogue_needed:
+            self._catalogue_pending_presentation = (token, context, result)
+            return
+        self._publish_catalogue(result)
+
+    @profile_slow_gui_callback("generate.catalogue_presentation")
+    def _publish_catalogue(self, result) -> None:
         # Worker work is complete. Build detached models and publish once on Qt; no
         # event-loop turn separates the validated result from the final selector swap.
         families, models = QStandardItemModel(self.page), QStandardItemModel(self.page)
@@ -2494,6 +2531,8 @@ class GenerationPage:
         self._write_inventory_stats()
 
     def _write_inventory_stats(self):
+        if not self._catalogue_needed:
+            return  # Hidden selector diagnostics are presentation only.
         label = self.page.inventoryEvidenceLabel
         snapshot = self._inventory_snapshot
         if snapshot is None:
@@ -2587,6 +2626,7 @@ class GenerationPage:
         selection = await asyncio.to_thread(selection_for, name, endpoint, self._state)
         return await self._inventory_memory.restore(selection, self._state, saved=saved, no_cache=self._no_cache)
 
+    @profile_slow_gui_callback("generate.inventory_restored")
     def _inventory_restored(self, source, revision, token, result, revalidate):
         if (
             token is not self._cache_request
@@ -2611,6 +2651,7 @@ class GenerationPage:
                         preferred_family=self._pending_family, preferred_checkpoint=checkpoint, preserve_selection=True
                     )
             self._write_inventory_stats()
+            self._start_catalogue_read()  # A cache miss still needs the pending catalogue.
             return
         snapshot, how = result
         if snapshot is self._inventory_snapshot:
