@@ -478,6 +478,8 @@ class DrawThingsBackend:
         metadata = {}
         previews = preview_bytes = skipped_previews = 0
         preview_decode_ms = 0.0
+        final_processed_at = None
+        receiving_announced = False
 
         def remaining() -> float:
             return max(0.0, self.timeouts.total - (time.monotonic() - started))
@@ -690,6 +692,9 @@ class DrawThingsBackend:
                                 raise self._reject(request, "chunked_output_unsupported", stage, finals)
                             for signpost in (response.current_signpost,) if response.current_signpost else ():
                                 self._signpost(signpost, request, emit)
+                            if response.download_size and not receiving_announced and not finals:
+                                receiving_announced = True
+                                emit("progress", stage="receiving_image")
                             if response.preview_image:
                                 previews += 1
                                 preview_bytes += len(response.preview_image)
@@ -724,15 +729,33 @@ class DrawThingsBackend:
                                     width, height, channels = check_final(data, request, limits)
                                     if received > limits.transport_bytes:
                                         raise TensorRejected("tensor_transport_limit")
+                                    emit("progress", stage="processing_image")
+                                    processing_started = time.monotonic()
                                     artifact = await settle(
                                         asyncio.to_thread(
                                             decode_final, data, width, height, channels, len(finals) + 1, limits
                                         )
                                     )
+                                    final_processed_at = time.monotonic()
+                                    diagnostic_event(
+                                        log,
+                                        "backend.final_image_worker_completed",
+                                        level=timing_level(),
+                                        data={"elapsed_ms": (final_processed_at - processing_started) * 1000},
+                                    )
                                 except TensorRejected as exc:
                                     raise self._reject(request, exc.code, stage, finals) from exc
                                 finals.append(artifact)
                                 emit("artifact_received", artifact=artifact)
+                                if len(finals) == expected:
+                                    emit("progress", stage="waiting_stream_completion")
+                    if final_processed_at is not None:
+                        diagnostic_event(
+                            log,
+                            "backend.final_stream_completed",
+                            level=timing_level(),
+                            data={"elapsed_ms": (time.monotonic() - final_processed_at) * 1000},
+                        )
                     provider_phase.provider_done()  # the stream is closed: only local work remains
                     if log.isEnabledFor(logging.DEBUG):
                         for label in ("initial_metadata", "trailing_metadata"):
