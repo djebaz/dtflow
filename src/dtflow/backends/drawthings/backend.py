@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field, replace
@@ -130,6 +131,14 @@ class DrawThingsBackend:
         self.limits = limits or ResourceLimits()
         self._shared_secret = shared_secret
         self._channel: Channel | None = None
+        self._benchmark_channels: list[Channel] = []
+        self._benchmark_next = 0
+        self._benchmark_count = 1
+        if self.backend_id == "drawthings-cloud":
+            count = os.environ.get("DTFLOW_BENCH_GRPC_CHANNELS", "1")
+            if count not in ("1", "2", "4"):
+                raise ValidationError("DTFLOW_BENCH_GRPC_CHANNELS must be 1, 2 or 4.")
+            self._benchmark_count = int(count)
         self._closing = False
         self._closed = False
         self._active = 0
@@ -224,12 +233,30 @@ class DrawThingsBackend:
         if self._closing or self._closed:
             raise error(ErrorCategory.CONNECTIVITY, "backend_closed", "Backend is closed.")
         if self._channel is None:
-            tls = self.endpoint.tls
-            config = Configuration(ssl_target_name_override=tls.server_name) if tls.server_name else None
-            self._channel = Channel(self.endpoint.host, self.endpoint.port, ssl=tls.build_context(), config=config)
-            if timing_enabled():
-                # Preserve Channel's default status-details codec and all other channel options.
-                self._channel._codec = _TimingProtoCodec()
+            self._channel = self._new_channel()
+
+    def _new_channel(self) -> Channel:
+        tls = self.endpoint.tls
+        config = Configuration(ssl_target_name_override=tls.server_name) if tls.server_name else None
+        channel = Channel(self.endpoint.host, self.endpoint.port, ssl=tls.build_context(), config=config)
+        if timing_enabled():
+            # Preserve Channel's default status-details codec and all other channel options.
+            channel._codec = _TimingProtoCodec()
+        return channel
+
+    async def _generation_channel(self) -> tuple[Channel, int]:
+        """Select a fixed benchmark channel before authorization; no extra generation admission."""
+        primary = self._require_channel()
+        index = self._benchmark_next % self._benchmark_count
+        self._benchmark_next += 1
+        if index == 0:
+            await self._connect()
+            return primary, index
+        while len(self._benchmark_channels) < index:
+            self._benchmark_channels.append(self._new_channel())
+        channel = self._benchmark_channels[index - 1]
+        await self._connect(channel)
+        return channel, index
 
     async def check_connection(self) -> ConnectionStatus:
         """Non-generative evidence; transport, authentication and inventory stay distinct."""
@@ -588,14 +615,13 @@ class DrawThingsBackend:
                 emit("preparing", stage="waiting_execution_lane")
                 async with self._lane:
                     emit("preparing", stage="connecting_backend")
-                    await self._connect()
+                    channel, channel_index = await self._generation_channel()
                     emit("preparing", stage="preparing_grpc_metadata")
                     metadata = await self._generation_metadata(wire.message)
                     if asyncio.current_task().cancelling():
                         raise asyncio.CancelledError
                     stage = SubmissionStage.POSSIBLY_SUBMITTED
                     emit("submission_possible", stage="grpc_request")
-                    channel = self._require_channel()
                     received = 0
                     async with channel.request(
                         GENERATE_METHOD,
@@ -616,7 +642,15 @@ class DrawThingsBackend:
                             data={
                                 "transport": "grpc",
                                 "backend": self.backend_id,
-                                **({"send_ms": (request_sent_at - send_started) * 1000} if timing_enabled() else {}),
+                                **(
+                                    {
+                                        "send_ms": (request_sent_at - send_started) * 1000,
+                                        "channel_index": channel_index,
+                                        "channel_count": self._benchmark_count,
+                                    }
+                                    if timing_enabled() or self._benchmark_count > 1
+                                    else {}
+                                ),
                             },
                         )
                         first_response = True
@@ -867,6 +901,9 @@ class DrawThingsBackend:
         if self._channel is not None:
             channel, self._channel = self._channel, None
             channel.close()
+        for channel in self._benchmark_channels:
+            channel.close()
+        self._benchmark_channels.clear()
         self._closed = True
 
     # -- internals -----------------------------------------------------------------------------------------------
@@ -894,9 +931,10 @@ class DrawThingsBackend:
         credential = await self._shared_secret.get()
         return credential.secret if credential is not None else None
 
-    async def _connect(self) -> None:
+    async def _connect(self, channel: Channel | None = None) -> None:
         """Establish transport (including TLS) so failures here are provably before any request bytes."""
-        channel = self._require_channel()
+        if channel is None:
+            channel = self._require_channel()
         began = time.monotonic()
         try:
             async with asyncio.timeout(self.timeouts.connect):
