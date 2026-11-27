@@ -12,6 +12,7 @@ def event_stage(event: BackendEvent) -> str:
             "session_ready": "Connection ready",
             "validating_image_inputs": "Validating image inputs",
             "validating_request": "Validating generation request",
+            "resolving_selected_assets": "Resolving LoRA selections",
             "validating_assets": "Validating prepared assets",
             "restoring_assets": "Restoring LoRA on DT+",
             "checking_loras": "Checking LoRA compatibility",
@@ -19,7 +20,6 @@ def event_stage(event: BackendEvent) -> str:
             "creating_attempt": "Creating generation attempt",
             "waiting_buffer_budget": "Waiting for memory budget",
             "waiting_video_disk": "Waiting for free disk space on this PC",
-            "waiting_video_clip_limit": "Waiting for a free video slot on this PC",
             "waiting_video_memory": "Waiting for video memory on this PC",
             "video_preparing": "Preparing video",
             "saving_image_snapshot": "Saving image input snapshot",
@@ -41,5 +41,10 @@ def event_stage(event: BackendEvent) -> str:
     if event.kind == "terminal":
         return "Finished; checking and saving output"
     if event.kind == "progress":
-        return "Generating" if event.stage == "sampling" else (event.stage or "Progress").replace("_", " ")
+        return {
+            "sampling": "Generating",
+            "receiving_image": "Receiving final image",
+            "processing_image": "Processing final image",
+            "waiting_stream_completion": "Waiting for provider completion",
+        }.get(event.stage, (event.stage or "Progress").replace("_", " "))
     return ""

@@ -1,5 +1,6 @@
 """Direct DT+ backend: cloud authentication around the shared Draw Things transport path."""
 
+import time
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -28,10 +29,14 @@ from dtflow.core.models import (
     BackendError,
     ConnectionStatus,
     FileIdentity,
+    InventorySnapshot,
     LoRABackendAvailability,
     StorageListing,
     ValidationError,
 )
+
+
+_FRESH_SECONDS = 5.0
 
 
 class DirectCloudBackend(DrawThingsBackend):
@@ -50,6 +55,7 @@ class DirectCloudBackend(DrawThingsBackend):
         *,
         endpoint: DrawThingsEndpoint | None = None,
         max_concurrency: int = 4,
+        owns_auth: bool = True,
         upload_transport: httpx.AsyncBaseTransport | None = None,
         upload_policy: AssetUploadPolicy | None = None,
         **kwargs,
@@ -61,6 +67,7 @@ class DirectCloudBackend(DrawThingsBackend):
         self.max_concurrency = max_concurrency
         super().__init__(endpoint or self.default_endpoint(), **kwargs)
         self._auth = auth
+        self._owns_auth = owns_auth
         self._upload_transport, self._upload_policy = upload_transport, upload_policy
 
     async def lookup_lora_assets(self, identities: tuple[FileIdentity, ...]) -> dict[str, LoRABackendAvailability]:
@@ -135,6 +142,30 @@ class DirectCloudBackend(DrawThingsBackend):
     async def _generation_metadata(self, message):
         return {"authorization": "bearer " + await self._auth.authorize(message)}
 
+    async def get_inventory(self, refresh: bool = False) -> InventorySnapshot:
+        if self._owns_auth:
+            return await super().get_inventory(refresh=refresh)
+        # Shared auth is scoped to the selected credential and dispatch owner.
+        # Keep Echo model descriptions with the snapshot; never share image permits.
+        endpoint = self.endpoint.label
+        async with self._auth.inventory_lock:
+            # Concurrent forced refreshes share one Echo: a snapshot taken moments ago still counts as fresh.
+            if (
+                refresh
+                and time.monotonic() - self._auth.inventory_times.get(endpoint, -_FRESH_SECONDS) >= _FRESH_SECONDS
+            ):
+                self._auth.inventories.pop(endpoint, None)
+            cached = self._auth.inventories.get(endpoint)
+            if cached is not None:
+                self._inventory, self._model_specs = cached
+                self._echoed = True
+                self._stale_reason = None
+                return self._with_staleness(self._inventory)
+            snapshot = await super().get_inventory(refresh=True)
+            self._auth.inventories[endpoint] = (snapshot, self._model_specs)
+            self._auth.inventory_times[endpoint] = time.monotonic()
+            return snapshot
+
     async def _echo(self):
         await self._auth.token()
         return await super()._echo()
@@ -163,5 +194,8 @@ class DirectCloudBackend(DrawThingsBackend):
         return replace(status, authentication="ok" if status.authentication != "failed" else "failed")
 
     async def aclose(self) -> None:
-        await super().aclose()
-        await self._auth.aclose()
+        try:
+            await super().aclose()
+        finally:
+            if self._owns_auth:
+                await self._auth.aclose()

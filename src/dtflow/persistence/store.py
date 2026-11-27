@@ -106,6 +106,8 @@ class SQLiteAttempts(QueueMixin):
     def __init__(self, directory: Path):
         self.directory = Path(directory).resolve()
         self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="dtflow-state")
+        # All generation services using this owner serialize publication before entering a worker.
+        self.publication_gate = asyncio.Lock()
         self._connection: sqlite3.Connection | None = None
         self._lock = None
         self._closed = False
@@ -119,10 +121,11 @@ class SQLiteAttempts(QueueMixin):
         except (sqlite3.Error, OSError) as exc:
             raise PersistenceError("Execution state could not be read or committed.") from exc
 
-    async def open(self) -> None:
-        await self._run(self._open)
+    async def open(self, *, recover: bool = True) -> None:
+        """Open owned state; capture-only callers defer recovery to the dispatch owner."""
+        await self._run(self._open, recover)
 
-    def _open(self) -> None:
+    def _open(self, recover: bool = True) -> None:
         if self._connection is not None:
             return
         if not patched_sqlite(sqlite3.sqlite_version):
@@ -204,29 +207,30 @@ class SQLiteAttempts(QueueMixin):
                 if 0 < version < 9:
                     migrate_script_runs(connection, self.directory)
                 connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
-                # Ownership lock ensures we are not reconciling another live dispatcher.
-                now = self._now()
-                connection.execute(
-                    """UPDATE attempts SET state='unknown', remote_outcome='unknown',
-                    updated_at_utc=? WHERE state='possibly_submitted'""",
-                    (now,),
-                )
-                connection.execute(
-                    """UPDATE attempts SET state='save_failed',
-                    updated_at_utc=? WHERE state='saving'""",
-                    (now,),
-                )
-                connection.execute(
-                    """UPDATE attempts SET state='interrupted_before_submission',
-                    updated_at_utc=? WHERE state='prepared'""",
-                    (now,),
-                )
-                lap("schema_and_recovery")
-                self.reconcile(connection, now, self.directory)
-                lap("reconcile")
-                # A recovered owner never replays previously submitted script children.
-                # No earlier process can still own this DB under owner.lock.
-                connection.execute("UPDATE queue_items SET lanes_json=NULL WHERE lanes_json IS NOT NULL")
+                if recover or version != SCHEMA_VERSION:
+                    # Ownership lock ensures we are not reconciling another live dispatcher.
+                    now = self._now()
+                    connection.execute(
+                        """UPDATE attempts SET state='unknown', remote_outcome='unknown',
+                        updated_at_utc=? WHERE state='possibly_submitted'""",
+                        (now,),
+                    )
+                    connection.execute(
+                        """UPDATE attempts SET state='save_failed',
+                        updated_at_utc=? WHERE state='saving'""",
+                        (now,),
+                    )
+                    connection.execute(
+                        """UPDATE attempts SET state='interrupted_before_submission',
+                        updated_at_utc=? WHERE state='prepared'""",
+                        (now,),
+                    )
+                    lap("schema_and_recovery")
+                    self.reconcile(connection, now, self.directory)
+                    lap("reconcile")
+                    # A recovered owner never replays previously submitted script children.
+                    # No earlier process can still own this DB under owner.lock.
+                    connection.execute("UPDATE queue_items SET lanes_json=NULL WHERE lanes_json IS NOT NULL")
                 connection.execute("COMMIT")
                 lap("commit")
                 if timing_enabled():

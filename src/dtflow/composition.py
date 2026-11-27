@@ -4,6 +4,7 @@ Services depend on the backend contract only. The CLI and a later Qt shell call 
 backend to another, and credentials are read from the environment by providers, never passed on a command line.
 """
 
+import hashlib
 import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -25,6 +26,7 @@ from dtflow.services.credentials import KEY, EnvironmentCredentials, resolve_cre
 
 if TYPE_CHECKING:  # the Draw Things provider library is slow to import, so it loads only when a backend needs it
     from dtflow.backends.drawthings.backend import DrawThingsEndpoint
+    from dtflow.backends.drawthings.cloud_auth import CloudAuth
     from dtflow.backends.drawthings.tls import TlsPolicy
 
 BACKENDS = ("fake", "local", "cloud")
@@ -47,6 +49,53 @@ class _CloudCredentials:
 
     async def get(self) -> Credential:
         return await resolve_credentials(self._environment, self._saved)
+
+
+MAX_PINNED_CLIENTS = 4
+
+
+class OwnerCloudAuth:
+    """Reuse short tokens, inventory and HTTP connections within the desktop runner or CLI dispatch lifetime."""
+
+    def __init__(self):
+        self._clients: dict[tuple[str, bytes, str | None], CloudAuth] = {}
+
+    async def get(self, saved: CredentialProvider | None) -> "CloudAuth":
+        from dtflow.backends.drawthings.cloud_auth import CloudAuth
+
+        saved = saved or _NoSavedCredentials()
+        if KEY not in os.environ and isinstance(saved, _NoSavedCredentials):
+            raise ValidationError(f"The cloud backend requires {KEY} in the environment.")  # as create_backend says
+        credential = await _CloudCredentials(os.environ, saved).get()
+        key = (credential.source, hashlib.sha256(credential.secret.encode()).digest(), credential.alias)
+        client = self._clients.get(key)
+        if client is None:
+
+            class PinnedCredential:
+                async def get(self) -> Credential:
+                    return credential
+
+            client = CloudAuth(PinnedCredential())
+            self._clients[key] = client
+            # Keep the few most recent keys; an older key's idle connections are closed instead of lingering.
+            while len(self._clients) > MAX_PINNED_CLIENTS:
+                await self._clients.pop(next(iter(self._clients))).aclose()
+        return client
+
+    async def invalidate_inventory(self) -> None:
+        """An explicit Connection check retires cached observations for future dispatches."""
+        for client in tuple(self._clients.values()):
+            async with client.inventory_lock:
+                client.inventories.clear()
+
+    async def aclose(self) -> None:
+        import asyncio
+
+        clients, self._clients = tuple(self._clients.values()), {}
+        results = await asyncio.gather(*(client.aclose() for client in clients), return_exceptions=True)
+        for result in results:
+            if isinstance(result, BaseException):
+                raise result
 
 
 class _SharedSecret:
@@ -106,6 +155,7 @@ def create_backend(
     image_inputs_loader: Callable[[ImageInputSnapshot], PreparedImageInputs] | None = None,
     allow_image_probe: bool = False,
     preview_images: bool | PreviewGate = True,
+    owner_auth: "CloudAuth | None" = None,
 ) -> Backend:
     """Build the explicitly selected backend; ``tls`` is the injection point for fixture trust only.
 
@@ -158,7 +208,8 @@ def create_backend(
         if KEY not in environ and isinstance(saved, _NoSavedCredentials):
             raise ValidationError(f"The cloud backend requires {KEY} in the environment.")
         return DirectCloudBackend(
-            CloudAuth(_CloudCredentials(environ, saved)),
+            owner_auth if owner_auth is not None else CloudAuth(_CloudCredentials(environ, saved)),
+            owns_auth=owner_auth is None,
             max_concurrency=selection.cloud_concurrency,
             timeouts=timeouts,
             image_permits=image_permits,

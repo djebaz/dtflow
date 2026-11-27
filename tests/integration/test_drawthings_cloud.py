@@ -36,11 +36,11 @@ async def cloud(server, handler):
         await adapter.aclose()
 
 
-def test_cloud_accepts_ten_lanes_without_network():
+def test_cloud_accepts_one_hundred_lanes_without_network():
     auth = CloudAuth(Secret("FAKE-API-SECRET"), transport=httpx.MockTransport(success))
-    assert DirectCloudBackend(auth, max_concurrency=10).capabilities.max_concurrency == 10
-    with pytest.raises(ValidationError, match="1..10"):
-        DirectCloudBackend(auth, max_concurrency=11)
+    assert DirectCloudBackend(auth, max_concurrency=100).capabilities.max_concurrency == 100
+    with pytest.raises(ValidationError, match="1..100"):
+        DirectCloudBackend(auth, max_concurrency=101)
 
 
 def success(request):

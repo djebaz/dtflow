@@ -25,6 +25,9 @@ STAGE_CODES = {
     "W": "waiting for a slot or local resources",
     "C": "DT+ Cloud processing",
     "S": "sampling",
+    "S1": "sampling | pass 1",
+    "S2": "sampling | pass 2",
+    "W2": "waiting | pass 2",
     "R": "receiving",
     "E": "encoding",
     "V": "saving",
@@ -33,7 +36,9 @@ PHASE_CODE = {
     "waiting": "W",
     "cloud": "C",
     "sampling": "S",
-    "second_pass": "S",
+    "sampling_pass_1": "S1",
+    "waiting_pass_2": "W2",
+    "second_pass": "S2",
     "receiving": "R",
     "encoder_wait": "E",
     "encoding": "E",
@@ -45,7 +50,9 @@ PHASE_WORDS = {
     "waiting": "waiting for this PC",
     "cloud": "DT+ Cloud processing",
     "sampling": "sampling",
-    "second_pass": "second pass",
+    "sampling_pass_1": "sampling | pass 1",
+    "waiting_pass_2": "waiting | pass 2",
+    "second_pass": "sampling | pass 2",
     "receiving": "receiving",
     "encoder_wait": "waiting for a local video encoder",
     "encoding": "finalizing",
@@ -60,7 +67,9 @@ VIDEO_WINDOWS = {
     "waiting": (0.0, 0.0, 60.0),  # a local wait (resources, slot): no progress is implied
     "cloud": (0.03, 0.50, 60.0),
     "sampling": (0.50, 0.80, 120.0),
-    "second_pass": (0.70, 0.80, 60.0),
+    "sampling_pass_1": (0.50, 0.65, 120.0),
+    "waiting_pass_2": (0.65, 0.65, 60.0),
+    "second_pass": (0.65, 0.80, 60.0),
     "receiving": (0.80, 0.93, 40.0),
     "encoder_wait": (0.93, 0.94, 30.0),
     "encoding": (0.94, 0.98, 10.0),
@@ -72,7 +81,9 @@ IMAGE_WINDOWS = {
     "waiting": (0.0, 0.0, 60.0),
     "cloud": (0.05, 0.10, 60.0),
     "sampling": (0.10, 0.90, 120.0),
-    "second_pass": (0.10, 0.90, 60.0),
+    "sampling_pass_1": (0.10, 0.50, 120.0),
+    "waiting_pass_2": (0.50, 0.50, 60.0),
+    "second_pass": (0.50, 0.90, 60.0),
     "receiving": (0.90, 0.95, 10.0),
     "encoder_wait": (0.95, 0.96, 10.0),
     "encoding": (0.96, 0.98, 10.0),
@@ -112,6 +123,8 @@ class ItemProgress:
         self.total: int | None = None
         self.bytes = 0
         self.steps: tuple[int, int] | None = None  # last observed sampler step counter
+        self.pass_1_steps: tuple[int, int] | None = None
+        self.second_pass_total: int | None = None
         self.frames: tuple[int, int] | None = None  # last observed received-frame counter
         self.counter: tuple[int, int] | None = None  # last valid counter of any kind, until the item settles
         self.label = ""  # last observed stage wording, until a terminal event of an image
@@ -159,12 +172,16 @@ class ItemProgress:
         """Short observed counter of the current phase, empty when it reports none."""
         if self.done is None or not self.total:
             return ""
-        unit = {"sampling": "steps", "second_pass": "steps", "receiving": "frames"}.get(self.phase)
+        unit = {"sampling": "steps", "sampling_pass_1": "steps", "second_pass": "steps", "receiving": "frames"}.get(
+            self.phase
+        )
         return f"{self.done}/{self.total} {unit}" if unit else ""
 
     def _observe(self, event: BackendEvent, now: float) -> bool:
         """Fold one event in; True when it is one a video run presents."""
         self.observed = True
+        if event.second_pass_total is not None and event.second_pass_total > 0:
+            self.second_pass_total = event.second_pass_total
         if event.kind == "progress" and event.stage == "waiting_heartbeat":
             if self.phase == "cloud":
                 self.beats += 1
@@ -174,7 +191,7 @@ class ItemProgress:
             if event.stage in ("waiting_backend_response", "backend_response_received"):
                 self.phase, self.done, self.total, self.text = "cloud", None, None, "DT+ Cloud processing"
             else:
-                waiting = event.stage in ("waiting_video_disk", "waiting_video_clip_limit", "waiting_video_memory") or (
+                waiting = event.stage in ("waiting_video_disk", "waiting_video_memory") or (
                     not self.video and event.stage in ("waiting_execution_lane", "waiting_provider_slot")
                 )
                 self.phase, self.text, self.done, self.total = (
@@ -186,11 +203,25 @@ class ItemProgress:
         elif event.kind == "submission_possible":
             self.sent_at = now
             self.phase, self.text, self.done, self.total = "preparing", "Sending request", None, None  # until sent
-        elif event.kind == "progress" and event.stage == "sampling":
-            self.phase, self.done, self.total = "sampling", event.completed, event.total
+        elif event.kind == "progress" and event.stage in ("sampling", "sampling_pass_1"):
+            self.phase, self.done, self.total = event.stage, event.completed, event.total
             if (counter := _counter(event)) is not None:
                 self.steps = counter
             self.text = f"Sampling · step {event.completed} of {event.total}"
+            if self.phase == "sampling_pass_1":
+                if counter is not None:
+                    self.pass_1_steps = counter
+                self.text = f"Sampling | pass 1 ({event.completed}/{event.total} steps)"
+        elif event.kind == "progress" and event.stage == "waiting_pass_2":
+            self.phase, self.text, self.done, self.total = "waiting_pass_2", "Waiting | pass 2", None, None
+            self.steps = None
+        elif event.kind == "progress" and event.stage in (
+            "receiving_image",
+            "processing_image",
+            "waiting_stream_completion",
+        ):
+            self.phase = "encoding" if event.stage == "processing_image" else "receiving"
+            self.text, self.done, self.total = event_stage(event), None, None
         elif event.kind == "progress" and event.stage == "receiving_frames":
             self.phase, self.done, self.total = "receiving", event.completed, event.total
             if (counter := _counter(event)) is not None:
@@ -208,13 +239,26 @@ class ItemProgress:
             self.phase, self.text, self.done, self.total = "encoding", "Encoding video and adding audio", None, None
         elif event.kind == "progress" and event.stage == "verifying_video":
             self.phase, self.text, self.done, self.total = "verifying", "Verifying the MP4", None, None
-        elif event.kind == "progress" and event.stage and event.stage.startswith("second_pass"):
-            self.phase, self.text = "second_pass", "Second-pass sampling"
+        elif event.kind == "progress" and event.stage == "second_pass_sampling":
+            self.phase, self.text = "second_pass", "Sampling | pass 2"
             self.done, self.total = event.completed, event.total
+            self.steps = _counter(event)
+            if self.steps is not None:
+                self.second_pass_total = self.steps[1]
+                self.text += f" ({self.done}/{self.total} steps)"
+            elif self.done is not None:
+                self.text += f" ({self.done} steps)"
+        elif event.kind == "progress" and event.stage == "second_pass_image_encoded":
+            self.phase, self.text, self.done, self.total = "waiting_pass_2", "Waiting | pass 2", None, None
+            self.steps = None
+        elif event.kind == "progress" and event.stage == "second_pass_image_decoded":
+            self.phase, self.text, self.done, self.total = "receiving", "Receiving final image", None, None
+            self.steps = None
         elif event.kind == "progress" and event.stage:
             self.text = "DT+: " + event.stage.replace("_", " ")
         elif event.kind == "terminal":
-            self.phase, self.text, self.done, self.total = "saving", "Saving the video and its poster", None, None
+            self.phase, self.done, self.total = "saving", None, None
+            self.text = "Saving the video and its poster" if self.video else "Checking and saving image"
         else:
             return False
         return True
@@ -232,6 +276,9 @@ class ItemSnapshot:
     frames: tuple[int, int] | None
     elapsed: float
     estimate: float
+    observed_step: int | None = None
+    pass_1_steps: tuple[int, int] | None = None
+    second_pass_total: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -383,7 +430,7 @@ class ProgressModel:
             return None  # local preparation milestones all carry sequence 0 and repeat; numbered events stay ordered
         item.last_sequence = max(item.last_sequence, event.sequence)
         if mode == "video" or event.stage in (
-            *("waiting_video_disk", "waiting_video_clip_limit", "waiting_video_memory"),
+            *("waiting_video_disk", "waiting_video_memory"),
             "video_preparing",
         ):
             item.mode = "video"
@@ -400,9 +447,7 @@ class ProgressModel:
             item.counter = counter
         elif event.kind == "terminal":
             item.counter = None
-            if not item.video:
-                item.label, item.label_since = "", None
-            # A video's terminal event precedes durable MP4/poster saving: its Saving phase stays until reconcile.
+            # Terminal evidence precedes durable saving for both images and video.
         item.event_label = label
         item.presented = presented
         return item
@@ -486,10 +531,13 @@ class ProgressModel:
                 item.mode,
                 item.code,
                 item.label,
-                item.steps if item.phase in ("sampling", "second_pass") else None,
+                item.steps if item.phase in ("sampling", "sampling_pass_1", "second_pass") else None,
                 item.frames if item.phase == "receiving" else None,
                 item.elapsed(now),
                 item.estimate(now),
+                item.done if item.phase == "second_pass" else None,
+                item.pass_1_steps,
+                item.second_pass_total,
             )
             for item in items
         )
@@ -500,8 +548,8 @@ class ProgressModel:
         return QueueSnapshot(
             totals,
             shots,
-            tuple(sorted(counts.items(), key=lambda pair: "WCSREV".index(pair[0]))),
-            _sum_counters(((*s.steps, 1) if s.steps else (0, 0, 0)) for s in shots),
+            tuple(sorted(counts.items(), key=lambda pair: tuple(STAGE_CODES).index(pair[0]))),
+            _sum_counters(((*s.steps, 1) if s.steps else (0, 0, 0)) for s in shots if s.stage == "S"),
             _sum_counters(((*s.frames, 1) if s.frames else (0, 0, 0)) for s in shots),
             sum(shot.estimate for shot in shots),
         )
@@ -519,4 +567,4 @@ def _merge_stages(groups) -> tuple[tuple[str, int], ...]:
     for group in groups:
         for code, count in group:
             merged[code] = merged.get(code, 0) + count
-    return tuple(sorted(merged.items(), key=lambda pair: "WCSREV".index(pair[0])))
+    return tuple(sorted(merged.items(), key=lambda pair: tuple(STAGE_CODES).index(pair[0])))

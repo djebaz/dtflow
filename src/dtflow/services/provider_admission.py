@@ -23,6 +23,7 @@ from time import monotonic
 from collections.abc import Callable
 
 from dtflow.core.provider_phase import OVERLAP
+from dtflow.services.budget import BufferBudget
 from dtflow.diagnostics import event as diagnostic_event
 
 log = logging.getLogger(__name__)
@@ -80,6 +81,7 @@ class Permit:
 class ProviderPool:
     def __init__(self, key: str, limit: int):
         self.key, self.limit = key, limit
+        self.buffer_budget: BufferBudget | None = None
         self.active = 0  # calls holding a slot
         self.open = 0  # calls admitted and not yet closed
         self._waiters: list[tuple[Rank, int, asyncio.Future, Permit | None]] = []

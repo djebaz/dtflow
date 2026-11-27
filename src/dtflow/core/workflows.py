@@ -27,6 +27,8 @@ from typing import Any
 from uuid import uuid4
 
 from dtflow.core.models import (
+    MAX_LOCAL_CONCURRENCY,
+    MAX_QUEUE_CONCURRENCY,
     SEED_LIMIT,
     LoRASelection,
     ResolvedGenerationRequest,
@@ -43,7 +45,7 @@ MASK = "MASK"
 PORT_TYPES = (IMAGE, MASK)
 MAX_NODES = 200  # practical bound on one file, not a chain-length limit
 MAX_PLANNED_GENERATIONS = 256  # practical bound on one run's submissions after fan-out
-MAX_CONCURRENCY = 10  # most steps of one workflow, or of one node, that run together (#286)
+MAX_CONCURRENCY = MAX_QUEUE_CONCURRENCY  # explicit workflow or node limit
 # Built-in defaults; the app settings (Connection tab) replace them: DT+, local, fake backend, and local segmentation
 # nodes (Detect face today; later segmentation nodes share it).
 DEFAULT_CONCURRENCY = {"cloud": 10, "local": 2, "fake": 4, "segmentation": 2}
@@ -577,10 +579,11 @@ def _prompt_settings(properties: dict, node_type: str, outputs: int, where: str)
 
 
 def workflow_limit(graph: Graph, backend: str, defaults: dict[str, int] | None = None) -> int:
-    """Global limit: steps of one run that may be in flight together; the workflow's own, else the default."""
-    if graph.concurrency is not None:
-        return graph.concurrency
-    return {**DEFAULT_CONCURRENCY, **(defaults or {})}.get(backend, 1)
+    """Cloud workflows can narrow the Connection limit; local policy stays bounded separately."""
+    default = {**DEFAULT_CONCURRENCY, **(defaults or {})}.get(backend, 1)
+    if graph.concurrency is None:
+        return default
+    return min(graph.concurrency, default if backend == "cloud" else MAX_LOCAL_CONCURRENCY)
 
 
 def node_limit(graph: Graph, node: GraphNode, backend: str, defaults: dict[str, int] | None = None) -> int:

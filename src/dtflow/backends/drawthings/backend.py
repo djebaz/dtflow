@@ -15,6 +15,7 @@ from drawthings_py.generated.dt_grpc import image_service
 from grpclib.client import Channel
 from grpclib.config import Configuration
 from grpclib.const import Cardinality
+from grpclib.encoding.proto import ProtoCodec
 
 from dtflow.backends.drawthings.codec import (
     TensorRejected,
@@ -60,9 +61,28 @@ from dtflow.core.tasks import settle
 from dtflow.diagnostics import event as diagnostic_event, timing_enabled, timing_level
 
 log = logging.getLogger(__name__)
+# Owner-approved after matched 20-image submission-spread benchmarks (see cloud-integration.md).
+CLOUD_IMAGE_CHANNELS = 4
 GENERATE_METHOD = "/ImageGenerationService/GenerateImage"
 
 BACKEND_ID = "drawthings-grpc"
+
+
+class _TimingProtoCodec(ProtoCodec):
+    """Observe the actual generation serialization without a second encoding pass."""
+
+    def encode(self, message, message_type) -> bytes:
+        if not isinstance(message, image_service.ImageGenerationRequest):
+            return super().encode(message, message_type)
+        started = time.monotonic()
+        encoded = super().encode(message, message_type)
+        elapsed_ms = (time.monotonic() - started) * 1000
+        diagnostic_event(
+            log,
+            "backend.grpc_serialized",
+            data={"elapsed_ms": elapsed_ms, "message_bytes": len(encoded)},
+        )
+        return encoded
 
 
 def now() -> str:
@@ -112,6 +132,8 @@ class DrawThingsBackend:
         self.limits = limits or ResourceLimits()
         self._shared_secret = shared_secret
         self._channel: Channel | None = None
+        self._extra_channels: list[Channel] = []
+        self._channel_next = 0
         self._closing = False
         self._closed = False
         self._active = 0
@@ -206,9 +228,37 @@ class DrawThingsBackend:
         if self._closing or self._closed:
             raise error(ErrorCategory.CONNECTIVITY, "backend_closed", "Backend is closed.")
         if self._channel is None:
-            tls = self.endpoint.tls
-            config = Configuration(ssl_target_name_override=tls.server_name) if tls.server_name else None
-            self._channel = Channel(self.endpoint.host, self.endpoint.port, ssl=tls.build_context(), config=config)
+            self._channel = self._new_channel()
+
+    def _new_channel(self) -> Channel:
+        tls = self.endpoint.tls
+        config = Configuration(ssl_target_name_override=tls.server_name) if tls.server_name else None
+        channel = Channel(self.endpoint.host, self.endpoint.port, ssl=tls.build_context(), config=config)
+        if timing_enabled():
+            # Preserve Channel's default status-details codec and all other channel options.
+            channel._codec = _TimingProtoCodec()
+        return channel
+
+    @property
+    def _channel_count(self) -> int:
+        """DT+ image generations use up to four channels, never more than the selected concurrency."""
+        return min(CLOUD_IMAGE_CHANNELS, self.max_concurrency) if self.backend_id == "drawthings-cloud" else 1
+
+    async def _generation_channel(self) -> tuple[Channel, int]:
+        """Round-robin an image generation over the DT+ channels before authorization; no extra admission."""
+        primary = self._require_channel()
+        index = self._channel_next % self._channel_count
+        self._channel_next += 1
+        if self._active <= 1:
+            index = 0  # a lone generation keeps the warm primary channel; extra channels open only under overlap
+        if index == 0:
+            await self._connect()
+            return primary, index
+        while len(self._extra_channels) < index:
+            self._extra_channels.append(self._new_channel())
+        channel = self._extra_channels[index - 1]
+        await self._connect(channel)
+        return channel, index
 
     async def check_connection(self) -> ConnectionStatus:
         """Non-generative evidence; transport, authentication and inventory stay distinct."""
@@ -430,6 +480,8 @@ class DrawThingsBackend:
         metadata = {}
         previews = preview_bytes = skipped_previews = 0
         preview_decode_ms = 0.0
+        final_processed_at = None
+        receiving_announced = False
 
         def remaining() -> float:
             return max(0.0, self.timeouts.total - (time.monotonic() - started))
@@ -567,14 +619,13 @@ class DrawThingsBackend:
                 emit("preparing", stage="waiting_execution_lane")
                 async with self._lane:
                     emit("preparing", stage="connecting_backend")
-                    await self._connect()
+                    channel, channel_index = await self._generation_channel()
                     emit("preparing", stage="preparing_grpc_metadata")
                     metadata = await self._generation_metadata(wire.message)
                     if asyncio.current_task().cancelling():
                         raise asyncio.CancelledError
                     stage = SubmissionStage.POSSIBLY_SUBMITTED
                     emit("submission_possible", stage="grpc_request")
-                    channel = self._require_channel()
                     received = 0
                     async with channel.request(
                         GENERATE_METHOD,
@@ -584,6 +635,7 @@ class DrawThingsBackend:
                         timeout=remaining(),
                         metadata=metadata,
                     ) as stream:
+                        send_started = time.monotonic()
                         await stream.send_message(wire.message, end=True)
                         request_sent_at = time.monotonic()
                         emit("preparing", stage="waiting_backend_response")
@@ -591,10 +643,23 @@ class DrawThingsBackend:
                             log,
                             "backend.generation_request_sent",
                             level=logging.INFO,
-                            data={"transport": "grpc", "backend": self.backend_id},
+                            data={
+                                "transport": "grpc",
+                                "backend": self.backend_id,
+                                **(
+                                    {
+                                        "send_ms": (request_sent_at - send_started) * 1000,
+                                        "channel_index": channel_index,
+                                        "channel_count": self._channel_count,
+                                    }
+                                    if timing_enabled() or self._channel_count > 1
+                                    else {}
+                                ),
+                            },
                         )
                         first_response = True
                         first_content = timing_enabled()
+                        sampling_totals: dict[str, int] = {}
                         async for response in stream:
                             if first_response:
                                 first_response = False
@@ -628,8 +693,12 @@ class DrawThingsBackend:
                             self._log_response(response)
                             if response.chunk_state == image_service.ChunkState.MORE_CHUNKS:
                                 raise self._reject(request, "chunked_output_unsupported", stage, finals)
+                            sampling_totals.update(self._sampling_totals(response.signposts))
                             for signpost in (response.current_signpost,) if response.current_signpost else ():
-                                self._signpost(signpost, request, emit)
+                                self._signpost(signpost, request, emit, sampling_totals)
+                            if response.download_size and not receiving_announced and not finals:
+                                receiving_announced = True
+                                emit("progress", stage="receiving_image")
                             if response.preview_image:
                                 previews += 1
                                 preview_bytes += len(response.preview_image)
@@ -664,15 +733,33 @@ class DrawThingsBackend:
                                     width, height, channels = check_final(data, request, limits)
                                     if received > limits.transport_bytes:
                                         raise TensorRejected("tensor_transport_limit")
+                                    emit("progress", stage="processing_image")
+                                    processing_started = time.monotonic()
                                     artifact = await settle(
                                         asyncio.to_thread(
                                             decode_final, data, width, height, channels, len(finals) + 1, limits
                                         )
                                     )
+                                    final_processed_at = time.monotonic()
+                                    diagnostic_event(
+                                        log,
+                                        "backend.final_image_worker_completed",
+                                        level=timing_level(),
+                                        data={"elapsed_ms": (final_processed_at - processing_started) * 1000},
+                                    )
                                 except TensorRejected as exc:
                                     raise self._reject(request, exc.code, stage, finals) from exc
                                 finals.append(artifact)
                                 emit("artifact_received", artifact=artifact)
+                                if len(finals) == expected:
+                                    emit("progress", stage="waiting_stream_completion")
+                    if final_processed_at is not None:
+                        diagnostic_event(
+                            log,
+                            "backend.final_stream_completed",
+                            level=timing_level(),
+                            data={"elapsed_ms": (time.monotonic() - final_processed_at) * 1000},
+                        )
                     provider_phase.provider_done()  # the stream is closed: only local work remains
                     if log.isEnabledFor(logging.DEBUG):
                         for label in ("initial_metadata", "trailing_metadata"):
@@ -789,6 +876,7 @@ class DrawThingsBackend:
             seen["scale_factor"] = response.scale_factor
         if response.signposts:
             seen["signposts"] = [betterproto.which_one_of(item, "signpost")[0] for item in response.signposts]
+            seen["sampling_totals"] = DrawThingsBackend._sampling_totals(response.signposts)
         if response.current_signpost:
             seen["signpost"] = betterproto.which_one_of(response.current_signpost, "signpost")[0]
         if response.preview_image:
@@ -826,10 +914,36 @@ class DrawThingsBackend:
         )
 
     @staticmethod
-    def _signpost(signpost, request: ResolvedGenerationRequest, emit) -> None:
+    def _sampling_totals(signposts) -> dict[str, int]:
+        """Read expected sampling endpoints from the provider's signpost collection."""
+        totals: dict[str, int] = {}
+        for signpost in signposts:
+            name, value = betterproto.which_one_of(signpost, "signpost")
+            if name in ("sampling", "second_pass_sampling") and int(value.step) > 0:
+                totals[name] = max(totals.get(name, 0), int(value.step))
+        return totals
+
+    @staticmethod
+    def _signpost(signpost, request: ResolvedGenerationRequest, emit, totals=None) -> None:
         name, value = betterproto.which_one_of(signpost, "signpost")
+        hires = request.advanced is not None and request.advanced.hires_fix_active
+        totals = totals or {}
         if name == "sampling":
-            emit("progress", stage="sampling", completed=int(value.step), total=request.steps)
+            step = int(value.step)
+            total = totals.get(name, request.steps) if hires else request.steps
+            emit(
+                "progress",
+                stage="sampling_pass_1" if hires else "sampling",
+                completed=step,
+                total=total,
+                second_pass_total=totals.get("second_pass_sampling") if hires else None,
+            )
+            if hires and step >= total:
+                emit("progress", stage="waiting_pass_2", second_pass_total=totals.get("second_pass_sampling"))
+        elif name == "second_pass_sampling":
+            step = int(value.step)
+            total = totals.get(name)
+            emit("progress", stage=name, completed=step, total=total if total is not None and step <= total else None)
         elif name:
             emit("progress", stage=name)
 
@@ -841,6 +955,9 @@ class DrawThingsBackend:
         if self._channel is not None:
             channel, self._channel = self._channel, None
             channel.close()
+        for channel in self._extra_channels:
+            channel.close()
+        self._extra_channels.clear()
         self._closed = True
 
     # -- internals -----------------------------------------------------------------------------------------------
@@ -868,9 +985,10 @@ class DrawThingsBackend:
         credential = await self._shared_secret.get()
         return credential.secret if credential is not None else None
 
-    async def _connect(self) -> None:
+    async def _connect(self, channel: Channel | None = None) -> None:
         """Establish transport (including TLS) so failures here are provably before any request bytes."""
-        channel = self._require_channel()
+        if channel is None:
+            channel = self._require_channel()
         began = time.monotonic()
         try:
             async with asyncio.timeout(self.timeouts.connect):

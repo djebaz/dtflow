@@ -1,12 +1,15 @@
 """Background asyncio execution for the Qt shell: coroutines never run on the GUI thread."""
 
 import asyncio
+import logging
 import threading
 from collections.abc import Callable, Coroutine
 
 from PySide6.QtCore import QObject, Qt, Signal
 
 TRANSIENT_EVENTS = ("progress", "preview")
+
+log = logging.getLogger(__name__)
 
 
 class AsyncRunner(QObject):
@@ -22,6 +25,7 @@ class AsyncRunner(QObject):
         self._unstarted: dict[object, Coroutine] = {}
         self._unstarted_lock = threading.Lock()
         self._stop = asyncio.Event()
+        self._shutdown_callbacks: list[Callable] = []
         self._closed = False
         self._thread = threading.Thread(target=self._serve, name="dtflow-qt-async", daemon=True)
         self._done.connect(self._deliver, Qt.ConnectionType.QueuedConnection)
@@ -39,6 +43,15 @@ class AsyncRunner(QObject):
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
+        for close in self._shutdown_callbacks:
+            try:
+                await asyncio.wait_for(close(), 5)
+            except Exception:
+                log.exception("Shutdown cleanup failed")
+
+    def on_shutdown(self, close: Callable) -> None:
+        """Register an async resource cleanup after owned work has settled."""
+        self._shutdown_callbacks.append(close)
 
     @property
     def closed(self) -> bool:

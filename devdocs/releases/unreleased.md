@@ -14,10 +14,14 @@ Changes through 6.5.5 are consolidated in [DTFlow 6.5.5](v6.5.5.md). The publish
 
 ## Changed
 
+- DT+ concurrency can be set from 1 to 100 on the Connection page, and DT+ image generations are no longer held back by the old ten-slot limits or by the shared memory budget. Videos no longer have a fixed limit of ten clips in progress (disk and memory still limit them); local video encoding still runs at most ten encoders at once. DT+ images use up to four connections, never more than the selected concurrency. A workflow can only lower the Connection value; a higher saved workflow value is now reduced to it.
+- Starting several DT+ generations is faster: sign-in, model information and LoRA checks are reused instead of repeated for every item.
 - Controlnet offers **Union Pro 2.0** (q5p first) instead of Union Pro 1.0 for FLUX.1. Saved settings and templates that name Union Pro 1.0 retain their values but require an explicit replacement for new desktop submissions. Existing durable queues and Retry keep and can submit their exact recorded requests; nothing is replaced silently.
 - In the Queues composer the Fixed LoRAs row is now called **Constant LoRAs**, and LoRA sets add to the Constant LoRAs instead of replacing them (a LoRA in both takes the set's weight). Queues and templates saved before keep their items, and plan files keep the old behavior unless they set `"constant_loras": true`.
 
 ## Fixed
+
+- The Activity Bar groups concurrent HiRes P1, P2 and waiting counts inside Sampling, reserves compact numeric space, emphasizes values in bold and combines observed steps across both passes without gaps around the slash or extra spacing before `steps`; reserved fraction width follows the Sampling group. Provider-reported P2 totals are included before P2 starts when available; unknown totals show `?`. The global percentage, elapsed and negative remaining time are pinned to the right edge without labels or tildes; HiRes labels precede their adjacent counts. All remain on the same stacked progress line. Hide the HiRes group when no item is sampling or waiting between passes, and display at least one second of estimated remaining time while the aggregate is running.
 
 - The saved model list is used again after a restart: the app no longer gives up reading it when other startup work holds the cache for a moment, so Refresh models is no longer needed after every start.
 - Controlnet keeps its own base model, checkpoint, LoRAs and settings (size, steps, guidance, sampler, seed and Advanced generation), apart from Text to image and Inpaint. A preset or a LoRA chosen in one mode no longer lands in the other, so a Text to image LoRA from another model family no longer blocks a Controlnet generation, and the sampler stays as you chose it when you go back and forth. Prompts stay shared. The first time you open Controlnet it starts from your current settings without LoRAs.

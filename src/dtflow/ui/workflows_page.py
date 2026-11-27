@@ -47,7 +47,7 @@ from PySide6.QtWidgets import (
 from dtflow.ui.file_dialogs import QFileDialog
 from dtflow.core import workflows as wf
 from dtflow.core.output_layout import identity_from_path
-from dtflow.core.models import LoRASelection, ValidationError
+from dtflow.core.models import MAX_LOCAL_CONCURRENCY, LoRASelection, ValidationError
 from dtflow.services.preflight import checkpoint_picker_versions
 from dtflow.services.lora_naming import display_label, lora_offer, lora_offer_notice, relabel_text
 from dtflow.services import workflow_library as library
@@ -1209,7 +1209,12 @@ class WorkflowsPage(QObject):
         except SettingsError:
             defaults = dict(WORKFLOW_DEFAULTS)
         spin = QSpinBox(host)
-        spin.setRange(0, wf.MAX_CONCURRENCY)
+        spin.setRange(
+            0,
+            wf.workflow_limit(wf.Graph(concurrency=None), "cloud", defaults)
+            if backend == "cloud"
+            else MAX_LOCAL_CONCURRENCY,
+        )
         if node is None:
             label = _label("Global concurrency", "workflowParamLabel")
             spin.setSpecialValueText(
@@ -1217,7 +1222,7 @@ class WorkflowsPage(QObject):
             )
             tip = (
                 "The most steps of this workflow that run at the same time, all nodes together. "
-                "Default: set in the Connection tab. Saved in the workflow file."
+                "Default: set in the Connection tab. DT+ workflows can only narrow that limit. Saved in the workflow file."
             )
             spin.setAccessibleName("Global concurrency")
         else:

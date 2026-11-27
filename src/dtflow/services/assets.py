@@ -202,6 +202,8 @@ class AssetService:
         # Outdated receipts already re-prepared from their changed file, shared by concurrent items (#361).
         self._refresh_failed: dict[tuple, tuple[float, BackendFailure]] = {}
         self._newest_cache: tuple[float, dict[str, PreparedAsset]] | None = None
+        self._newest_lock = asyncio.Lock()
+        self._selection_cache: tuple[float, dict[str, PreparedAsset], set[str]] | None = None
         # The UI can receive individual names without adding them to diagnostic records.
         self.on_resolution: Callable[[dict], None] | None = None
 
@@ -363,7 +365,7 @@ class AssetService:
                         self.store.record_origin, source, content.sha256, content.size, content.identifier, origin_stat
                     )
                 )
-                self._newest_cache = None
+                self._newest_cache = self._selection_cache = None
             return receipt
 
     @staticmethod
@@ -751,15 +753,13 @@ class AssetService:
         outcome = "inconclusive"
         error_message = ""
         try:
-            prepared_assets = await self._current(prepared_assets, on_stage)
+            prepared_assets = await self._current(prepared_assets, on_stage, credential=credential_id)
             identities = {self._identity(self._content(item)): item for item in prepared_assets}
             names = {key: PureWindowsPath(item.identifier).name for key, item in identities.items()}
             registry = AssetRegistry(self.state)
             await registry.open()
             try:
-                existing = [
-                    await registry.scoped(item.receipt_id, credential_id, item.identifier) for item in prepared_assets
-                ]
+                existing = await registry.scoped_many(prepared_assets, credential_id)
             finally:
                 await registry.aclose()
             missing = []
@@ -783,7 +783,8 @@ class AssetService:
             current = None
             if not missing:
                 outcome = "completed"
-                return await self._with_families(tuple(existing))
+                # Scoped reads already join the canonical family metadata.
+                return tuple(existing)
 
             pending = tuple(dict.fromkeys(self._identity(self._content(item)) for _, item, _ in missing))
             contents = tuple(dict.fromkeys(self._content(item) for _, item, _ in missing))
@@ -925,22 +926,27 @@ class AssetService:
 
     async def _newest_map(self) -> dict[str, PreparedAsset]:
         """The current receipt of every LoRA name, read at most every ``NEWEST_TTL`` seconds."""
-        cached = self._newest_cache
-        if cached is not None and time.monotonic() - cached[0] < NEWEST_TTL:
-            return cached[1]
-        registry = AssetRegistry(self.state)
-        await registry.open()
-        try:
-            choices = await registry.choices()
-        finally:
-            await registry.aclose()
-        current = await asyncio.to_thread(self.store.current_by_name) if self.store is not None else {}
-        newest = {item.identifier: item for item in newest_per_name(choices, current)}
-        self._newest_cache = (time.monotonic(), newest)
-        return newest
+        async with self._newest_lock:
+            cached = self._newest_cache
+            if cached is not None and time.monotonic() - cached[0] < NEWEST_TTL:
+                return cached[1]
+            registry = AssetRegistry(self.state)
+            await registry.open()
+            try:
+                choices = await registry.choices()
+            finally:
+                await registry.aclose()
+            current = await asyncio.to_thread(self.store.current_by_name) if self.store is not None else {}
+            newest = {item.identifier: item for item in newest_per_name(choices, current)}
+            self._newest_cache = (time.monotonic(), newest)
+            return newest
 
     async def _current(
-        self, prepared_assets: tuple[PreparedAsset, ...], on_stage: Callable[[str], None] | None = None
+        self,
+        prepared_assets: tuple[PreparedAsset, ...],
+        on_stage: Callable[[str], None] | None = None,
+        *,
+        credential: str | None = None,
     ) -> tuple[PreparedAsset, ...]:
         """Swap each receipt for the current one of its name before anything is checked or sent (#361).
 
@@ -949,7 +955,8 @@ class AssetService:
         source file now holds different bytes is prepared again from that file (a real upload when DT+ asks for
         one). A refresh that cannot finish fails the request with the reason instead of sending the old bytes."""
         newest = await self._newest_map()
-        credential = await self._credential_id()
+        if credential is None:
+            credential = await self._credential_id()
         current = []
         for item in prepared_assets:
             latest = newest.get(item.identifier)
@@ -982,7 +989,7 @@ class AssetService:
             )
         finally:
             await settle(registry.aclose())
-        self._newest_cache = None
+        self._newest_cache = self._selection_cache = None
         diagnostic_event(
             log,
             "assets.outdated_receipt_refreshed",
@@ -1005,16 +1012,16 @@ class AssetService:
         blocked = self._refresh_failed.get(identity)
         if blocked is not None and time.monotonic() < blocked[0]:
             raise BackendError(blocked[1])
-        path = await asyncio.to_thread(self.store.changed_origin, item.sha256, item.size, item.identifier)
-        if path is None:
-            return item
-        # Concurrent queue slots share one measurement, copy and upload, and the last one to leave cancels it.
-        # Nothing is cached on success: the source stamp and the current-version marker are re-written by the refresh,
-        # so the next look at the file answers from them, and putting an older file back is seen like any change.
+
+        async def check_and_refresh():
+            path = await asyncio.to_thread(self.store.changed_origin, item.sha256, item.size, item.identifier)
+            if path is None:
+                return item
+            return await self._refresh(item, path, on_stage)
+
+        # Share even the unchanged-source read among overlapping callers; later requests check again.
         try:
-            fresh = await self._shared(
-                "refresh", item, lambda: self._refresh(item, path, on_stage), scope_id=credential
-            )
+            fresh = await self._shared("refresh", item, check_and_refresh, scope_id=credential)
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -1037,7 +1044,7 @@ class AssetService:
         error = _failure(
             ErrorCategory.VALIDATION,
             REFRESH_FAILED_CODE,
-            f"LoRA {name} changed on disk but could not be prepared again ({reason}). Nothing was submitted; "
+            f"LoRA {name} could not be checked or prepared again ({reason}). Nothing was submitted; "
             "the run pauses. Run Prepare for it again.",
             diagnostics=(("asset", name), ("cause", reason)),
         )
@@ -1385,41 +1392,62 @@ class AssetService:
 
     # -- DT+ storage ------------------------------------------------------------------------------------------------
 
+    async def _selection_candidates(self) -> tuple[dict[str, PreparedAsset], set[str]]:
+        """Share short-lived local name discovery across a burst of generation requests.
+
+        Missing receipts are candidates only. Every generation still resolves current content and
+        confirms its exact key-scoped receipt before submission.
+        """
+        async with self._newest_lock:
+            cached = self._selection_cache
+            if cached is not None and time.monotonic() - cached[0] < NEWEST_TTL:
+                return cached[1], cached[2]
+            started = time.monotonic()
+            registry = AssetRegistry(self.state)
+            await registry.open()
+            try:
+                choices = await registry.choices(include_missing=True)
+                records = await registry.list()
+            finally:
+                await registry.aclose()
+            current = await asyncio.to_thread(self.store.current_by_name) if self.store is not None else {}
+            newest = {item.identifier: item for item in newest_per_name(choices, current)}
+            known = {record["identifier"] for record in records}
+            known.update(record["managed_identifier"] for record in records if record.get("managed_identifier"))
+            self._selection_cache = (time.monotonic(), newest, known)
+            diagnostic_event(
+                log,
+                "assets.selection_catalogue_read",
+                level=logging.DEBUG,
+                data={"elapsed_ms": round((time.monotonic() - started) * 1000), "candidates": len(newest)},
+            )
+            return newest, known
+
     async def resolve_selected(self, request: ResolvedGenerationRequest) -> ResolvedGenerationRequest:
         """Bind known custom selections for dispatch-time verification, never treating missing receipts as held."""
         if self.state is None or not request.loras:
             return request
-        registry = AssetRegistry(self.state)
-        await registry.open()
-        try:
-            choices = await registry.choices(include_missing=True)
-            records = await registry.list()
-            current = await asyncio.to_thread(self.store.current_by_name) if self.store is not None else {}
-            newest = {item.identifier: item for item in newest_per_name(choices, current)}
-            known = {record["identifier"] for record in records}
-            known.update(record.get("managed_identifier") for record in records)
-            bound = {item.identifier: item for item in request.prepared_assets}
-            added = 0
-            for selection in request.loras:
-                name = selection.identifier
-                if name in bound:
-                    continue
-                if name in newest:
-                    bound[name] = newest[name]
-                    added += 1
-                elif name in known:
-                    raise _failure(
-                        ErrorCategory.VALIDATION,
-                        "prepared_asset_reference_missing",
-                        f"LoRA {PureWindowsPath(name).name} has no usable saved cloud reference. "
-                        "Prepare it again from the original file, or remove it from this generation. Nothing was submitted.",
-                    )
-            prepared = await registry.resolve_prepared(tuple(bound.values()))
-        finally:
-            await registry.aclose()
+        newest, known = await self._selection_candidates()
+        bound = {item.identifier: item for item in request.prepared_assets}
+        added = 0
+        for selection in request.loras:
+            name = selection.identifier
+            if name in bound:
+                continue
+            if name in newest:
+                bound[name] = newest[name]
+                added += 1
+            elif name in known:
+                raise _failure(
+                    ErrorCategory.VALIDATION,
+                    "prepared_asset_reference_missing",
+                    f"LoRA {PureWindowsPath(name).name} has no usable saved cloud reference. "
+                    "Prepare it again from the original file, or remove it from this generation. Nothing was submitted.",
+                )
+        # The next ensure_many call resolves canonical metadata from current key-scoped receipts.
         if added:
             diagnostic_event(log, "assets.selected_bound", data={"count": added})
-        return replace(request, prepared_assets=prepared)
+        return replace(request, prepared_assets=tuple(bound.values()))
 
     async def storage_listing(self, content: AssetContent, *, protect: tuple[str, ...] = ()) -> StorageListing:
         """The selected key's stored files as DT+ reports them. Read-only; nothing is uploaded or changed."""

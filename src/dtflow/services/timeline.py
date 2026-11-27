@@ -24,6 +24,7 @@ TIMELINE_STAGES = frozenset(
         "preflight_done",
         "validating_image_inputs",
         "validating_request",
+        "resolving_selected_assets",
         "validating_assets",
         "restoring_assets",
         "checking_loras",

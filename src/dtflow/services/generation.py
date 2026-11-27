@@ -125,6 +125,7 @@ class GenerationService:
             Catalogue(assets.state) if isinstance(assets, AssetService) and assets.state is not None else None
         )
         self.backend, self.store, self.output = backend, store, Path(output)
+        self._publication_gate = getattr(store, "publication_gate", None) or asyncio.Lock()
         self.timeouts = timeouts or TimeoutPolicy()
         self.saver = saver
         self.input_state = Path(input_state) if input_state is not None else None
@@ -132,11 +133,13 @@ class GenerationService:
             raise ValidationError("Preview image policy must be a boolean or a preview gate.")
         self.preview_images = preview_images
         # With provider admission, calls past their sampling phase overlap the active ones; each holds its reservation.
-        self.budget = budget or BufferBudget(
-            backend.capabilities.limits.buffer_budget * (OVERLAP if admission is not None else 1)
-        )
-        # Serialize validation/saving while admitted backend requests may overlap.
-        self._buffers = asyncio.Semaphore(1)
+        self._explicit_budget = budget is not None
+        if budget is None and admission is not None:
+            # One expensive-operation budget for all queues on the same provider owner.
+            if admission.pool.buffer_budget is None:
+                admission.pool.buffer_budget = BufferBudget(backend.capabilities.limits.buffer_budget * OVERLAP)
+            budget = admission.pool.buffer_budget
+        self.budget = budget or BufferBudget(backend.capabilities.limits.buffer_budget)
 
     async def _bounded(self, operation, deadline: float, phase: str):
         try:
@@ -385,10 +388,15 @@ class GenerationService:
                 )
             )
         if isinstance(self.assets, AssetService) and request.loras:
-            request = await self.assets.resolve_selected(request)
+            # Bound selections are resolved to current, key-scoped receipts below.
+            # Only unbound names need a full catalogue scan to discover local candidates.
+            bound = {item.identifier for item in request.prepared_assets}
+            if any(selection.identifier not in bound for selection in request.loras):
+                preparation("resolving_selected_assets")
+                request = await self.assets.resolve_selected(request)
         if request.prepared_assets:
             preparation("validating_assets")
-            # A fresh DT+ metadata check validates each bound LoRA before the attempt exists.
+            # Resolve each bound LoRA against current local receipts before the attempt exists.
             # Only a positive missing-file result may restore verified retained bytes; identical content may rebind
             # to a newer server reference. Unknown/authentication failures cannot authorize an upload.
             if self.assets is None or any(item.backend_id != caps.backend_id for item in request.prepared_assets):
@@ -460,6 +468,18 @@ class GenerationService:
             raise_if_blocked(request, await self.preflight(request))
         raw_bytes = request.height_px * (1 + request.width_px * 4)
         reservation = _buffer_reservation(request, caps, prepared_inputs)
+        if (
+            not self._explicit_budget
+            and caps.backend_id == "drawthings-cloud"
+            and request.operation == "txt2img"
+            and (prepared_inputs is None or (request.pose_control is not None and prepared_inputs.mask is None))
+            and request.num_frames is None
+            and raw_bytes <= caps.limits.artifact_bytes
+            and (prepared_inputs is None or reservation <= 128 * 1024 * 1024)
+        ):
+            # Ordinary remote images are bounded by selected concurrency and per-output limits.
+            # Ordinary control maps share this policy; retain admission for large inputs, edits and video.
+            reservation = 0
         if raw_bytes > caps.limits.tensor_bytes or reservation > self.budget.limit:
             raise BackendError(
                 BackendFailure(
@@ -580,8 +600,9 @@ class GenerationService:
         try:
             preparation("waiting_buffer_budget")
             buffer_wait_started = monotonic()
-            await self.budget.acquire(reservation)
-            reserved = True
+            if reservation:
+                await self.budget.acquire(reservation)
+                reserved = True
             diagnostic_event(
                 log,
                 "generation.buffer_acquired",
@@ -690,55 +711,69 @@ class GenerationService:
                     result,
                     backend_elapsed_seconds=backend_terminal_at - backend_submitted_at,
                 )
-            # Validation/encoding run in the bounded worker path, not the owning loop.
-            async with self._buffers:
-                await settle(asyncio.to_thread(validate_result, result, request, caps.limits))
-                outcome = RemoteOutcome.SUCCEEDED
-                await self.store.transition(attempt_id, ("possibly_submitted",), "saving", stage, outcome)
-                state = "saving"
+            # Independent results can be validated concurrently. Publication keeps the native originals lease.
+            await settle(asyncio.to_thread(validate_result, result, request, caps.limits))
+            outcome = RemoteOutcome.SUCCEEDED
+            await self.store.transition(attempt_id, ("possibly_submitted",), "saving", stage, outcome)
+            state = "saving"
 
-                def commit_originals():
-                    # Keep committed originals behind the same OS-released lease
-                    # used by export and Recycle Bin; no provider code runs here.
-                    # A paid result waits longer than ordinary leases before save_failed.
-                    with original_images_lock(getattr(self.store, "directory", self.output.parent), timeout=30):
-                        extra = {"layout": layout} if layout is not None else {}
-                        if image_operation:
-                            return save_image_artifacts(
-                                self.output,
-                                attempt_id,
-                                request,
-                                result,
-                                identity(),
-                                caps.limits,
-                                prepared_inputs,
-                                **extra,
-                            )
-                        return self.saver(self.output, attempt_id, request, result, identity(), caps.limits, **extra)
+            def commit_originals():
+                # Keep committed originals behind the same OS-released lease
+                # used by export and Recycle Bin; no provider code runs here.
+                # A paid result waits longer than ordinary leases before save_failed.
+                with original_images_lock(getattr(self.store, "directory", self.output.parent), timeout=30):
+                    extra = {"layout": layout} if layout is not None else {}
+                    if image_operation:
+                        return save_image_artifacts(
+                            self.output,
+                            attempt_id,
+                            request,
+                            result,
+                            identity(),
+                            caps.limits,
+                            prepared_inputs,
+                            **extra,
+                        )
+                    return self.saver(self.output, attempt_id, request, result, identity(), caps.limits, **extra)
 
-                async def save_and_register():
-                    try:
+            async def save_and_register():
+                waiting = monotonic()
+                try:
+                    async with self._publication_gate:
+                        diagnostic_event(
+                            log,
+                            "generation.publication_wait",
+                            level=logging.DEBUG,
+                            data={"waited_ms": round((monotonic() - waiting) * 1000)},
+                        )
+                        saving = monotonic()
                         saved = await asyncio.to_thread(commit_originals)
-                    except Exception as exc:
-                        if request.num_frames is not None:
-                            diagnostic_event(
-                                log,
-                                "video.artifacts_save_failed",
-                                level=logging.WARNING,
-                                data={"attempt_id": attempt_id, "reason": type(exc).__name__},
-                            )
-                        raise
-                    paths, metadata = saved[:2]
-                    await self._attribute_credential(attempt_id)
-                    await self.store.transition(
-                        attempt_id, ("saving",), "succeeded", stage, outcome, artifacts=(*paths, metadata)
-                    )
-                    return saved
-
-                # Once the file write starts, cancellation must wait for its durable registration too.
-                saved = await settle(save_and_register())
+                        diagnostic_event(
+                            log,
+                            "generation.publication_completed",
+                            level=logging.DEBUG,
+                            data={"elapsed_ms": round((monotonic() - saving) * 1000)},
+                        )
+                except Exception as exc:
+                    if request.num_frames is not None:
+                        diagnostic_event(
+                            log,
+                            "video.artifacts_save_failed",
+                            level=logging.WARNING,
+                            data={"attempt_id": attempt_id, "reason": type(exc).__name__},
+                        )
+                    raise
                 paths, metadata = saved[:2]
-                display_image = saved[2] if image_operation else None
+                await self._attribute_credential(attempt_id)
+                await self.store.transition(
+                    attempt_id, ("saving",), "succeeded", stage, outcome, artifacts=(*paths, metadata)
+                )
+                return saved
+
+            # Once a successful result is ready, cancellation waits through the publication queue and registration.
+            saved = await settle(save_and_register())
+            paths, metadata = saved[:2]
+            display_image = saved[2] if image_operation else None
             diagnostic_event(
                 log,
                 "generation.attempt_succeeded",

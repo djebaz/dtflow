@@ -253,8 +253,8 @@ async def test_fake_concurrency_is_configurable_and_bounded():
         await backend.aclose()
 
 
-def test_cloud_text_to_image_budget_admits_ten_32_mib_requests():
-    """Cloud text-to-image admission is bounded at one 32 MiB artifact per request."""
+def test_cloud_text_to_image_buffer_reservation_is_one_32_mib_artifact():
+    """The reservation helper still sizes cloud text-to-image at one 32 MiB artifact (edits and video use it)."""
     from dtflow.core.models import Capabilities, ResourceLimits
     from dtflow.services.generation import _buffer_reservation
 

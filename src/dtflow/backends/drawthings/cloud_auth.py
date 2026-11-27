@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import copy
 import json
 import logging
 import math
 import time
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 import httpx
 
@@ -20,6 +19,7 @@ from dtflow.core.models import (
     BackendError,
     CredentialProvider,
     ErrorCategory,
+    InventorySnapshot,
     RemoteOutcome,
     SubmissionStage,
     ValidationError,
@@ -124,6 +124,9 @@ class CloudAuth:
         self._expires = 0.0
         self._margin = 0.0
         self._lock = asyncio.Lock()
+        self.inventory_lock = asyncio.Lock()
+        self.inventories: dict[str, tuple[InventorySnapshot, dict[str, dict]]] = {}
+        self.inventory_times: dict[str, float] = {}
         self._refresh: asyncio.Task[str] | None = None
         self._closed = False
         self._scope = uuid.uuid4().hex
@@ -223,8 +226,8 @@ class CloudAuth:
 
     async def authorize(self, message) -> str:
         token = await self.token()
-        auth_message = copy.deepcopy(message)
-        auth_message.contents = []
+        # Construct a contents-free message without copying the retained tensor payload.
+        auth_message = replace(message, contents=[])
         reply = await self._post(
             "/authenticate",
             {
@@ -354,6 +357,11 @@ class CloudAuth:
                             if response.status_code in (401, 403)
                             else ErrorCategory.REMOTE_REJECTION
                         )
+                        if category == ErrorCategory.AUTHENTICATION and token == self._token:
+                            # Do not keep a rejected token for a subsequent generation; never replay this request.
+                            self._token = None
+                            self.inventories.clear()
+                            self.inventory_times.clear()
                         raise api_error(
                             category,
                             "cloud_http_rejected",
@@ -427,6 +435,7 @@ class CloudAuth:
             return
         self._closed = True
         self._token = self._key = None
+        self.inventories.clear()
         try:
             if self._refresh is not None and not self._refresh.done():
                 self._refresh.cancel()

@@ -14,7 +14,7 @@ queues, Scripts and Workflows.
   continue without a slot.
 - A call stays **open** until it settles. Open calls are capped at `limit × OVERLAP` (2), so a stuck download can never
   pile up unbounded paid requests. The DT+ adapter's own lane is widened by the same factor so it is not a second,
-  tighter bound; the service buffer budget is widened with it (320 MiB still reserves one 32 MiB artifact per open call).
+  tighter bound; ordinary cloud images and ControlNet requests no longer reserve from the shared buffer budget (see backend-contract).
 - The limit is a utilization target. A race between claims may overshoot for a moment; nothing removes that, only
   sustained excess is prevented.
 
@@ -113,3 +113,17 @@ text stays in `backend.api_failed`. Quota exhaustion is never inferred.
 - A Generate click's request is not claimed until a slot is free, so the dispatcher (not the call) reports the wait; a
   click that finds no owner here and another process owning dispatch is saved paused and not run.
 - Preflight diagnostics (`run_generation`'s advisory LoRA check) are not shown for a queued single image.
+
+## Admission audit (#634)
+
+| Gate | Outcome | Cost or protected risk |
+| --- | --- | --- |
+| Ten-slot cloud concurrency ceiling (queue, script, workflow) | Replaced by the Connection value, 1–100; workflows can only narrow it | Capped throughput at ten with no provider reason |
+| Open calls past sampling (`limit × OVERLAP`) | Retained | Bounds paid requests whose download or save is stuck |
+| Shared buffer budget for ordinary cloud images and ControlNet | Exempt while raw size fits one encoded-artifact allowance | Serialized small requests; per-request bounds remain, no aggregate bound |
+| Buffer budget for image edits and video | Retained | Larger buffers; video also keeps its disk and a 4 GiB memory budget that ignores image memory |
+| Ten-clip video limit | Removed | Arbitrary; disk and memory admission remain the clip-count bound. An owner Windows run opened 13 clips at once (13/13 saved, peak RSS 478 MiB, no buffer or slot waits) with the encoder cap set to 4 |
+| Local video encoders | Capped at the ten-thread worker pool, so Unlimited means ten and waiting is shown | Pool threads also serve short per-frame operations |
+| Publication gate (exclusive save and durable registration) | Retained | Protects saved results; Stop waits for queued publications |
+| Per-item authentication, inventory, LoRA checks | Shared per credential and reused; a forced inventory refresh within five seconds of another reuses it | Repeated work in the pre-send path |
+| gRPC channels | Image generations use up to four, never more than the concurrency; video and inventory use the primary | Submission spread with large bursts |

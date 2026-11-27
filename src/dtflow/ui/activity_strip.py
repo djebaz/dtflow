@@ -383,7 +383,6 @@ class ActivityStrip(QObject):
             stop_action=base.stop_action,
             segments=tuple(segments),
             texts=text.candidates,
-            timed=text.timed,
         )
 
     def _bar_rect(self):

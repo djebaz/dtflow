@@ -69,8 +69,19 @@ def encode_png(pixels: bytes, width: int, height: int, channels: int) -> bytes:
         pixels, channels = bytes(expanded), 3
     stride = width * channels
     compressor = zlib.compressobj()
+    # Batch rows to avoid repeated GIL handoffs under concurrent image encoding.
+    # Bound temporary scanline storage rather than copying the entire image.
+    rows_per_chunk = max(1, (1024 * 1024) // (stride + 1))
     compressed = (
-        b"".join(compressor.compress(b"\0" + pixels[row * stride : (row + 1) * stride]) for row in range(height))
+        b"".join(
+            compressor.compress(
+                b"".join(
+                    b"\0" + pixels[row * stride : (row + 1) * stride]
+                    for row in range(start, min(height, start + rows_per_chunk))
+                )
+            )
+            for start in range(0, height, rows_per_chunk)
+        )
         + compressor.flush()
     )
     header = struct.pack(">IIBBBBB", width, height, 8, 2 if channels == 3 else 6, 0, 0, 0)

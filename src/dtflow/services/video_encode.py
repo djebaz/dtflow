@@ -28,12 +28,12 @@ from dataclasses import dataclass
 from functools import partial
 from pathlib import Path
 
-from dtflow.core.models import MAX_QUEUE_CONCURRENCY
+from dtflow.persistence.settings import MAX_VIDEO_ENCODERS
 from dtflow.services.video_resources import MP4_LIMIT
 
 log = logging.getLogger(__name__)
 
-_VIDEO_WORKERS = ThreadPoolExecutor(max_workers=MAX_QUEUE_CONCURRENCY, thread_name_prefix="dtflow-video")
+_VIDEO_WORKERS = ThreadPoolExecutor(max_workers=MAX_VIDEO_ENCODERS, thread_name_prefix="dtflow-video")
 
 NO_WINDOW = 0x08000000  # CREATE_NO_WINDOW
 STALL_SECONDS = 90  # a frame writer that makes no progress for this long fails the run
@@ -107,15 +107,16 @@ def _wake() -> None:
 async def encoder_slot(on_wait=None):
     """One slot of the shared local-encoder limit, held across a clip's FFmpeg encode and audio mux.
 
-    Waiting is cancellable. ``on_wait`` is called once, only when the item has to wait. With no cap (0) the slot is
-    only counted, never refused. The cap is read at each attempt, so a changed setting applies to waiting items.
+    Waiting is cancellable. ``on_wait`` is called once, only when the item has to wait. With no cap (0) the worker pool size is
+    the cap. The cap is read at each attempt, so a changed setting applies to waiting items.
     """
     global _running
     waited = False
     while True:
         with _gate:
-            cap = _policy[0]
-            if cap == 0 or _running < cap:
+            # Never admit more encodes than the worker pool can run, so waiting is shown instead of hidden in the pool.
+            cap = min(_policy[0] or MAX_VIDEO_ENCODERS, MAX_VIDEO_ENCODERS)
+            if _running < cap:
                 _running += 1
                 break
             future = asyncio.get_running_loop().create_future()
