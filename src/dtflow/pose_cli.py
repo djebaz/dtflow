@@ -77,12 +77,28 @@ def add_commands(commands, add_request_options):
             child.add_argument("-hy", "--hires-height", type=int, help="Explicit HiRes first-pass height.")
             child.add_argument("-dw", "--depth-width", type=int, help="Experimental wire Depth width.")
             child.add_argument("-dh", "--depth-height", type=int, help="Experimental wire Depth height.")
-            child.add_argument("-ds", "--depth-sizes", nargs="+", metavar="SIZE",
-                               help="Compare 2..8 distinct sizes (final, first or WIDTHxHEIGHT) with one model and seed.")
-            child.add_argument("-fl", "--flat", action="store_true", help="Export copies in one directory; use a durable queue even for one model.")
-            child.add_argument("-cl", "--collage", action="store_true", help="Write a labelled collage; use a durable queue even for one model.")
-            child.add_argument("-cz", "--collage-size", type=int, default=384,
-                               help="Collage thumbnail width in pixels (128..1024).")
+            child.add_argument(
+                "-ds",
+                "--depth-sizes",
+                nargs="+",
+                metavar="SIZE",
+                help="Compare 2..8 distinct sizes (final, first or WIDTHxHEIGHT) with one model and seed.",
+            )
+            child.add_argument(
+                "-fl",
+                "--flat",
+                action="store_true",
+                help="Export copies in one directory; use a durable queue even for one model.",
+            )
+            child.add_argument(
+                "-cl",
+                "--collage",
+                action="store_true",
+                help="Write a labelled collage; use a durable queue even for one model.",
+            )
+            child.add_argument(
+                "-cz", "--collage-size", type=int, default=384, help="Collage thumbnail width in pixels (128..1024)."
+            )
             source = child.add_mutually_exclusive_group(required=True)
             source.add_argument(
                 "-im",
@@ -227,7 +243,9 @@ async def run(args):
         if not 128 <= args.collage_size <= 1024:
             raise ValidationError("--collage-size must be between 128 and 1024.")
         request = resolve_generation(args)
-        if any(value is not None for value in (args.hires_factor, args.hires_strength, args.hires_width, args.hires_height)):
+        if any(
+            value is not None for value in (args.hires_factor, args.hires_strength, args.hires_width, args.hires_height)
+        ):
             from dataclasses import replace
             from dtflow.core.advanced import AdvancedSettings
 
@@ -347,8 +365,10 @@ async def compare_models(args, request, prepared, policy):
     if getattr(args, "asset", None):
         raise ValidationError("Model comparison does not yet accept explicit asset receipts.")
     depth_sizes = resolve_depth_sizes(args, request)
-    plan = None if depth_sizes else Plan(
-        "cross", dimensions=(("model", tuple(args.models or [request.model_id])),), seed_policy="fixed"
+    plan = (
+        None
+        if depth_sizes
+        else Plan("cross", dimensions=(("model", tuple(args.models or [request.model_id])),), seed_policy="fixed")
     )
     selection = session.selection_for("cloud", None, args.state)
     queue_id = await queue_session.create_saved_pose_queue(
@@ -374,8 +394,10 @@ async def compare_models(args, request, prepared, policy):
 
     control = request.pose_control
     first = first_pass_size(request.width_px, request.height_px, request.advanced)
-    details = f"Final {request.width_px}x{request.height_px} | HiRes {first[0]}x{first[1]}" if first else (
-        f"Final {request.width_px}x{request.height_px} | HiRes off"
+    details = (
+        f"Final {request.width_px}x{request.height_px} | HiRes {first[0]}x{first[1]}"
+        if first
+        else (f"Final {request.width_px}x{request.height_px} | HiRes off")
     )
     if control.input_type == "depth":
         details += " | Depth 1ch, raw"
@@ -383,8 +405,17 @@ async def compare_models(args, request, prepared, policy):
     if args.models or args.collage or depth_sizes:
         target = await asyncio.to_thread(write_comparison_collage, final, root, args.collage_size, details)
     exports = await asyncio.to_thread(export_flat_comparison, final, root) if args.flat else []
-    print(json.dumps({"queue": queue_id, "summary": final["summary"],
-                      "collage": str(target) if target else None, "flat_outputs": exports}, indent=2))
+    print(
+        json.dumps(
+            {
+                "queue": queue_id,
+                "summary": final["summary"],
+                "collage": str(target) if target else None,
+                "flat_outputs": exports,
+            },
+            indent=2,
+        )
+    )
     from dtflow.cli import queue_exit_code
 
     return queue_exit_code(final)
@@ -396,8 +427,15 @@ def resolve_depth_sizes(args, request) -> tuple[tuple[int, int], ...]:
         return ()
     from dtflow.core.advanced import first_pass_size
 
-    if request.pose_control.input_type != "depth" or args.models or args.depth_width is not None or args.depth_height is not None:
-        raise ValidationError("--depth-sizes needs one Depth model and cannot combine with --models or explicit Depth width/height.")
+    if (
+        request.pose_control.input_type != "depth"
+        or args.models
+        or args.depth_width is not None
+        or args.depth_height is not None
+    ):
+        raise ValidationError(
+            "--depth-sizes needs one Depth model and cannot combine with --models or explicit Depth width/height."
+        )
     if not 2 <= len(args.depth_sizes) <= 8:
         raise ValidationError("--depth-sizes requires 2..8 sizes.")
     sizes = []

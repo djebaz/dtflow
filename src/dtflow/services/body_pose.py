@@ -598,6 +598,7 @@ def write_comparison_collage(queue, root: Path, thumbnail_width: int = 384, deta
 
     labels = [label_for(item) for item in items]
     measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+
     def text_height(text):
         box = measure.multiline_textbbox((0, 0), text, font=font)
         return box[3] - min(0, box[1]) + 12

@@ -84,9 +84,11 @@ def encode_image_inputs(
         if (width, height) != (source_width, source_height):
             from PIL import Image
 
-            pixels_rgb = Image.frombytes("RGB", (source_width, source_height), pixels_rgb).resize(
-                (width, height), Image.Resampling.BILINEAR
-            ).tobytes()
+            pixels_rgb = (
+                Image.frombytes("RGB", (source_width, source_height), pixels_rgb)
+                .resize((width, height), Image.Resampling.BILINEAR)
+                .tobytes()
+            )
         pixels_rgb = pixels_rgb[::3]
     image = ImageBuffer(pixels_rgb, width, height, channels).to_tensor()
     _check_tensor(image, width, height, mask=False, channels=channels)
