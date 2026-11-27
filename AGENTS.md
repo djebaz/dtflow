@@ -146,7 +146,7 @@ These instructions apply throughout `dtflow`.
 
 ## Local DT+ usage counters
 
-- Treat Connection's per-key completed-image counts and the bottom-bar `active/all` pill as local estimates from saved attempt evidence, never provider quota, balance or entitlement; they must not block, bill, poll DT+ or generate. Persist only an opaque credential digest and a four-character hint (`cloud_usage`, state schema 7), never the key, and show no more than the hint anywhere, including tooltips, accessible names, exports and logs. Group by digest, not hint. Count from saved UTC times with DST-aware local midnights so a timezone change recomputes locally. See [cloud counters](devdocs/architecture/cloud-integration.md#local-completed-image-counters-issue-221).
+- Treat Connection's per-key completed-image counts and the bottom-bar `active/all` pill as local estimates from saved attempt evidence, never provider quota, balance or entitlement; they must not block, bill, poll DT+ or generate. Persist only an opaque credential digest and a four-character hint (`cloud_usage`, state schema 7), never the key, and show no more than the hint anywhere, including tooltips, accessible names, exports and logs. Group by digest, not hint. Count from saved UTC times with DST-aware local midnights so a timezone change recomputes locally. The separate Connection `Next 100 releases` forecast (#644) uses the 100th oldest attributable output in a hypothetical rolling 24-hour UTC window; it is independent of the selected timezone and is not confirmed availability. See [cloud counters](devdocs/architecture/cloud-integration.md#local-completed-image-counters-issue-221).
 
 ## Saved-image export
 
