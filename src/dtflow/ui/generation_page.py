@@ -289,6 +289,7 @@ class GenerationPage:
         activity: Activity | None = None,
         no_cache: bool = False,
         cache_changed: Callable[[], None] | None = None,
+        retire_dispatch_inventory: Callable[[], Awaitable[None]] | None = None,
         choose_save: Callable[[QWidget, Path], str] = _choose_save,
         choose_open: Callable[[QWidget, Path], str] = _choose_open,
     ):
@@ -301,6 +302,7 @@ class GenerationPage:
         self._activity = activity or Activity()
         self._no_cache = no_cache
         self._cache_changed = cache_changed or (lambda: None)
+        self._retire_dispatch_inventory = retire_dispatch_inventory
         self._inventory_memory = InventoryDisplayMemory()
         self._inventory_source: tuple[str, str | None] | None = None
         self._inventory_revision = 0
@@ -2105,6 +2107,8 @@ class GenerationPage:
 
     async def _refresh(self, name, endpoint, saved):
         selection = await asyncio.to_thread(selection_for, name, endpoint, self._state)
+        if selection.name == "cloud" and self._retire_dispatch_inventory is not None:
+            await self._retire_dispatch_inventory()  # queued dispatches then see models added since the last look
         return await self._inventory_memory.refresh(selection, self._state, saved=saved, no_cache=self._no_cache)
 
     def _fill_models(self, ids) -> None:

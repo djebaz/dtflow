@@ -458,6 +458,7 @@ class MainWindow:
             activity=self.activity,
             no_cache=no_cache,
             cache_changed=self.refresh_cache,
+            retire_dispatch_inventory=lambda: self.queue.invalidate_cloud_inventory(),
         )
         startup.mark("generate controller")
         self.image_export = ImageExportPanel(
