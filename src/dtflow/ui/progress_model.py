@@ -191,6 +191,9 @@ class ItemProgress:
             if (counter := _counter(event)) is not None:
                 self.steps = counter
             self.text = f"Sampling · step {event.completed} of {event.total}"
+        elif event.kind == "progress" and event.stage in ("receiving_image", "processing_image", "waiting_stream_completion"):
+            self.phase = "encoding" if event.stage == "processing_image" else "receiving"
+            self.text, self.done, self.total = event_stage(event), None, None
         elif event.kind == "progress" and event.stage == "receiving_frames":
             self.phase, self.done, self.total = "receiving", event.completed, event.total
             if (counter := _counter(event)) is not None:
@@ -214,7 +217,8 @@ class ItemProgress:
         elif event.kind == "progress" and event.stage:
             self.text = "DT+: " + event.stage.replace("_", " ")
         elif event.kind == "terminal":
-            self.phase, self.text, self.done, self.total = "saving", "Saving the video and its poster", None, None
+            self.phase, self.done, self.total = "saving", None, None
+            self.text = "Saving the video and its poster" if self.video else "Checking and saving image"
         else:
             return False
         return True
@@ -400,9 +404,7 @@ class ProgressModel:
             item.counter = counter
         elif event.kind == "terminal":
             item.counter = None
-            if not item.video:
-                item.label, item.label_since = "", None
-            # A video's terminal event precedes durable MP4/poster saving: its Saving phase stays until reconcile.
+            # Terminal evidence precedes durable saving for both images and video.
         item.event_label = label
         item.presented = presented
         return item
