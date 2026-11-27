@@ -60,7 +60,7 @@ from dtflow.persistence.store import PersistenceError, SQLiteAttempts, StateBusy
 from dtflow.services.assets import AssetService, possible_missing_asset
 from dtflow.services.credentials import EnvironmentCredentials, PinnedSavedCredentials, resolve_credentials
 from dtflow.services.generation import GenerationService
-from dtflow.services.image_inputs import restore_image_inputs
+from dtflow.services.image_inputs import load_committed_inputs, restore_image_inputs
 from dtflow.services.lora_store import LoraStore
 from dtflow.services.prepare_progress import PrepareEvent
 from dtflow.services.lora_auto_naming import normalize_previous_retained
@@ -324,13 +324,13 @@ async def open_session(
         # or the orchestration loop, after the attempt snapshot is committed.
         image_options = {
             "image_permits": image_permits,
-            "image_inputs_loader": lambda snapshot: restore_image_inputs(state, snapshot),
+            "image_inputs_loader": lambda snapshot: load_committed_inputs(state, snapshot),
             "allow_image_probe": allow_image_probe,
         }
     if pose_inputs:
         if selection.name != "cloud":
             raise ValidationError("Pose experiments require explicit DT+ Cloud selection.")
-        image_options["image_inputs_loader"] = lambda snapshot: restore_image_inputs(state, snapshot)
+        image_options["image_inputs_loader"] = lambda snapshot: load_committed_inputs(state, snapshot)
     backend = create_backend(selection, timeouts=policy, saved=saved, **image_options)
     if timeline is not None:
         timeline.mark("backend_created")
@@ -372,6 +372,7 @@ async def run_generation(
     attempt_id: str | None = None,
     layout: OutputLayout | None = None,
     timeline: GenerationTimeline | None = None,
+    inputs_validated: bool = False,
 ) -> GenerationOutcome:
     """Refresh inventory, optionally apply trigger prefixes, run LoRA preflight, generate and save.
 
@@ -428,6 +429,8 @@ async def run_generation(
         options["attempt_id"] = attempt_id
     if layout is not None:
         options["layout"] = layout
+    if inputs_validated and prepared_inputs is not None:
+        options["inputs_validated"] = True  # the caller ran the pixel validation; the attempt snapshot skips it
     retries = 0
     while True:
         try:
@@ -625,6 +628,7 @@ async def generate_pose_once(
     saved: CredentialProvider | None = None,
     on_event: EventSink | None = None,
     asset_ids: tuple[str, ...] = (),
+    inputs_validated: bool = False,
 ) -> GenerationOutcome:
     """One explicit DT+ pose submission (a request built with ``pose_request``): the map leaves the machine and may
     consume credits. No provider fallback; the input snapshot is the one the request records."""
@@ -648,7 +652,13 @@ async def generate_pose_once(
         ) as service:
             _preparation_event(sink, bound, "session_ready")
             return await run_generation(
-                service, bound, prefix=prefix, on_event=sink, prepared_inputs=prepared_inputs, timeline=timeline
+                service,
+                bound,
+                prefix=prefix,
+                on_event=sink,
+                prepared_inputs=prepared_inputs,
+                timeline=timeline,
+                inputs_validated=inputs_validated,
             )
 
     return await _timed(selection, on_event, run)
@@ -665,7 +675,9 @@ async def retry_pose_once(
     if request.pose_control is None or request.image_inputs is None:
         raise ValidationError("Retry requires saved pose control settings.")
     prepared = await settle(asyncio.to_thread(restore_image_inputs, state, request.image_inputs))
-    return await generate_pose_once(selection, state, replace(request, request_id=uuid4().hex), prepared, **options)
+    return await generate_pose_once(
+        selection, state, replace(request, request_id=uuid4().hex), prepared, inputs_validated=True, **options
+    )
 
 
 async def generate_image_once(
@@ -732,7 +744,13 @@ async def generate_image_once(
         ) as service:
             _preparation_event(sink, bound, "session_ready")
             return await run_generation(
-                service, bound, prefix=prefix, on_event=sink, prepared_inputs=prepared_inputs, timeline=timeline
+                service,
+                bound,
+                prefix=prefix,
+                on_event=sink,
+                prepared_inputs=prepared_inputs,
+                timeline=timeline,
+                inputs_validated=True,  # validated above, before anything was bound or opened
             )
 
     return await _timed(selection, on_event, run)

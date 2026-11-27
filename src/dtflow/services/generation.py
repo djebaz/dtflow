@@ -205,8 +205,12 @@ class GenerationService:
         layout: OutputLayout | None = None,
         permit: Permit | None = None,
         may_submit: Callable[[], Awaitable[bool]] | None = None,
+        inputs_validated: bool = False,
     ) -> SavedGeneration:
-        """``may_submit`` is asked twice: after preparation and before the attempt exists, and again as close to the
+        """``inputs_validated`` says the caller already ran the pixel validation on ``prepared_inputs`` (a restored or
+        freshly prepared set); the attempt snapshot then does not repeat it. Unset, the snapshot validates first.
+
+        ``may_submit`` is asked twice: after preparation and before the attempt exists, and again as close to the
         provider as the flow allows (after the buffer budget and image snapshot, just before the attempt is marked
         submitted). False raises :class:`SubmissionHeld`; nothing is sent, and a prepared attempt is ended as cancelled.
 
@@ -262,10 +266,20 @@ class GenerationService:
                             ) from exc
                         held = await self._take_slot(held, request, sink)
                         return await self._generate(
-                            request, sink, prepared_inputs, attempt_id, layout, held, lease, may_submit
+                            request,
+                            sink,
+                            prepared_inputs,
+                            attempt_id,
+                            layout,
+                            held,
+                            lease,
+                            may_submit,
+                            inputs_validated,
                         )
                 held = await self._take_slot(held, request, sink)
-                return await self._generate(request, sink, prepared_inputs, attempt_id, layout, held, None, may_submit)
+                return await self._generate(
+                    request, sink, prepared_inputs, attempt_id, layout, held, None, may_submit, inputs_validated
+                )
             finally:
                 if held is not None:
                     held.close()
@@ -320,6 +334,7 @@ class GenerationService:
         permit: Permit | None = None,
         video_lease=None,
         may_submit: Callable[[], Awaitable[bool]] | None = None,
+        inputs_validated: bool = False,
     ) -> SavedGeneration:
         def preparation(stage: str) -> None:
             if on_event is not None:
@@ -623,6 +638,7 @@ class GenerationService:
                         attempt_id,
                         prepared_inputs,
                         preserve_outside=request.image_inputs.preserve_outside,
+                        validated=inputs_validated,
                     )
                 )
                 if snapshot != request.image_inputs:

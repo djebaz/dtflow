@@ -98,6 +98,8 @@ QUEUE_SCHEMA = (
         UNIQUE (queue_id, position)
     )""",
     "CREATE INDEX IF NOT EXISTS queue_items_by_state ON queue_items (queue_id, state)",
+    # Opening as owner reconciles running items across all queues (derived index, safe on schema-9 stores).
+    "CREATE INDEX IF NOT EXISTS queue_items_by_running ON queue_items (state) WHERE state='running'",
     """CREATE TABLE IF NOT EXISTS queue_controls (
         control_id INTEGER PRIMARY KEY AUTOINCREMENT,
         queue_id TEXT NOT NULL REFERENCES queues(queue_id),
@@ -158,6 +160,10 @@ def add_lanes(db: sqlite3.Connection) -> None:
     if "lanes_json" not in {row[1] for row in db.execute("PRAGMA table_info(queue_items)")}:
         db.execute("ALTER TABLE queue_items ADD COLUMN lanes_json TEXT")
     db.execute("DROP TABLE IF EXISTS script_child_slots")
+    # Opening as owner clears held lanes across all queues; a derived index keeps that off a full scan.
+    db.execute(
+        "CREATE INDEX IF NOT EXISTS queue_items_with_lanes ON queue_items (item_id) WHERE lanes_json IS NOT NULL"
+    )
 
 
 def check_queueable(request: ResolvedGenerationRequest) -> None:

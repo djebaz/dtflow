@@ -14,7 +14,7 @@ from drawthings_py.image.image_buffer import ImageBuffer
 
 from dtflow.core.image_inputs import PreparedImageInputs
 from dtflow.core.models import ResourceLimits, ValidationError
-from dtflow.services.image_preparation import image_content_pixels, validate_prepared_inputs
+from dtflow.services.image_preparation import image_content_pixels
 
 HEADER_BYTES = 68
 
@@ -56,7 +56,8 @@ def encode_image_inputs(
     White/edit pixels become provider value 2 (selected at requested strength),
     never 1 (forced pure-noise fill). Black/padding stays 0. No feather/blur/outset
     is hidden in the provider mask; inward blend alpha remains local evidence.
-    Call on a worker. This does not establish backend/checkpoint compatibility.
+    Call on a worker. This does not establish backend/checkpoint compatibility. The caller passes hash-verified inputs
+    whose pixels were validated before they were committed; this decodes them once and does not validate them again.
     """
     limits = limits or ResourceLimits()
     if not isinstance(prepared, PreparedImageInputs):
@@ -69,7 +70,6 @@ def encode_image_inputs(
         raise ValidationError("Image input tensor exceeds the decoded byte limit.")
     if image_size + mask_size > limits.transport_bytes:
         raise ValidationError("Image input contents exceed the transport byte limit.")
-    validate_prepared_inputs(prepared)
     pixels_rgb = image_content_pixels(prepared.image)
     if depth:
         # Prepared depth maps are RGB snapshots of one grayscale plane.

@@ -56,7 +56,7 @@ from dtflow.persistence.workflow_items import KIND_WORKFLOW, is_workflow_record
 from dtflow.services import session
 from dtflow.services.assets import AssetService
 from dtflow.services.generation import GenerationService
-from dtflow.services.image_inputs import restore_image_inputs, snapshot_image_inputs
+from dtflow.services.image_inputs import load_committed_inputs, restore_image_inputs, snapshot_image_inputs
 from dtflow.services.planning import Plan, PlanError, expand_plan
 from dtflow.services.provider_admission import PRIORITY_MANUAL, ProviderAdmission, QueueAdmission
 from dtflow.services.queue import QueueDispatcher
@@ -800,7 +800,7 @@ async def _dispatch_one(
         image_options = {
             **({"image_permits": permits, "allow_image_probe": True} if permits else {}),
             **(
-                {"image_inputs_loader": lambda snapshot: restore_image_inputs(state, snapshot)}
+                {"image_inputs_loader": lambda snapshot: load_committed_inputs(state, snapshot)}
                 if permits or has_pose
                 else {}
             ),
