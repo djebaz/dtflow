@@ -87,7 +87,7 @@ class CloudUsagePanel(QObject):
         self._debounce.timeout.connect(self.refresh)
         self._forecast_timer = QTimer(self)
         self._forecast_timer.setInterval(60_000)
-        self._forecast_timer.timeout.connect(self.render)
+        self._forecast_timer.timeout.connect(self._tick_forecast)
         self._forecast_timer.start()
         self.render()
 
@@ -208,6 +208,10 @@ class CloudUsagePanel(QObject):
                 f"{counts.unattributed} more were saved before key tracking began, so they belong to none of the keys above."
             )
         form.usageUnattributedLabel.setVisible(bool(counts.unattributed))
+
+    def _tick_forecast(self) -> None:
+        if not self.runner.closed and self._loaded:
+            self.render()
 
     def _forecast_header(self) -> QWidget:
         header = QWidget(self.form.usageBoxContents)
