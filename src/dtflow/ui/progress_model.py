@@ -123,6 +123,7 @@ class ItemProgress:
         self.total: int | None = None
         self.bytes = 0
         self.steps: tuple[int, int] | None = None  # last observed sampler step counter
+        self.pass_1_steps: tuple[int, int] | None = None
         self.frames: tuple[int, int] | None = None  # last observed received-frame counter
         self.counter: tuple[int, int] | None = None  # last valid counter of any kind, until the item settles
         self.label = ""  # last observed stage wording, until a terminal event of an image
@@ -205,6 +206,8 @@ class ItemProgress:
                 self.steps = counter
             self.text = f"Sampling · step {event.completed} of {event.total}"
             if self.phase == "sampling_pass_1":
+                if counter is not None:
+                    self.pass_1_steps = counter
                 self.text = f"Sampling | pass 1 ({event.completed}/{event.total} steps)"
         elif event.kind == "progress" and event.stage == "waiting_pass_2":
             self.phase, self.text, self.done, self.total = "waiting_pass_2", "Waiting | pass 2", None, None
@@ -270,6 +273,7 @@ class ItemSnapshot:
     elapsed: float
     estimate: float
     observed_step: int | None = None
+    pass_1_steps: tuple[int, int] | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -527,6 +531,7 @@ class ProgressModel:
                 item.elapsed(now),
                 item.estimate(now),
                 item.done if item.phase == "second_pass" else None,
+                item.pass_1_steps,
             )
             for item in items
         )

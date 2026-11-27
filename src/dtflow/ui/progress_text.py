@@ -58,32 +58,35 @@ def _groups(
     pass_items = tuple(item for queue in snapshot.queues for item in queue.items)
 
     if hires or any(counts.get(code) for code in ("S1", "W2", "S2")):
-        # Keep both pass groups visible, including zero counts. A missing denominator is not zero.
-        def pass_group(code: str, label: str, waiting_count: int | None = None) -> str:
-            count = counts.get(code, 0)
-            items = [item for item in pass_items if item.stage == code]
-            pairs = [item.steps for item in items if item.steps is not None]
-            observed = [item.observed_step for item in items if item.observed_step is not None]
-            partial = ""
-            if count and len(pairs) == count:
-                counter = f"{sum(p[0] for p in pairs)}/{sum(p[1] for p in pairs)}"
-            elif observed:
-                counter = str(sum(observed))
-                if len(observed) < count:
-                    partial = f", {len(observed)} reporting"
-            elif pairs:
-                counter = f"{sum(p[0] for p in pairs)}/{sum(p[1] for p in pairs)}"
-                partial = f", {len(pairs)} reporting"
+        p1, p2, pending = (counts.get(code, 0) for code in ("S1", "S2", "W2"))
+        done = total = 0
+        complete = True
+        for item in pass_items:
+            if item.stage not in ("S1", "S2", "W2"):
+                continue
+            first = item.pass_1_steps or (item.steps if item.stage == "S1" else None)
+            if first is None:
+                complete = False
             else:
-                counter = "—" if count else "0"
-            parts = []
-            if waiting_count is not None:
-                parts.append(f"W{waiting_count}" if short else f"{waiting_count} waiting")
-            parts.append(f"S{count}" if short else f"{count} sampling")
-            parts.append(f"{counter}{partial}" if short else f"{counter} steps{partial}")
-            return f"{label} [{SEP.join(parts)}]"
-
-        passes = (pass_group("S1", "P1"), pass_group("S2", "P2", counts.get("W2", 0)))
+                done += first[0]
+                total += first[1]
+            if item.stage == "S2":
+                if item.steps is None:
+                    done += item.observed_step or 0
+                    complete = False
+                else:
+                    done += item.steps[0]
+                    total += item.steps[1]
+            else:
+                # The second-pass total has not been observed for this item yet.
+                complete = False
+        counter = f"{done}/{total}" if complete and total else str(done)
+        passes = (
+            f"P1:{p1}" if short else f"{p1} P1",
+            f"P2:{p2}" if short else f"{p2} P2",
+            f"W2:{pending}" if short else f"{pending} waiting",
+            f"{counter} steps",
+        )
     else:
         passes = ()
 
