@@ -73,6 +73,16 @@ def add_commands(commands, add_request_options):
                 help="Experimental ControlNet HiRes factor; provider compatibility may vary.",
             )
             child.add_argument("-hs", "--hires-strength", type=float, help="HiRes second-pass strength, 0..1.")
+            child.add_argument("-hw", "--hires-width", type=int, help="Explicit HiRes first-pass width.")
+            child.add_argument("-hy", "--hires-height", type=int, help="Explicit HiRes first-pass height.")
+            child.add_argument("-dw", "--depth-width", type=int, help="Experimental wire Depth width.")
+            child.add_argument("-dh", "--depth-height", type=int, help="Experimental wire Depth height.")
+            child.add_argument("-dc", "--depth-channels", type=int, choices=(1, 3), default=1,
+                               help="Experimental native Depth channels; RGB may be refused by the provider.")
+            child.add_argument("-fl", "--flat", action="store_true", help="Export copies in one output directory.")
+            child.add_argument("-cl", "--collage", action="store_true", help="Write a labelled comparison collage.")
+            child.add_argument("-cz", "--collage-size", type=int, default=384,
+                               help="Collage thumbnail width in pixels (128..1024).")
             source = child.add_mutually_exclusive_group(required=True)
             source.add_argument(
                 "-im",
@@ -214,8 +224,10 @@ async def run(args):
             if len(set(args.models)) != len(args.models):
                 raise ValidationError("Comparison model identifiers must be distinct.")
             args.model = args.models[0]
+        if not 128 <= args.collage_size <= 1024:
+            raise ValidationError("--collage-size must be between 128 and 1024.")
         request = resolve_generation(args)
-        if args.hires_factor is not None or args.hires_strength is not None:
+        if any(value is not None for value in (args.hires_factor, args.hires_strength, args.hires_width, args.hires_height)):
             from dataclasses import replace
             from dtflow.core.advanced import AdvancedSettings
 
@@ -227,6 +239,8 @@ async def run(args):
                     hires_fix_factor=args.hires_factor
                     if args.hires_factor is not None
                     else (advanced.hires_fix_factor or 2.0),
+                    hires_fix_width=args.hires_width if args.hires_width is not None else advanced.hires_fix_width,
+                    hires_fix_height=args.hires_height if args.hires_height is not None else advanced.hires_fix_height,
                     hires_fix_strength=args.hires_strength
                     if args.hires_strength is not None
                     else advanced.hires_fix_strength,
@@ -250,6 +264,9 @@ async def run(args):
             args.strength if args.strength is not None else default_strength,
             input_type=input_type,
             control_mode=args.control_mode,
+            depth_width=args.depth_width,
+            depth_height=args.depth_height,
+            depth_channels=args.depth_channels,
             guidance_start=args.start,
             guidance_end=args.end if args.end is not None else (0.65 if fast_pose else 1.0),
         )
@@ -292,7 +309,7 @@ async def run(args):
                 person=args.person,
             )
         request = pose_request(request, control, prepared, evidence)
-        if args.models:
+        if args.models or args.collage or args.flat:
             return await compare_models(args, request, prepared, policy)
     selection = selection_for("cloud", None, args.state)
     options = {
@@ -325,12 +342,12 @@ async def run(args):
 async def compare_models(args, request, prepared, policy):
     """Stage one map, expand the existing model plan and dispatch one durable queue."""
     from dtflow.services import queue_session, session
-    from dtflow.services.body_pose import write_comparison_collage
+    from dtflow.services.body_pose import write_comparison_collage, export_flat_comparison
     from dtflow.services.planning import Plan
 
     if getattr(args, "asset", None):
         raise ValidationError("Model comparison does not yet accept explicit asset receipts.")
-    plan = Plan("cross", dimensions=(("model", tuple(args.models)),), seed_policy="fixed")
+    plan = Plan("cross", dimensions=(("model", tuple(args.models or [request.model_id])),), seed_policy="fixed")
     selection = session.selection_for("cloud", None, args.state)
     queue_id = await queue_session.create_saved_pose_queue(
         args.state,
@@ -349,8 +366,23 @@ async def compare_models(args, request, prepared, policy):
     final = await queue_session.dispatch_queue(
         args.state, queue_id, timeouts=policy, out=args.out, on_settle=settled, auto_play=False
     )
-    target = await asyncio.to_thread(write_comparison_collage, final, args.out or args.state / "comparisons")
-    print(json.dumps({"queue": queue_id, "summary": final["summary"], "collage": str(target)}, indent=2))
+    root = args.out or args.state / "comparisons"
+    from dtflow.core.advanced import first_pass_size
+
+    control = request.pose_control
+    first = first_pass_size(request.width_px, request.height_px, request.advanced)
+    hint = (control.depth_width or request.width_px, control.depth_height or request.height_px)
+    details = f"Final {request.width_px}x{request.height_px} | HiRes {first[0]}x{first[1]}" if first else (
+        f"Final {request.width_px}x{request.height_px} | HiRes off"
+    )
+    if control.input_type == "depth":
+        details += f" | Depth {hint[0]}x{hint[1]}, {control.depth_channels}ch, raw"
+    target = None
+    if args.models or args.collage:
+        target = await asyncio.to_thread(write_comparison_collage, final, root, args.collage_size, details)
+    exports = await asyncio.to_thread(export_flat_comparison, final, root) if args.flat else []
+    print(json.dumps({"queue": queue_id, "summary": final["summary"],
+                      "collage": str(target) if target else None, "flat_outputs": exports}, indent=2))
     from dtflow.cli import queue_exit_code
 
     return queue_exit_code(final)
