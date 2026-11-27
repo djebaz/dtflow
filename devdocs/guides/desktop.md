@@ -142,6 +142,8 @@ The selected search/severity/Component/Event/time/characteristic filters, sort, 
 
 ## Connect
 
+The collapsed Custom LoRAs and Cache management sections defer table mounting and cache-size scans until opened. The shared LoRA metadata and connection checks still refresh in the background; opening a section shows the current information without requiring a restart.
+
 Connection status stays always visible. The other center-column sections—Custom LoRAs, Local completed images, Draw Things presets, Disposable cache and Export saved images—start collapsed. Click anywhere on a section header or use its keyboard-accessible chevron to expand it; each section is independent, and collapsing it does not cancel work. Expansion lasts for the current app session. Side panels are unchanged. When the shared Export panel is opened from Images, its contents remain expanded; returning to Connection restores its disclosure state. This consistency revision is source/static reviewed; native owner smoke remains pending.
 
 Select Local Draw Things or DT+ Cloud on Connection. Fake is available only to development tooling, not the desktop provider selector. The local provider needs its server endpoint. Connection checks run in the background and never generate. The Generate page uses the selected provider and endpoint; switching provider resets connection results.

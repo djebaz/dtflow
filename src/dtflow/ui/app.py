@@ -55,7 +55,7 @@ def open_window(
         before_show(window)
     window.show()
     startup.mark("window shown")
-    # The first event-loop turn follows the first paint; then the heavy gRPC library loads without delaying display.
+    # A zero timer is not a paint notification. The splash path separately records the actual window paint.
     startup_timer = QTimer(window.form)
     startup_timer.setSingleShot(True)
     startup_timer.timeout.connect(lambda: _after_first_paint(window))
@@ -140,7 +140,7 @@ STARTUP_WORK_DELAY_MS = 1000
 def _after_first_paint(window) -> None:
     if window.runner.closed:
         return
-    startup.mark("first paint")
+    startup.mark("first post-show timer")
     startup.report("startup phases")
     QTimer.singleShot(STARTUP_WORK_DELAY_MS, window.form, lambda: _start_background_work(window))
 
