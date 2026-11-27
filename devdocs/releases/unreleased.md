@@ -6,6 +6,8 @@ Changes through 6.5.5 are consolidated in [DTFlow 6.5.5](v6.5.5.md). The publish
 
 ## Added
 
+- Experimental ControlNet CLI options for Depth tensor dimensions/channels, explicit HiRes first-pass sizes, flat comparison exports and configurable collage thumbnails. Desktop defaults are unchanged.
+
 - Connection shows an experimental **Next 100 releases** countdown per API key, based on saved images and an assumed rolling 24-hour window. It updates automatically every minute. Existing daily counts and timezone selection are unchanged; actual DT+ availability is not confirmed.
 
 - Controlnet guides images with **Canny edges, depth or segmentation** as well as pose, from a photo or a prepared map, for SD 1.x and SDXL checkpoints as well as FLUX.1, when your DT+ inventory lists the control. Compatible combinations are available for experimentation even if previously unsuccessful or untested. Choosing a control, type or model family starts from suggested settings; saved settings are kept as they are. Queues, Gallery Use settings and templates keep the control type. Depth from a photo uses Depth Anything V2 Small, downloaded on request (about 94.5 MiB, Apache-2.0); Canny from a photo uses OpenCV, now included.
