@@ -18,7 +18,7 @@ class AsyncRunner(QObject):
     shutdown_started = Signal()
     _done = Signal(object, object, object)  # callback, result, exception
 
-    def __init__(self, parent: QObject | None = None):
+    def __init__(self, parent: QObject | None = None, *, defer_start: bool = False):
         super().__init__(parent)
         self._loop = asyncio.new_event_loop()
         self._pending: set = set()
@@ -29,7 +29,13 @@ class AsyncRunner(QObject):
         self._closed = False
         self._thread = threading.Thread(target=self._serve, name="dtflow-qt-async", daemon=True)
         self._done.connect(self._deliver, Qt.ConnectionType.QueuedConnection)
-        self._thread.start()
+        if not defer_start:
+            self.start()
+
+    def start(self) -> None:
+        """Release queued submissions once the desktop has reached its first post-show turn."""
+        if not self._closed and self._thread.ident is None:
+            self._thread.start()
 
     def _serve(self) -> None:
         asyncio.set_event_loop(self._loop)
@@ -115,6 +121,12 @@ class AsyncRunner(QObject):
         if first:
             self.shutdown_started.emit()
         if self._loop.is_closed():
+            return
+        if self._thread.ident is None:
+            # Nothing has executed. Cancel submitted futures and close their unstarted coroutines.
+            for future in tuple(self._pending):
+                future.cancel()
+            self._loop.close()
             return
         self._loop.call_soon_threadsafe(self._stop.set)
         self._thread.join(timeout)

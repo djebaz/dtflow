@@ -42,7 +42,7 @@ def open_window(
     apply_theme(application)
     application.setWindowIcon(app_icon())
     startup.mark("application and theme")
-    window = MainWindow(no_cache=no_cache)
+    window = MainWindow(no_cache=no_cache, defer_startup_workers=True)
     if diagnostic_notices is not None:
         window._diagnostic_notice = DiagnosticNoticeReceiver(window, diagnostic_notices)
     startup.mark("main window built")
@@ -141,6 +141,8 @@ def _after_first_paint(window) -> None:
     if window.runner.closed:
         return
     startup.mark("first post-show timer")
+    window.runner.start()
+    startup.mark("startup workers released")
     startup.report("startup phases")
     QTimer.singleShot(STARTUP_WORK_DELAY_MS, window.form, lambda: _start_background_work(window))
 

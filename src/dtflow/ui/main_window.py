@@ -244,6 +244,7 @@ class MainWindow:
         environ=None,
         state_dir: Path | None = None,
         no_cache: bool = False,
+        defer_startup_workers: bool = False,
     ):
         # Separate first-use Qt costs (loader plugins, fonts, stylesheet parsing) from the form's own cost.
         _form_loader()
@@ -280,7 +281,7 @@ class MainWindow:
         self._check_token = None
         self._check_future = None
         self._environ = environ
-        self.runner = runner or AsyncRunner(self.form)
+        self.runner = runner or AsyncRunner(self.form, defer_start=defer_startup_workers)
         self._shutdown_guard = _ShutdownGuard(self.form)
         self._wheel_guard = WheelGuard(self.form)
         self._wheel_step = WheelStepRule(self.form)

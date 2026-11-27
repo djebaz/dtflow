@@ -103,6 +103,8 @@ The [inline interaction mockup](../mockups/dtflow_inline_panels.html) illustrate
 
 ## Launch
 
+Startup worker submissions are queued during window construction and released at the first post-show timer, to isolate initial Qt presentation from background credential, inventory and cleanup activity. Existing startup checks still run automatically; the provider preload retains its existing delay.
+
 The startup splash hands off to the main window outside its first paint event, without requesting a redundant activation of an already active window. Development startup timings distinguish paint observation, the queued splash handoff, dismissal and the post-show timer; these are event-loop milestones, not measured render durations.
 
 From the repository root after `uv sync`:
