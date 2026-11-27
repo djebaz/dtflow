@@ -445,7 +445,7 @@ class VideoPanel(QObject):
     def _render_thumbnail(self) -> None:
         """Cover the photo button without letterboxing; the central viewer retains the full source/crop inspection."""
         info = self._start_info
-        if info is None or self.thumb.width() <= 0 or self.thumb.height() <= 0:
+        if info is None:
             return
         started = monotonic()
         self.thumb.setIcon(QIcon(QPixmap.fromImage(info.thumbnail)))
