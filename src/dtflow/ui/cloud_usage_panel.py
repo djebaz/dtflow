@@ -12,7 +12,7 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QSignalBlocker, QTimer
+from PySide6.QtCore import QObject, QSignalBlocker, Qt, QTimer
 from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QWidget
 
 from dtflow.persistence.cloud_usage import load_timezone, read_usage_records, save_timezone
@@ -25,6 +25,7 @@ from dtflow.services.cloud_usage import (
     KeyCount,
     UsageRecord,
     count_day,
+    release_forecast,
     timezone_choices,
     zone_or_default,
 )
@@ -84,6 +85,10 @@ class CloudUsagePanel(QObject):
         self._debounce.setSingleShot(True)
         self._debounce.setInterval(REFRESH_DEBOUNCE_MS)
         self._debounce.timeout.connect(self.refresh)
+        self._forecast_timer = QTimer(self)
+        self._forecast_timer.setInterval(60_000)
+        self._forecast_timer.timeout.connect(self.render)
+        self._forecast_timer.start()
         self.render()
 
     @property
@@ -167,9 +172,11 @@ class CloudUsagePanel(QObject):
         form = self.form
         self._refresh_clock_labels()
         zone = zone_or_default(self.zone_name)
+        now = self._clock()
         counts = self.counts = count_day(
-            self._records, self._clock(), zone, active_credential=self._active, directory=self._directory
+            self._records, now, zone, active_credential=self._active, directory=self._directory
         )
+        forecast = release_forecast(self._records, now) if self._loaded and not self._error else {}
         start = counts.start.astimezone(zone)
         if self._error and self._on_unavailable is not None:
             self._on_unavailable()
@@ -183,8 +190,10 @@ class CloudUsagePanel(QObject):
             item = layout.takeAt(0)
             if item.widget() is not None:
                 item.widget().deleteLater()
+        if counts.keys:
+            layout.addWidget(self._forecast_header())
         for key in counts.keys:
-            layout.addWidget(self._row(key))
+            layout.addWidget(self._row(key, forecast.get(key.credential_id)))
         if self._error:
             status = "Previous counts may be outdated." if self._loaded else "Saved image counts are unavailable."
             note = f"{status} {self._error_reason or 'See Logs for the error type.'}"
@@ -200,7 +209,22 @@ class CloudUsagePanel(QObject):
             )
         form.usageUnattributedLabel.setVisible(bool(counts.unattributed))
 
-    def _row(self, key: KeyCount) -> QWidget:
+    def _forecast_header(self) -> QWidget:
+        header = QWidget(self.form.usageBoxContents)
+        layout = QHBoxLayout(header)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(8)
+        layout.addStretch(1)
+        count = QLabel("Completed", header)
+        count.setProperty("textRole", "caption")
+        layout.addWidget(count)
+        forecast = QLabel("Next 100 releases", header)
+        forecast.setProperty("textRole", "caption")
+        forecast.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        layout.addWidget(forecast)
+        return header
+
+    def _row(self, key: KeyCount, minutes: int | None = None) -> QWidget:
         row = QFrame(self.form.usageBoxContents)
         row.setProperty("role", "usageRow")
         description = f"{key.label}: {key.count} completed images, {_BAND[key.level]} band"
@@ -223,5 +247,22 @@ class CloudUsagePanel(QObject):
         count.setProperty("textRole", "value")
         count.setProperty("state", _STATE[key.level])
         count.setAccessibleDescription(description)
+        count.setMinimumWidth(self.form.fontMetrics().horizontalAdvance("Completed"))
+        count.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         layout.addWidget(count)
+        duration = "—"
+        if minutes is not None:
+            hours, remainder = divmod(minutes, 60)
+            duration = f"{hours}h {remainder:02d}m" if hours else f"{remainder}m"
+        forecast = QLabel(duration, row)
+        forecast.setObjectName("usageReleaseForecast")
+        forecast.setMinimumWidth(self.form.fontMetrics().horizontalAdvance("Next 100 releases"))
+        forecast.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        forecast.setProperty("textRole", "value")
+        forecast.setAccessibleName(f"{key.label}: next 100 releases, {duration}")
+        forecast.setToolTip(
+            "Estimated time until 100 saved images leave a hypothetical rolling 24-hour window. "
+            "A dash means insufficient or unavailable local evidence, not zero capacity."
+        )
+        layout.addWidget(forecast)
         return row
