@@ -364,7 +364,7 @@ async def compare_models(args, request, prepared, policy):
         print(f"[queue] {item_id[:8]}: {state}", file=sys.stderr)
 
     final = await queue_session.dispatch_queue(
-        args.state, queue_id, timeouts=policy, out=args.out, on_settle=settled, auto_play=False
+        args.state, queue_id, timeouts=policy, out=None if args.flat else args.out, on_settle=settled, auto_play=False
     )
     root = args.out or args.state / "comparisons"
     from dtflow.core.advanced import first_pass_size
