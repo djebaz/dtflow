@@ -20,9 +20,8 @@ Changes through 6.5.5 are consolidated in [DTFlow 6.5.5](v6.5.5.md). The publish
 - In the Queues composer the Fixed LoRAs row is now called **Constant LoRAs**, and LoRA sets add to the Constant LoRAs instead of replacing them (a LoRA in both takes the set's weight). Queues and templates saved before keep their items, and plan files keep the old behavior unless they set `"constant_loras": true`.
 
 ## Fixed
-- Improve desktop startup responsiveness by releasing background startup tasks after the initial window-show event-loop turn (#641).
-- Startup skips mounting the hidden retained-LoRA table and scanning cache sizes until the corresponding Connection section is opened; duplicate initial LoRA refresh is removed (#641 follow-up).
-- A remembered video start image no longer loads while Generate Video is hidden at startup. Its small button crop is prepared off the UI thread, and crop inspection reuses the decoded preview (#641).
+- Faster, more responsive desktop startup: background work begins after the initial window-show event-loop turn, and collapsed Custom LoRAs and Cache management sections no longer mount their table or scan cache sizes before opening (#641).
+- Remembered video start images load only when Generate displays Video. Thumbnail preparation runs in the background, and hover/focus crop inspection reuses the decoded preview. Saved source identity and settings are retained until verification; generation waits for verification (#641).
 
 - The Activity Bar groups concurrent HiRes P1, P2 and waiting counts inside Sampling, reserves compact numeric space, emphasizes values in bold and combines observed steps across both passes without gaps around the slash or extra spacing before `steps`; reserved fraction width follows the Sampling group. Provider-reported P2 totals are included before P2 starts when available; unknown totals show `?`. The global percentage, elapsed and negative remaining time are pinned to the right edge without labels or tildes; HiRes labels precede their adjacent counts. All remain on the same stacked progress line. Hide the HiRes group when no item is sampling or waiting between passes, and display at least one second of estimated remaining time while the aggregate is running.
 
