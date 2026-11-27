@@ -488,6 +488,7 @@ class MainWindow:
             saved_source=lambda: self._optional_saved,
             state_dir=self.state_dir,
             request_source=self.generation.request_for_queue,
+            verify_generate_source=self.generation.video.verify_saved_source,
             edit_source=self.generation.queue_edit_job,
             editing_source=lambda: self.generation.inpaint.active,
             simulation_source=self.generation.simulation,

@@ -78,7 +78,8 @@ def _read_start_image(path: Path, icon_size: tuple[int, int]) -> StartImageInfo:
         def qt_image(picture):
             # Detach from Python-owned bytes before crossing the worker boundary.
             rgba = picture.convert("RGBA")
-            return QImage(rgba.tobytes(), rgba.width, rgba.height, rgba.width * 4, QImage.Format.Format_RGBA8888).copy()
+            pixels = rgba.tobytes()
+            return QImage(pixels, rgba.width, rgba.height, rgba.width * 4, QImage.Format.Format_RGBA8888).copy()
 
         # QImage is safe to prepare in a worker. Only the small icon becomes a QPixmap on Qt.
         return StartImageInfo(hashlib.sha256(data).hexdigest(), width, height, qt_image(preview), qt_image(thumbnail))
@@ -230,9 +231,13 @@ class VideoPanel(QObject):
         self._activate_saved_source()
         self._sync()
 
-    def _activate_saved_source(self) -> None:
-        """Read a remembered source once, only when Generate displays Video."""
-        if not (self._restore_pending and self._generate_visible and self.active) or self._runner.closed:
+    def verify_saved_source(self) -> None:
+        """An explicit queue capture may need the saved source while Generate is hidden."""
+        self._activate_saved_source(requested=True)
+
+    def _activate_saved_source(self, *, requested: bool = False) -> None:
+        """Read once on Video activation or an explicit request to capture its settings."""
+        if not (self._restore_pending and self.active and (self._generate_visible or requested)) or self._runner.closed:
             return
         chosen, digest = self._start, self._sha
         self._restore_pending = False
@@ -342,8 +347,10 @@ class VideoPanel(QObject):
         incompatible = self._incompatible_settings()
         if incompatible:
             return incompatible
-        if self._restore_pending or self._loading:
-            return "Checking the selected start image; generation cannot begin yet."
+        if self._restore_pending:
+            return "Open Generate to check the saved start image, then retry."
+        if self._loading:
+            return "Checking the selected start image; try again when the check finishes."
         if self._choice_problem:
             return self._choice_problem
         if self._start is not None and self._start_source != self._backend_source():
